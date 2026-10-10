@@ -12,3 +12,6 @@ workspace = true
 
 [dependencies]
 rusqlite = { version = "0.40.2", features = ["bundled", "limits"] }
+
+[dev-dependencies]
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
