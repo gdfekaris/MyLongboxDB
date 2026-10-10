@@ -69,6 +69,12 @@ its authors:
   functions, GIO subprocesses, and GTK's URI and file launchers are
   banned through `clippy.toml`. Verify with
   `sdk cargo clippy --workspace --all-targets -- -D warnings`.
+- **Collection files are treated as untrusted.** SQLite runs in
+  defensive mode with untrusted schema disabled, URI file names, ATTACH,
+  and extension loading off, and size limits on every value; a file that
+  belongs to another application is refused rather than modified. All SQL
+  uses bound parameters. Verify with `cargo test -p mylongbox-core`, whose
+  tests check each of these settings.
 - **No `unsafe` code** outside the small `mylongbox-sandbox` crate.
   Every other crate declares `#![forbid(unsafe_code)]`.
 
