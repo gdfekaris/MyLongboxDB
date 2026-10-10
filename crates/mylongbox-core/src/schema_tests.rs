@@ -154,12 +154,26 @@ fn sample(conn: &Connection) -> Sample {
     }
 }
 
+/// Expands to a `match` from each table name to its own literal count
+/// query, so no SQL is assembled at runtime.
+macro_rules! count_query {
+    ($table:expr; $($name:literal),+ $(,)?) => {
+        match $table {
+            $($name => concat!("SELECT count(*) FROM ", $name),)+
+            other => panic!("add {other} to count_query"),
+        }
+    };
+}
+
 fn count(conn: &Connection, table: &str) -> i64 {
-    // Table names come only from the fixed list in these tests.
-    conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
-        row.get(0)
-    })
-    .unwrap()
+    let sql = count_query!(table;
+        "meta", "trash", "publisher", "series", "issue", "edition", "storage_box", "copy",
+        "value_entry", "cover_photo", "creator", "creator_alias", "credit",
+        "edition_cover_artist", "character", "character_alias", "issue_character", "team",
+        "team_alias", "issue_team", "story_arc", "story_arc_alias", "issue_story_arc", "tag",
+        "copy_tag", "collects", "exchange_rate",
+    );
+    conn.query_row(sql, [], |row| row.get(0)).unwrap()
 }
 
 fn user_tables(conn: &Connection) -> Vec<String> {
@@ -407,17 +421,17 @@ fn emptying_trash_deletes_the_group_and_everything_beneath() {
     )
     .unwrap();
     let trash = conn.last_insert_rowid();
-    for table in ["series", "issue", "edition", "copy"] {
-        // Only this series' rows: the collected series stays live.
-        let sql = format!(
-            "UPDATE {table} SET trash_id = ?1 WHERE id IN (
-                 SELECT {table}.id FROM series
-                 JOIN issue ON issue.series_id = series.id
-                 JOIN edition ON edition.issue_id = issue.id
-                 JOIN copy ON copy.edition_id = edition.id
-                 WHERE series.id = ?2)"
-        );
-        conn.execute(&sql, [trash, s.series]).unwrap();
+    // Only this series' rows: the collected series stays live.
+    for sql in [
+        "UPDATE copy SET trash_id = ?1 WHERE edition_id IN (
+             SELECT edition.id FROM edition JOIN issue ON issue.id = edition.issue_id
+             WHERE issue.series_id = ?2)",
+        "UPDATE edition SET trash_id = ?1 WHERE issue_id IN (
+             SELECT id FROM issue WHERE series_id = ?2)",
+        "UPDATE issue SET trash_id = ?1 WHERE series_id = ?2",
+        "UPDATE series SET trash_id = ?1 WHERE id = ?2",
+    ] {
+        conn.execute(sql, [trash, s.series]).unwrap();
     }
     conn.execute("DELETE FROM trash WHERE id = ?1", [trash])
         .unwrap();
