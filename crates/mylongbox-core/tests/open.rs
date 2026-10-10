@@ -92,3 +92,51 @@ fn refuses_to_follow_symlinks() {
     std::os::unix::fs::symlink(&real, &link).unwrap();
     assert!(Database::open(&link).is_err());
 }
+
+/// Applies `sql` to a collection file behind MyLongboxDB's back.
+fn tamper(path: &std::path::Path, sql: &str) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute_batch(sql).unwrap();
+}
+
+#[test]
+fn refuses_a_collection_with_an_added_trigger() {
+    let dir = TempDir::new();
+    let path = dir.file("collection.sqlite");
+    drop(Database::open(&path).unwrap());
+    tamper(
+        &path,
+        "CREATE TRIGGER sneaky AFTER INSERT ON tag BEGIN DELETE FROM copy; END",
+    );
+    assert!(matches!(
+        Database::open(&path),
+        Err(Error::UnexpectedSchema)
+    ));
+}
+
+#[test]
+fn refuses_a_collection_with_a_dropped_index_or_extra_view() {
+    for sql in [
+        "DROP INDEX copy_trash",
+        "CREATE VIEW extra AS SELECT 1",
+        "CREATE TABLE extra (x)",
+    ] {
+        let dir = TempDir::new();
+        let path = dir.file("collection.sqlite");
+        drop(Database::open(&path).unwrap());
+        tamper(&path, sql);
+        assert!(
+            matches!(Database::open(&path), Err(Error::UnexpectedSchema)),
+            "{sql}"
+        );
+    }
+}
+
+#[test]
+fn planner_statistics_are_not_tampering() {
+    let dir = TempDir::new();
+    let path = dir.file("collection.sqlite");
+    drop(Database::open(&path).unwrap());
+    tamper(&path, "ANALYZE");
+    Database::open(&path).unwrap();
+}

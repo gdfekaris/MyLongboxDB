@@ -19,7 +19,7 @@ const MAX_SQL_BYTES: i32 = 1024 * 1024;
 
 /// An open collection.
 pub struct Database {
-    conn: Connection,
+    pub(crate) conn: Connection,
 }
 
 impl Database {
@@ -46,6 +46,7 @@ impl Database {
     fn init(conn: Connection) -> Result<Self> {
         let mut conn = connect(conn)?;
         migrate::run(&mut conn, MIGRATIONS)?;
+        verify_schema(&conn)?;
         Ok(Self { conn })
     }
 
@@ -86,6 +87,36 @@ pub(crate) fn connect(conn: Connection) -> Result<Connection> {
 
     check_ownership(&conn)?;
     Ok(conn)
+}
+
+/// One entry of `sqlite_schema`: type, name, table, and defining SQL.
+type SchemaEntry = (String, String, String, Option<String>);
+
+fn read_schema(conn: &Connection) -> Result<Vec<SchemaEntry>> {
+    // sqlite_stat tables appear after ANALYZE or PRAGMA optimize and hold
+    // only query-planner statistics.
+    let mut stmt = conn.prepare(
+        "SELECT type, name, tbl_name, sql FROM sqlite_schema
+         WHERE name NOT LIKE 'sqlite_stat%'
+         ORDER BY type, name",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Refuses a collection whose schema differs in any way from the one the
+/// migrations build, such as an added trigger or view, or a loosened
+/// constraint. Such a file was edited outside the app and may be hostile.
+fn verify_schema(conn: &Connection) -> Result<()> {
+    let mut reference = connect(Connection::open_in_memory()?)?;
+    migrate::run(&mut reference, MIGRATIONS)?;
+    if read_schema(conn)? == read_schema(&reference)? {
+        Ok(())
+    } else {
+        Err(Error::UnexpectedSchema)
+    }
 }
 
 /// Accepts a file that is ours or completely empty; refuses anything else.

@@ -16,6 +16,9 @@ pub enum Error {
     },
     /// The schema version recorded in the `meta` table is unreadable.
     CorruptMeta,
+    /// The file's tables, indexes, or triggers differ from what this
+    /// version of MyLongboxDB creates, so it may have been tampered with.
+    UnexpectedSchema,
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -31,6 +34,10 @@ impl fmt::Display for Error {
                  MyLongboxDB supports only up to {supported}; please update the app"
             ),
             Self::CorruptMeta => f.write_str("the collection's schema version is unreadable"),
+            Self::UnexpectedSchema => f.write_str(
+                "this collection's structure has been changed outside MyLongboxDB, \
+                 so it will not be opened",
+            ),
         }
     }
 }
