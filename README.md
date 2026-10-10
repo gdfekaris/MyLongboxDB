@@ -10,21 +10,37 @@ the network.
 ## Building
 
 MyLongboxDB is written in Rust with GTK4 and libadwaita and ships only as
-a Flatpak. The core crates build with a standard Rust toolchain; the
-version is pinned in `rust-toolchain.toml`.
+a Flatpak.
+
+### Flatpak
 
 ```sh
-cargo build --workspace
-cargo test --workspace
+flatpak install --user flathub org.gnome.Sdk//49 \
+    org.freedesktop.Sdk.Extension.rust-stable//25.08 org.flatpak.Builder
+flatpak run org.flatpak.Builder --user --install --force-clean \
+    _build build-aux/io.github.gdfekaris.MyLongboxDB.yml
+flatpak run io.github.gdfekaris.MyLongboxDB
 ```
 
-The GUI and image crates link against GTK4, libadwaita, libheif, and
-lcms2 from the GNOME 49 SDK rather than the host system. To build and test
-them, run Cargo inside the SDK with the pinned toolchain:
+The build is fully offline: every crate is listed with its checksum in
+`build-aux/cargo-sources.json`, which is generated from `Cargo.lock` by
+[flatpak-cargo-generator](https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo)
+and must be regenerated whenever the lockfile changes.
+
+### Development
+
+The Rust version is pinned in `rust-toolchain.toml`. The crates without
+GUI or image code build with a standard toolchain:
 
 ```sh
-flatpak install --user flathub org.gnome.Sdk//49
+cargo test -p mylongbox-core -p mylongbox-sandbox
+```
 
+The app links against GTK4, libadwaita, libheif, and lcms2 from the
+GNOME 49 SDK rather than the host system. To build and test everything,
+run Cargo inside the SDK with the pinned toolchain:
+
+```sh
 # Download crates on the host; the SDK shell below has no network.
 cargo fetch
 
@@ -49,14 +65,21 @@ its authors:
 - **No networking code.** `deny.toml` bans HTTP, socket, and TLS crates
   and any dependency from outside crates.io. Verify with
   `cargo deny check`.
-- **No running other programs.** `std::process` is banned through
-  `clippy.toml`. Verify with
-  `cargo clippy --workspace --all-targets -- -D warnings`.
+- **No running other programs.** `std::process`, GLib's spawn
+  functions, GIO subprocesses, and GTK's URI and file launchers are
+  banned through `clippy.toml`. Verify with
+  `sdk cargo clippy --workspace --all-targets -- -D warnings`.
 - **No `unsafe` code** outside the small `mylongbox-sandbox` crate.
   Every other crate declares `#![forbid(unsafe_code)]`.
 
-The Flatpak sandbox permissions and runtime self-restrictions will be
-documented here, with verification steps, as they land.
+- **No network or file access from the sandbox.** The Flatpak manifest
+  grants exactly `--socket=wayland`, `--socket=fallback-x11`,
+  `--share=ipc`, and `--device=dri`: no network, and no access to your
+  home folder or the host filesystem. Verify with
+  `flatpak info --show-permissions io.github.gdfekaris.MyLongboxDB`.
+
+The runtime self-restrictions will be documented here, with verification
+steps, as they land.
 
 ## Reporting vulnerabilities
 
