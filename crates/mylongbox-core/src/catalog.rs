@@ -652,7 +652,7 @@ fn series_label(series: &Series) -> String {
     }
 }
 
-fn issue_label(series: &Series, issue: &Issue) -> String {
+pub(crate) fn issue_label(series: &Series, issue: &Issue) -> String {
     let series = series_label(series);
     match (&issue.fields.number, issue.fields.title.as_str()) {
         (Some(number), _) => format!("{series} #{number}"),

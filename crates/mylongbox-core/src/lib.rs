@@ -5,6 +5,9 @@
 mod catalog;
 #[cfg(test)]
 mod catalog_tests;
+mod collects;
+#[cfg(test)]
+mod collects_tests;
 mod collects_text;
 mod date;
 mod db;
@@ -20,6 +23,7 @@ mod money;
 #[cfg(test)]
 mod schema_tests;
 
+pub use collects::{CollectedIn, CollectedIssue, Ownership, PreviewEntry};
 pub use collects_text::{
     CollectsEntry, MAX_ENTRIES, MAX_RANGE, SeriesRef, format_collects, parse_collects,
 };
