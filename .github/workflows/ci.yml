@@ -48,6 +48,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Let the sandbox write to the checkout
+        # Root inside the Flatpak sandbox has no capability to write to
+        # files owned by the runner user, so Cargo could not create its
+        # build and cache directories.
+        run: chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       - name: Install the Rust SDK extension
         run: flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.rust-stable//25.08
       - name: Define the SDK shell
@@ -94,7 +99,18 @@ jobs:
       - name: Permissions are exactly Wayland, X11 fallback, IPC, and DRI
         shell: bash
         run: |
+          # Sort keys and the values within each key, so only the set of
+          # permissions matters, not the order flatpak prints them in.
+          normalize() {
+              sed '/^$/d' | while IFS= read -r line; do
+                  case $line in
+                      *=*) printf '%s=%s\n' "${line%%=*}" \
+                          "$(printf '%s' "${line#*=}" | tr ';' '\n' | sed '/^$/d' | sort | paste -sd';')" ;;
+                      *) printf '%s\n' "$line" ;;
+                  esac
+              done | sort
+          }
           flatpak install -y --noninteractive --user --bundle mylongboxdb.flatpak
-          flatpak info --user --show-permissions "$APP_ID" | sed '/^$/d' > actual
-          printf '%s\n' '[Context]' 'shared=ipc;' 'sockets=wayland;fallback-x11;' 'devices=dri;' > expected
+          flatpak info --user --show-permissions "$APP_ID" | normalize > actual
+          printf '%s\n' '[Context]' 'shared=ipc;' 'sockets=wayland;fallback-x11;' 'devices=dri;' | normalize > expected
           diff -u expected actual
