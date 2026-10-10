@@ -1,0 +1,38 @@
+id: io.github.gdfekaris.MyLongboxDB
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: mylongboxdb
+# The complete permission set. No network, no home or host filesystem
+# access; files are reached only through the file chooser portal.
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+modules:
+  - name: mylongboxdb
+    buildsystem: simple
+    build-options:
+      env:
+        CARGO_HOME: /run/build/mylongboxdb/cargo
+        CARGO_NET_OFFLINE: 'true'
+    build-commands:
+      - cargo --offline build --release --locked -p mylongbox-app
+      - install -Dm755 target/release/mylongboxdb -t /app/bin/
+      - install -Dm644 data/io.github.gdfekaris.MyLongboxDB.desktop -t /app/share/applications/
+      - install -Dm644 data/icons/hicolor/scalable/apps/io.github.gdfekaris.MyLongboxDB.svg
+        -t /app/share/icons/hicolor/scalable/apps/
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - target
+          - .flatpak-builder
+          - _build
+          - repo
+      - cargo-sources.json

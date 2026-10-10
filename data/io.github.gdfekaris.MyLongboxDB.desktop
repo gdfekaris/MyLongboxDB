@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=MyLongboxDB
+Comment=Catalog and search your comic book collection
+Exec=mylongboxdb
+Icon=io.github.gdfekaris.MyLongboxDB
+Terminal=false
+Type=Application
+Categories=Office;Database;
+Keywords=comics;comic books;magazines;collection;catalog;
+StartupNotify=true
