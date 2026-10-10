@@ -1,0 +1,19 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $MainWindow: Adw.ApplicationWindow {
+  title: "MyLongboxDB";
+  default-width: 1000;
+  default-height: 700;
+
+  content: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {}
+
+    content: Adw.StatusPage {
+      icon-name: "io.github.gdfekaris.MyLongboxDB";
+      title: "MyLongboxDB";
+      description: "Your collection will appear here.";
+    };
+  };
+}
