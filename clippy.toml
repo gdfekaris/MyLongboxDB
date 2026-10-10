@@ -1,0 +1,9 @@
+# The app never runs external programs.
+disallowed-methods = [
+    { path = "std::process::Command::new", reason = "the app must not run external programs" },
+    { path = "std::os::unix::process::CommandExt::exec", reason = "the app must not run external programs" },
+]
+disallowed-types = [
+    { path = "std::process::Command", reason = "the app must not run external programs" },
+    { path = "std::process::Child", reason = "the app must not run external programs" },
+]

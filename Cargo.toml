@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/gdfekaris/MyLongboxDB"
+publish = false
+
+[workspace.lints.clippy]
+# Running other programs is banned; the paths live in clippy.toml.
+disallowed_methods = "deny"
+disallowed_types = "deny"

@@ -1,0 +1,80 @@
+# Supply-chain policy. CI fails if any rule here is violated.
+
+[graph]
+targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+all-features = true
+
+[advisories]
+yanked = "deny"
+
+[licenses]
+confidence-threshold = 0.9
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+]
+unused-allowed-license = "allow"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# The app never touches the network. None of these may appear anywhere in
+# the dependency graph, directly or transitively.
+deny = [
+    # HTTP clients and servers
+    { name = "reqwest" },
+    { name = "hyper" },
+    { name = "hyper-util" },
+    { name = "h2" },
+    { name = "h3" },
+    { name = "ureq" },
+    { name = "curl" },
+    { name = "curl-sys" },
+    { name = "isahc" },
+    { name = "attohttpc" },
+    { name = "surf" },
+    { name = "http-client" },
+    { name = "awc" },
+    { name = "actix-web" },
+    { name = "axum" },
+    { name = "warp" },
+    { name = "tiny_http" },
+    # WebSockets
+    { name = "tungstenite" },
+    { name = "tokio-tungstenite" },
+    { name = "async-tungstenite" },
+    # Sockets, DNS, QUIC
+    { name = "socket2" },
+    { name = "quinn" },
+    { name = "trust-dns-resolver" },
+    { name = "hickory-resolver" },
+    { name = "hickory-proto" },
+    # TLS
+    { name = "rustls" },
+    { name = "native-tls" },
+    { name = "openssl" },
+    { name = "openssl-sys" },
+    { name = "tokio-rustls" },
+    { name = "tokio-native-tls" },
+    { name = "hyper-tls" },
+    { name = "hyper-rustls" },
+    # Network-capable VCS and SSH
+    { name = "git2" },
+    { name = "ssh2" },
+    { name = "libssh2-sys" },
+]
+# Relm4 pulls in tokio for its async runtime; its networking must stay off.
+features = [
+    { name = "tokio", deny = ["net", "full"] },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
