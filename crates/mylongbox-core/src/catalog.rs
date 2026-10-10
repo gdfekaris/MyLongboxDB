@@ -624,7 +624,7 @@ impl Database {
     }
 }
 
-fn live(trash: Option<TrashId>) -> Result<()> {
+pub(crate) fn live(trash: Option<TrashId>) -> Result<()> {
     match trash {
         None => Ok(()),
         Some(_) => Err(Error::InTrash),

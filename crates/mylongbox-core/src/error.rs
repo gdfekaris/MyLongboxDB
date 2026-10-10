@@ -34,6 +34,17 @@ pub enum Error {
     ParentInTrash {
         parent: String,
     },
+    /// Another entry in the same list already has this name, either as
+    /// its name or as one of its alternate names.
+    NameTaken {
+        name: String,
+        existing: String,
+    },
+    /// The entry is still linked from this many places, which may include
+    /// items in Trash; merge it or remove the links first.
+    InUse {
+        uses: u64,
+    },
     /// An issue cannot be deleted for good while a collected edition that
     /// is not being deleted with it still lists it as reprinted.
     StillReprinted {
@@ -68,6 +79,22 @@ impl fmt::Display for Error {
             Self::ParentInTrash { parent } => {
                 write!(f, "restore \u{201c}{parent}\u{201d} from Trash first")
             }
+            Self::NameTaken { name, existing } => {
+                if name.eq_ignore_ascii_case(existing) {
+                    write!(f, "\u{201c}{existing}\u{201d} already exists")
+                } else {
+                    write!(
+                        f,
+                        "\u{201c}{name}\u{201d} is already a name for \u{201c}{existing}\u{201d}"
+                    )
+                }
+            }
+            Self::InUse { uses } => write!(
+                f,
+                "still used in {uses} place{}, which may include items in Trash; \
+                 merge it into another entry instead",
+                if *uses == 1 { "" } else { "s" }
+            ),
             Self::StillReprinted { issue, collection } => write!(
                 f,
                 "{issue} cannot be deleted for good because {collection} reprints it; \

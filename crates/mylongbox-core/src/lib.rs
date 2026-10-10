@@ -9,6 +9,10 @@ mod date;
 mod db;
 mod error;
 mod issue_number;
+mod links;
+mod lookup;
+#[cfg(test)]
+mod lookup_tests;
 mod migrate;
 mod model;
 mod money;
@@ -19,10 +23,13 @@ pub use date::{Date, DateError};
 pub use db::{APPLICATION_ID, Database};
 pub use error::{Error, Result};
 pub use issue_number::{IssueNumber, IssueNumberError};
+pub use links::{Appearance, ArcPart, Credit, Named};
+pub use lookup::{Lookup, LookupId};
 pub use model::{
-    Binding, BookCondition, BoxId, Category, Copy, CopyFields, CopyId, CoverDate, Distribution,
-    Edition, EditionFields, EditionId, Grade, GradeType, Isbn, Issue, IssueFields, IssueId,
-    MagazineFormat, PublisherId, RowUuid, Series, SeriesFields, SeriesId, TrashGroup, TrashId,
+    Binding, BookCondition, BoxId, Category, CharacterId, Copy, CopyFields, CopyId, CoverDate,
+    CreatorId, Distribution, Edition, EditionFields, EditionId, Grade, GradeType, Isbn, Issue,
+    IssueFields, IssueId, MagazineFormat, PublisherId, Role, RowUuid, Series, SeriesFields,
+    SeriesId, StoryArcId, TagId, TeamId, TrashGroup, TrashId,
 };
 pub use money::{
     Amount, ConversionError, Currency, ExchangeRate, ParseAmountError, RateError, RateTable,

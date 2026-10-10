@@ -36,6 +36,11 @@ id_type! {
     EditionId;
     CopyId;
     BoxId;
+    CreatorId;
+    CharacterId;
+    TeamId;
+    StoryArcId;
+    TagId;
     /// A group of rows moved to Trash together.
     TrashId;
 }
@@ -128,6 +133,23 @@ code_enum! {
         Cgc = "cgc",
         Cbcs = "cbcs",
         Pgx = "pgx",
+    }
+}
+
+code_enum! {
+    /// What a creator did on an issue. Listed in the order credits show.
+    pub enum Role {
+        Writer = "writer",
+        Penciller = "penciller",
+        Inker = "inker",
+        Colorist = "colorist",
+        Letterer = "letterer",
+        CoverArtist = "cover_artist",
+        Editor = "editor",
+        /// Magazines: wrote an article.
+        Article = "article",
+        /// Magazines: gave or conducted an interview.
+        Interview = "interview",
     }
 }
 
