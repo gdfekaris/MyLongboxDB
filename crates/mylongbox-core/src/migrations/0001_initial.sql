@@ -299,7 +299,10 @@ CREATE INDEX copy_tag_tag ON copy_tag (tag_id);
 -- issues are ordinary catalog issues, owned or not.
 CREATE TABLE collects (
     collection_issue_id INTEGER NOT NULL REFERENCES issue (id) ON DELETE CASCADE,
-    collected_issue_id INTEGER NOT NULL REFERENCES issue (id) ON DELETE RESTRICT,
+    -- NO ACTION rather than RESTRICT: SQLite checks it once the whole
+    -- statement is done, so emptying Trash may delete a collected edition
+    -- together with an issue it reprints, but never the issue alone.
+    collected_issue_id INTEGER NOT NULL REFERENCES issue (id) ON DELETE NO ACTION,
     position INTEGER NOT NULL CHECK (position >= 1),
     PRIMARY KEY (collection_issue_id, collected_issue_id),
     CHECK (collection_issue_id <> collected_issue_id)

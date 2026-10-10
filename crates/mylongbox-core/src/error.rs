@@ -19,6 +19,27 @@ pub enum Error {
     /// The file's tables, indexes, or triggers differ from what this
     /// version of MyLongboxDB creates, so it may have been tampered with.
     UnexpectedSchema,
+    /// The requested row does not exist.
+    NotFound,
+    /// The row, or the row it would be added to, is in Trash.
+    InTrash,
+    /// A value was refused before writing; the text says which and why.
+    Invalid(String),
+    /// The series already has a live issue with this number.
+    DuplicateIssueNumber {
+        number: String,
+    },
+    /// Restoring would put something back under a parent that is still in
+    /// Trash; restore the parent's group first.
+    ParentInTrash {
+        parent: String,
+    },
+    /// An issue cannot be deleted for good while a collected edition that
+    /// is not being deleted with it still lists it as reprinted.
+    StillReprinted {
+        issue: String,
+        collection: String,
+    },
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -37,6 +58,20 @@ impl fmt::Display for Error {
             Self::UnexpectedSchema => f.write_str(
                 "this collection's structure has been changed outside MyLongboxDB, \
                  so it will not be opened",
+            ),
+            Self::NotFound => f.write_str("that item no longer exists"),
+            Self::InTrash => f.write_str("that item is in Trash; restore it first"),
+            Self::Invalid(why) => f.write_str(why),
+            Self::DuplicateIssueNumber { number } => {
+                write!(f, "this series already has an issue numbered {number}")
+            }
+            Self::ParentInTrash { parent } => {
+                write!(f, "restore \u{201c}{parent}\u{201d} from Trash first")
+            }
+            Self::StillReprinted { issue, collection } => write!(
+                f,
+                "{issue} cannot be deleted for good because {collection} reprints it; \
+                 remove it from that book's contents or delete the book too"
             ),
         }
     }
