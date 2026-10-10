@@ -8,6 +8,8 @@ mod error;
 mod issue_number;
 mod migrate;
 mod money;
+#[cfg(test)]
+mod schema_tests;
 
 pub use date::{Date, DateError};
 pub use db::{APPLICATION_ID, Database};
