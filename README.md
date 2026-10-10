@@ -18,6 +18,29 @@ cargo build --workspace
 cargo test --workspace
 ```
 
+The GUI and image crates link against GTK4, libadwaita, libheif, and
+lcms2 from the GNOME 49 SDK rather than the host system. To build and test
+them, run Cargo inside the SDK with the pinned toolchain:
+
+```sh
+flatpak install --user flathub org.gnome.Sdk//49
+
+# Download crates on the host; the SDK shell below has no network.
+cargo fetch
+
+sdk() {
+    flatpak run --socket=wayland --socket=fallback-x11 --device=dri \
+        --filesystem="$PWD" --filesystem=~/.cargo --filesystem=~/.rustup \
+        --env=PATH="$HOME/.cargo/bin:/usr/bin:/bin" \
+        --env=CARGO_HOME="$HOME/.cargo" --env=RUSTUP_HOME="$HOME/.rustup" \
+        --env=CARGO_TARGET_DIR="$PWD/target/sdk" --env=CARGO_NET_OFFLINE=true \
+        --cwd="$PWD" --command=sh org.gnome.Sdk//49 -c "$*"
+}
+
+sdk cargo clippy --workspace --all-targets --all-features -- -D warnings
+sdk cargo test --workspace
+```
+
 ## Security model
 
 The app is designed so that each claim can be checked without trusting
