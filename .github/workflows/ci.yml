@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_ID: io.github.gdfekaris.MyLongboxDB
+
+jobs:
+  policy:
+    name: Format, supply chain, core tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - name: Install cargo-deny and cargo-audit
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-deny,cargo-audit
+      - run: cargo fmt --all --check
+      - run: cargo deny check
+      - run: cargo audit
+      - name: Test crates that need no GTK
+        run: cargo test --locked -p mylongbox-core -p mylongbox-sandbox
+
+  sdk:
+    name: Clippy and tests in the GNOME SDK
+    runs-on: ubuntu-24.04
+    # The image is pinned by digest so the build environment only changes
+    # on purpose.
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-49@sha256:8a05aca51163a81259cc011302cc5121779c89b8b16f2819cc3fd06817d136e7
+      options: --privileged
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the Rust SDK extension
+        run: flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.rust-stable//25.08
+      - name: Define the SDK shell
+        run: |
+          cat > "$RUNNER_TEMP/sdk.sh" <<'SH'
+          sdk() {
+              FLATPAK_ENABLE_SDK_EXT=rust-stable flatpak run --share=network \
+                  --filesystem="$GITHUB_WORKSPACE" --cwd="$GITHUB_WORKSPACE" \
+                  --env=PATH=/usr/lib/sdk/rust-stable/bin:/usr/bin:/bin \
+                  --env=CARGO_HOME="$GITHUB_WORKSPACE/.cargo-ci" \
+                  --command=sh org.gnome.Sdk//49 -c "$*"
+          }
+          SH
+          echo "BASH_ENV=$RUNNER_TEMP/sdk.sh" >> "$GITHUB_ENV"
+      - name: Check the SDK toolchain matches rust-toolchain.toml
+        shell: bash
+        run: |
+          pinned=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          actual=$(sdk rustc --version | cut -d' ' -f2)
+          echo "pinned $pinned, SDK $actual"
+          test "$pinned" = "$actual"
+      - name: Clippy
+        shell: bash
+        run: sdk cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Test
+        shell: bash
+        run: sdk cargo test --locked --workspace
+
+  flatpak:
+    name: Flatpak build and permissions
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-49@sha256:8a05aca51163a81259cc011302cc5121779c89b8b16f2819cc3fd06817d136e7
+      options: --privileged
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6.8
+        with:
+          manifest-path: build-aux/io.github.gdfekaris.MyLongboxDB.yml
+          bundle: mylongboxdb.flatpak
+          cache-key: flatpak-builder-${{ hashFiles('build-aux/**', 'Cargo.lock') }}
+      - name: Permissions are exactly Wayland, X11 fallback, IPC, and DRI
+        shell: bash
+        run: |
+          flatpak install -y --noninteractive --user --bundle mylongboxdb.flatpak
+          flatpak info --user --show-permissions "$APP_ID" | sed '/^$/d' > actual
+          printf '%s\n' '[Context]' 'shared=ipc;' 'sockets=wayland;fallback-x11;' 'devices=dri;' > expected
+          diff -u expected actual
