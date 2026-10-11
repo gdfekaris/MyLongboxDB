@@ -14,3 +14,14 @@ publish = false
 # Running other programs is banned; the paths live in clippy.toml.
 disallowed_methods = "deny"
 disallowed_types = "deny"
+
+# Photos are resized and converted in loops that run far too slowly
+# unoptimized, which would make tests and debug builds crawl.
+[profile.dev.package.mylongbox-media]
+opt-level = 2
+
+[profile.dev.package.image]
+opt-level = 2
+
+[profile.dev.package.moxcms]
+opt-level = 2
