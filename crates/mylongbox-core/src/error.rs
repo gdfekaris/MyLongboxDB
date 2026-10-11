@@ -5,6 +5,12 @@ use std::fmt;
 #[non_exhaustive]
 pub enum Error {
     Sqlite(rusqlite::Error),
+    /// Reading or writing a file failed.
+    Io(std::io::Error),
+    /// The collection is already open in another window or process.
+    Locked,
+    /// SQLite's integrity check found damage in the file.
+    Damaged,
     /// The file is not a MyLongboxDB collection: it is not a SQLite
     /// database, or it is one that belongs to another application.
     NotACollection,
@@ -59,6 +65,9 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Sqlite(e) => write!(f, "database error: {e}"),
+            Self::Io(e) => write!(f, "file error: {e}"),
+            Self::Locked => f.write_str("this collection is already open in another window"),
+            Self::Damaged => f.write_str("this collection file is damaged"),
             Self::NotACollection => f.write_str("this file is not a MyLongboxDB collection"),
             Self::NewerSchema { found, supported } => write!(
                 f,
@@ -108,6 +117,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Sqlite(e) => Some(e),
+            Self::Io(e) => Some(e),
             _ => None,
         }
     }
@@ -115,10 +125,18 @@ impl std::error::Error for Error {
 
 impl From<rusqlite::Error> for Error {
     fn from(e: rusqlite::Error) -> Self {
-        if e.sqlite_error_code() == Some(rusqlite::ErrorCode::NotADatabase) {
-            Self::NotACollection
-        } else {
-            Self::Sqlite(e)
+        match e.sqlite_error_code() {
+            Some(rusqlite::ErrorCode::NotADatabase) => Self::NotACollection,
+            // The only other holder of a lock is another open window.
+            Some(rusqlite::ErrorCode::DatabaseBusy) => Self::Locked,
+            Some(rusqlite::ErrorCode::DatabaseCorrupt) => Self::Damaged,
+            _ => Self::Sqlite(e),
         }
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
     }
 }

@@ -27,6 +27,7 @@ mod model;
 mod money;
 #[cfg(test)]
 mod schema_tests;
+mod store;
 
 pub use collects::{CollectedIn, CollectedIssue, Ownership, PreviewEntry};
 pub use collects_text::{
@@ -49,3 +50,4 @@ pub use money::{
     Amount, ConversionError, Currency, ExchangeRate, ParseAmountError, RateError, RateTable,
     STALE_AFTER_DAYS,
 };
+pub use store::{CollectionInfo, CollectionStore, MAX_NAME};

@@ -35,7 +35,45 @@ impl Database {
             | OpenFlags::SQLITE_OPEN_CREATE
             | OpenFlags::SQLITE_OPEN_NO_MUTEX
             | OpenFlags::SQLITE_OPEN_NOFOLLOW;
-        Self::init(Connection::open_with_flags(path, flags)?)
+        let conn = Connection::open_with_flags(path, flags)?;
+        // rusqlite waits up to five seconds for a lock by default. Only
+        // another open window can hold one, so say so straight away.
+        conn.busy_timeout(std::time::Duration::ZERO)?;
+        // Hold the file's lock for as long as it is open, so a second
+        // window or process cannot write to it at the same time.
+        conn.pragma_update(None, "locking_mode", "EXCLUSIVE")?;
+        let db = Self::init(conn)?;
+        db.conn.execute_batch("BEGIN EXCLUSIVE; COMMIT;")?;
+        Ok(db)
+    }
+
+    /// Runs SQLite's quick integrity check over the whole file.
+    pub fn quick_check(&self) -> Result<()> {
+        let result: String = self
+            .conn
+            .query_row("PRAGMA quick_check", [], |row| row.get(0))?;
+        if result == "ok" {
+            Ok(())
+        } else {
+            Err(Error::Damaged)
+        }
+    }
+
+    /// Writes a consistent copy of the open collection to `dest`, which
+    /// must not exist yet. Works while the collection is in use.
+    pub fn write_copy(&self, dest: &Path) -> Result<()> {
+        let dest = std::path::absolute(dest).map_err(Error::Io)?;
+        if dest.exists() {
+            return Err(Error::Io(std::io::Error::from(
+                std::io::ErrorKind::AlreadyExists,
+            )));
+        }
+        self.conn
+            .backup(rusqlite::MAIN_DB, &dest, None)
+            .inspect_err(|_| {
+                let _ = std::fs::remove_file(&dest);
+            })?;
+        Ok(())
     }
 
     /// Opens a new, empty collection held only in memory.
