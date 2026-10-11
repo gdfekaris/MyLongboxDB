@@ -194,6 +194,10 @@ impl CollectionStore {
             fs::copy(source, &staging)?;
             let db = Database::open(&staging)?;
             db.quick_check()?;
+            // The search index is derived data; it is rebuilt rather than
+            // trusted, since a file from elsewhere may carry one crafted
+            // not to match its tables or to trip up the index's reader.
+            db.rebuild_search_index()?;
             Ok(())
         })();
         if let Err(e) = checked {
@@ -436,6 +440,47 @@ mod tests {
         let copy = store.open("backup").unwrap();
         assert_eq!(copy.list_series().unwrap()[0].fields.name, "Zot!");
         assert!(outside.exists(), "the source is never changed or removed");
+    }
+
+    #[test]
+    fn imports_rebuild_the_search_index() {
+        let dir = TempDir::new();
+        let store = store(&dir);
+        store.create("Comics").unwrap();
+        let db = store.open("Comics").unwrap();
+        db.create_series(&crate::SeriesFields::new("Zot!", crate::Category::Comic))
+            .unwrap();
+        // A file from elsewhere whose index finds something its tables
+        // do not hold, and has lost what they do.
+        db.conn
+            .execute_batch(
+                "INSERT INTO search_text (search_text) VALUES ('delete-all');
+                 INSERT INTO search_text (rowid, text) VALUES (999, 'planted')",
+            )
+            .unwrap();
+        let outside = dir.0.join("odd.sqlite");
+        store.export(&db, &outside).unwrap();
+        drop(db);
+        store.import(&outside).unwrap();
+        let imported = store.open("odd").unwrap();
+        let indexed: Vec<String> = crate::catalog::query_all(
+            &imported.conn,
+            "SELECT s.text FROM search_text f JOIN search_source s ON s.id = f.rowid
+             WHERE search_text MATCH ?1",
+            ["zot"],
+            |r| r.get(0),
+        )
+        .unwrap();
+        assert_eq!(indexed, ["Zot!"]);
+        let planted: i64 = imported
+            .conn
+            .query_row(
+                "SELECT count(*) FROM search_text WHERE search_text MATCH 'planted'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(planted, 0);
     }
 
     #[test]
