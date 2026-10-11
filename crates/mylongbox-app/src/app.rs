@@ -16,7 +16,7 @@ use crate::books::{self, Book, Name};
 use crate::form::{Focus, Form, Hooks};
 use crate::issue_page::{self, Links};
 use crate::window::MainWindow;
-use crate::{bulk_dialog, format, trash_page};
+use crate::{bulk_dialog, format, prompt, trash_page};
 
 /// What a sidebar section shows.
 #[derive(Clone, Copy)]
@@ -215,6 +215,13 @@ pub enum AppMsg {
     AddValue(CopyId),
     SaveValue(CopyId, Date, Amount, String),
     DeleteValue(CopyId, ValueEntry),
+    RenameEntry,
+    EntryAliases,
+    MergeEntry,
+    ConfirmDeleteEntry,
+    DoRename(String),
+    DoMerge(String),
+    DoDeleteEntry,
     Selecting(bool),
     SelectionChanged,
     /// Ask what to change on the selected copies.
@@ -304,6 +311,12 @@ impl Component for App {
                 .connect_active_notify(move |t| sender.input(AppMsg::Selecting(t.is_active())));
         }
         add_action(&root, "bulk-edit", &sender, || AppMsg::BulkEdit);
+        add_action(&root, "rename-entry", &sender, || AppMsg::RenameEntry);
+        add_action(&root, "entry-aliases", &sender, || AppMsg::EntryAliases);
+        add_action(&root, "merge-entry", &sender, || AppMsg::MergeEntry);
+        add_action(&root, "delete-entry", &sender, || {
+            AppMsg::ConfirmDeleteEntry
+        });
         add_action(&root, "trash-selected", &sender, || AppMsg::TrashSelected);
         relm4::main_application().set_accels_for_action("win.trash-selected", &["Delete"]);
         table.view.add_css_class("data-table");
@@ -486,6 +499,143 @@ impl Component for App {
                     Err(why) => root.toast(&format!("Could not delete the value: {why}")),
                 }
             }
+            AppMsg::RenameEntry => {
+                if let Some(entry) = &self.shelf {
+                    let initial = rename_text(entry);
+                    let s = sender.clone();
+                    prompt::ask_text(
+                        root,
+                        prompt::Ask {
+                            heading: "Rename",
+                            body: "The new name shows everywhere this one is used.",
+                            field: "Name",
+                            initial: &initial,
+                            action: "_Rename",
+                            suggest: None,
+                        },
+                        move |name| s.input(AppMsg::DoRename(name)),
+                    );
+                }
+            }
+            AppMsg::DoRename(name) => {
+                let Some(shelf) = self.shelf.as_ref().map(|e| e.shelf) else {
+                    return;
+                };
+                match self.with_db(|db| db.rename_shelf(shelf, &name)) {
+                    Ok(()) => self.show_entry(shelf, root),
+                    Err(why) => root.toast(&format!("Could not rename: {why}")),
+                }
+            }
+            AppMsg::EntryAliases => {
+                let (Some(entry), Some((_, db))) = (&self.shelf, &self.open) else {
+                    return;
+                };
+                let shelf = entry.shelf;
+                match db.shelf_aliases(shelf) {
+                    Ok(current) => {
+                        let (add_db, remove_db) = (Rc::downgrade(db), Rc::downgrade(db));
+                        let hooks = prompt::AliasHooks {
+                            add: Box::new(move |alias| match add_db.upgrade() {
+                                Some(db) => db
+                                    .add_shelf_alias(shelf, alias)
+                                    .map_err(|e| capitalized(&e.to_string())),
+                                None => Err("The collection is closed".into()),
+                            }),
+                            remove: Box::new(move |alias| match remove_db.upgrade() {
+                                Some(db) => db
+                                    .remove_shelf_alias(shelf, alias)
+                                    .map_err(|e| capitalized(&e.to_string())),
+                                None => Err("The collection is closed".into()),
+                            }),
+                        };
+                        prompt::alternate_names(root, &entry.name, current, hooks);
+                    }
+                    Err(why) => root.toast(&why.to_string()),
+                }
+            }
+            AppMsg::MergeEntry => {
+                let (Some(entry), Some((_, db))) = (&self.shelf, &self.open) else {
+                    return;
+                };
+                let shelf = entry.shelf;
+                let weak = Rc::downgrade(db);
+                let suggest: prompt::Suggest = Rc::new(move |text| {
+                    weak.upgrade()
+                        .and_then(|db| db.shelf_suggestions(shelf, text).ok())
+                        .unwrap_or_default()
+                });
+                let s = sender.clone();
+                let body = format!(
+                    "Everything listed under \u{201c}{}\u{201d} moves to the entry you choose. Its name is kept as an alternate name where the list has them.",
+                    entry.name
+                );
+                prompt::ask_text(
+                    root,
+                    prompt::Ask {
+                        heading: "Merge Into",
+                        body: &body,
+                        field: "Merge Into",
+                        initial: "",
+                        action: "_Merge",
+                        suggest: Some(suggest),
+                    },
+                    move |into| s.input(AppMsg::DoMerge(into)),
+                );
+            }
+            AppMsg::DoMerge(into) => {
+                let Some(shelf) = self.shelf.as_ref().map(|e| e.shelf) else {
+                    return;
+                };
+                match self.with_db(|db| db.merge_shelf(shelf, &into)) {
+                    Ok(kept) => {
+                        self.show_entry(kept, root);
+                        root.toast("Merged");
+                    }
+                    Err(why) => root.toast(&format!("Could not merge: {why}")),
+                }
+            }
+            AppMsg::ConfirmDeleteEntry => {
+                if let Some(entry) = &self.shelf {
+                    let body = match entry.shelf {
+                        Shelf::Series(_) => format!(
+                            "\u{201c}{}\u{201d} and every book in it move to Trash.",
+                            entry.name
+                        ),
+                        _ => format!(
+                            "\u{201c}{}\u{201d} will be deleted. A name still in use cannot be deleted; merge it into another instead.",
+                            entry.name
+                        ),
+                    };
+                    let action = match entry.shelf {
+                        Shelf::Series(_) => "_Move to Trash",
+                        _ => "_Delete",
+                    };
+                    confirm(root, "Delete?", &body, action, &sender, || {
+                        AppMsg::DoDeleteEntry
+                    });
+                }
+            }
+            AppMsg::DoDeleteEntry => {
+                let Some(shelf) = self.shelf.as_ref().map(|e| e.shelf) else {
+                    return;
+                };
+                match self.with_db(|db| db.delete_shelf(shelf)) {
+                    Ok(trash) => {
+                        self.shelf = None;
+                        self.show(root);
+                        match trash {
+                            Some(trash) => {
+                                let undo = sender.clone();
+                                root.toast_undo("Moved to Trash", move || {
+                                    undo.input(AppMsg::Restore(trash));
+                                });
+                            }
+                            None => root.toast("Deleted"),
+                        }
+                    }
+                    Err(why) => root.toast(&format!("Could not delete: {why}")),
+                }
+            }
             AppMsg::Selecting(on) => {
                 self.selecting = on;
                 for view in [
@@ -622,6 +772,25 @@ impl Component for App {
 impl App {
     fn store(&self) -> Result<&CollectionStore, String> {
         self.store.as_ref().map_err(Clone::clone)
+    }
+
+    /// Shows the shelf of `shelf` afresh, after its entry was renamed or
+    /// another was merged into it, so its name and books are current.
+    fn show_entry(&mut self, shelf: Shelf, root: &MainWindow) {
+        let Content::Names(list, _, _) = self.section.content else {
+            return;
+        };
+        let entry = self
+            .with_db(|db| db.shelf_list(list))
+            .ok()
+            .and_then(|entries| entries.into_iter().find(|e| e.shelf == shelf));
+        // The names list is reloaded too, so Back shows the new name.
+        self.shelf = None;
+        self.show(root);
+        if let Some(entry) = entry {
+            self.shelf = Some(entry);
+            self.show(root);
+        }
     }
 
     /// The copies selected in the view showing, in the order shown.
@@ -897,6 +1066,16 @@ impl App {
             None => root.set_location(collection, self.section.name, collection),
         }
         root.set_back_visible(self.shelf.is_some());
+        // Only some lists keep alternate names.
+        if let Some(action) = root.lookup_action("entry-aliases")
+            && let Ok(action) = action.downcast::<gio::SimpleAction>()
+        {
+            action.set_enabled(
+                self.shelf
+                    .as_ref()
+                    .is_some_and(|e| Database::shelf_has_aliases(e.shelf)),
+            );
+        }
     }
 
     fn load(&mut self, root: &MainWindow) -> mylongbox_core::Result<()> {
@@ -1195,4 +1374,25 @@ fn confirm_discard(root: &MainWindow, sender: &ComponentSender<App>) {
             sender.input(AppMsg::FormClose);
         }
     });
+}
+
+/// The name to start renaming from: a series without the year its
+/// listing adds.
+fn rename_text(entry: &ShelfEntry) -> String {
+    match entry.shelf {
+        Shelf::Series(_) => entry
+            .name
+            .rsplit_once(" (")
+            .filter(|(_, year)| year.len() == 5 && year.ends_with(')'))
+            .map_or(entry.name.clone(), |(name, _)| name.to_owned()),
+        _ => entry.name.clone(),
+    }
+}
+
+fn capitalized(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
 }

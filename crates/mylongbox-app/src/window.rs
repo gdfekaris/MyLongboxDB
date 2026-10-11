@@ -37,6 +37,8 @@ mod imp {
         #[template_child]
         pub select_toggle: TemplateChild<gtk::ToggleButton>,
         #[template_child]
+        pub entry_menu_button: TemplateChild<gtk::MenuButton>,
+        #[template_child]
         pub selection_bar: TemplateChild<gtk::ActionBar>,
         #[template_child]
         pub selection_label: TemplateChild<gtk::Label>,
@@ -164,6 +166,8 @@ impl MainWindow {
     pub fn set_back_visible(&self, visible: bool) {
         let imp = self.imp();
         imp.back_button.set_visible(visible);
+        // A shelf names one entry, which its menu can rename or merge.
+        imp.entry_menu_button.set_visible(visible);
         imp.content_header.set_show_back_button(!visible);
     }
 

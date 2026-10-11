@@ -39,6 +39,9 @@ mod model;
 mod money;
 #[cfg(test)]
 mod schema_tests;
+mod shelf_ops;
+#[cfg(test)]
+mod shelf_ops_tests;
 mod store;
 mod values;
 

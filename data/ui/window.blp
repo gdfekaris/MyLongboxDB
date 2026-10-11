@@ -126,6 +126,14 @@ template $MainWindow: Adw.ApplicationWindow {
                     }
 
                     [end]
+                    MenuButton entry_menu_button {
+                      icon-name: "view-more-symbolic";
+                      tooltip-text: _("Manage This Entry");
+                      menu-model: entry_menu;
+                      visible: false;
+                    }
+
+                    [end]
                     ToggleButton select_toggle {
                       icon-name: "selection-mode-symbolic";
                       tooltip-text: _("Select");
@@ -224,6 +232,32 @@ template $MainWindow: Adw.ApplicationWindow {
       }
     };
   };
+}
+
+menu entry_menu {
+  section {
+    item {
+      label: _("_Rename…");
+      action: "win.rename-entry";
+    }
+
+    item {
+      label: _("_Alternate Names…");
+      action: "win.entry-aliases";
+    }
+
+    item {
+      label: _("_Merge Into…");
+      action: "win.merge-entry";
+    }
+  }
+
+  section {
+    item {
+      label: _("_Delete…");
+      action: "win.delete-entry";
+    }
+  }
 }
 
 menu add_menu {
