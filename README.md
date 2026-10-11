@@ -30,10 +30,10 @@ and must be regenerated whenever the lockfile changes.
 ### Development
 
 The Rust version is pinned in `rust-toolchain.toml`. The crates without
-GUI or image code build with a standard toolchain:
+GTK build with a standard toolchain:
 
 ```sh
-cargo test -p mylongbox-core -p mylongbox-sandbox
+cargo test -p mylongbox-core -p mylongbox-media -p mylongbox-sandbox
 ```
 
 The app links against GTK4, libadwaita, libheif, and lcms2 from the
