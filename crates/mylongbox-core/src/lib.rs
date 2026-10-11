@@ -26,6 +26,9 @@ mod entry;
 #[cfg(test)]
 mod entry_tests;
 mod error;
+mod filter;
+#[cfg(test)]
+mod filter_tests;
 #[cfg(test)]
 mod fixtures;
 mod issue_number;
@@ -65,6 +68,10 @@ pub use db::{APPLICATION_ID, Database};
 pub use detail::{CopyDetail, EditionDetail, IssueDetail};
 pub use entry::{BookEntry, Prefill, SavedBook, SeriesChoice};
 pub use error::{Error, Result};
+pub use filter::{
+    Choice, Compare, DateCondition, DateField, Filter, FilterSet, Flag, ListCondition, ListField,
+    MoneyField, NumberField, OwnedAs, Presence, TextCondition, TextField,
+};
 pub use issue_number::{IssueNumber, IssueNumberError};
 pub use links::{Appearance, ArcPart, Credit, Named, Signature};
 pub use lookup::{Lookup, LookupId};

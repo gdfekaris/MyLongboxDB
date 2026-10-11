@@ -107,8 +107,8 @@ impl Kind {
 }
 
 /// Ids as a JSON array, the one form a list can be bound as.
-fn json_ids(ids: &[i64]) -> String {
-    let list: Vec<String> = ids.iter().map(i64::to_string).collect();
+pub(crate) fn json_ids(ids: impl IntoIterator<Item = i64>) -> String {
+    let list: Vec<String> = ids.into_iter().map(|i| i.to_string()).collect();
     format!("[{}]", list.join(","))
 }
 
@@ -119,7 +119,7 @@ fn phrase(term: &str) -> String {
 }
 
 /// A word with LIKE's wildcards made literal.
-fn like_escaped(term: &str) -> String {
+pub(crate) fn like_escaped(term: &str) -> String {
     let mut out = String::with_capacity(term.len());
     for c in term.chars() {
         if matches!(c, '\\' | '%' | '_') {
@@ -337,7 +337,7 @@ impl Database {
         let mut rows = query_all(
             &self.conn,
             copy_rows!("c.id IN (SELECT value FROM json_each(?1))"),
-            [json_ids(&ids)],
+            [json_ids(ids.iter().copied())],
             copy_row,
         )?;
         tx.commit()?;
@@ -452,9 +452,12 @@ impl Database {
                 continue;
             };
             let ids: Vec<i64> = scored.keys().copied().collect();
-            let pairs = query_all(&self.conn, kind.copies(), [json_ids(&ids)], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, CopyId>(1)?))
-            })?;
+            let pairs = query_all(
+                &self.conn,
+                kind.copies(),
+                [json_ids(ids.iter().copied())],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, CopyId>(1)?)),
+            )?;
             for (owner, copy) in pairs {
                 let score = scored.get(&owner).copied().unwrap_or(0.0);
                 let best = copies.entry(copy).or_insert(0.0);
