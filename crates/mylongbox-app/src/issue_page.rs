@@ -1,6 +1,7 @@
 //! The detail page of one issue: what it is, who made it, what it
 //! contains, and every copy the owner has of it.
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -32,13 +33,15 @@ pub struct Links {
     pub add_photo: Rc<dyn Fn(CopyId, Side)>,
     pub remove_photo: Rc<dyn Fn(CopyId, Side)>,
     pub swap_photos: Rc<dyn Fn(CopyId)>,
+    /// Opens the full-size view of a copy's photos at one side.
+    pub view_photo: Rc<dyn Fn(CopyId, Side)>,
 }
 
 /// The page for `d`, with the row of `open_copy` unfolded, as after a
 /// change to that copy.
 pub fn page(d: &IssueDetail, links: &Links, open_copy: Option<CopyId>) -> adw::NavigationPage {
     let prefs = adw::PreferencesPage::new();
-    prefs.add(&summary(d, open_copy));
+    prefs.add(&summary(d, open_copy, links));
     if !d.issue.fields.synopsis.is_empty() {
         let group = group("Synopsis");
         group.add(&paragraph(&d.issue.fields.synopsis));
@@ -152,41 +155,119 @@ fn series_title(name: &str, start_year: Option<u16>) -> String {
     }
 }
 
-/// The copy whose front cover stands for the issue: the one asked for
-/// if it has a front photo, else the first that does.
-fn cover_copy(d: &IssueDetail, open_copy: Option<CopyId>) -> Option<CopyId> {
-    let with_front = || {
-        d.editions
-            .iter()
-            .flat_map(|e| &e.copies)
-            .filter(|c| c.photos.contains(&Side::Front))
-    };
-    with_front()
-        .find(|c| Some(c.copy.id) == open_copy)
-        .or_else(|| with_front().next())
-        .map(|c| c.copy.id)
+/// The copy whose photos stand for the issue: the one asked for if it
+/// has any, else the first with a front, else the first with any, else
+/// simply the first.
+fn cover_copy(d: &IssueDetail, open_copy: Option<CopyId>) -> Option<&CopyDetail> {
+    let copies = || d.editions.iter().flat_map(|e| &e.copies);
+    copies()
+        .find(|c| Some(c.copy.id) == open_copy && !c.photos.is_empty())
+        .or_else(|| copies().find(|c| c.photos.contains(&Side::Front)))
+        .or_else(|| copies().find(|c| !c.photos.is_empty()))
+        .or_else(|| copies().next())
 }
 
-/// The cover, the issue's name, and the facts about it at a glance.
-fn summary(d: &IssueDetail, open_copy: Option<CopyId>) -> adw::PreferencesGroup {
-    let f = &d.issue.fields;
-    let s = &d.series.fields;
-    let cover = gtk::Box::builder()
+/// A photo that opens the full-size viewer when chosen, or the
+/// placeholder naming the missing side.
+fn photo_or_placeholder(
+    copy: CopyId,
+    side: Side,
+    has_photo: bool,
+    missing: &str,
+    small: bool,
+    links: &Links,
+) -> gtk::Widget {
+    let texture = has_photo
+        .then(|| covers::thumbnail_of(copy, side))
+        .flatten();
+    let Some(texture) = texture else {
+        return covers::placeholder(missing, small).upcast();
+    };
+    let button = gtk::Button::builder()
+        .child(&covers::picture(&texture, gtk::ContentFit::Contain))
+        .tooltip_text("View Full Size")
+        .hexpand(true)
+        .vexpand(true)
+        .css_classes(["flat", "cover-button"])
+        .build();
+    let hook = links.view_photo.clone();
+    button.connect_clicked(move |_| hook(copy, side));
+    button.upcast()
+}
+
+/// The issue's cover, with a flip to the back.
+fn summary_cover(d: &IssueDetail, open_copy: Option<CopyId>, links: &Links) -> gtk::Widget {
+    let frame = gtk::Box::builder()
         .width_request(160)
         .height_request(242)
-        .valign(gtk::Align::Start)
         // What is inside expands; the cover keeps its size.
         .hexpand(false)
         .overflow(gtk::Overflow::Hidden)
         .css_classes(["card"])
         .build();
-    match cover_copy(d, open_copy).and_then(covers::thumbnail) {
-        Some(texture) => cover.append(&covers::picture(&texture, gtk::ContentFit::Contain)),
-        None => cover.append(&covers::placeholder(
-            "No Front Cover Image for This Issue",
+    let missing = |side| match side {
+        Side::Front => "No Front Cover Image for This Issue",
+        Side::Back => "No Back Cover Image for This Issue",
+    };
+    let Some(c) = cover_copy(d, open_copy) else {
+        frame.set_valign(gtk::Align::Start);
+        frame.append(&covers::placeholder(missing(Side::Front), false));
+        return frame.upcast();
+    };
+    let (copy, sides, links) = (c.copy.id, c.photos.clone(), links.clone());
+    let show = move |frame: &gtk::Box, side: Side| {
+        while let Some(child) = frame.first_child() {
+            frame.remove(&child);
+        }
+        frame.append(&photo_or_placeholder(
+            copy,
+            side,
+            sides.contains(&side),
+            missing(side),
             false,
-        )),
+            &links,
+        ));
+    };
+    show(&frame, Side::Front);
+    let flip = gtk::Button::builder()
+        .icon_name("object-flip-horizontal-symbolic")
+        .tooltip_text("Show the Back Cover")
+        .halign(gtk::Align::End)
+        .valign(gtk::Align::End)
+        .margin_end(8)
+        .margin_bottom(8)
+        .css_classes(["circular", "osd"])
+        .build();
+    let side = Cell::new(Side::Front);
+    {
+        let frame = frame.clone();
+        flip.connect_clicked(move |b| {
+            let next = match side.get() {
+                Side::Front => Side::Back,
+                Side::Back => Side::Front,
+            };
+            side.set(next);
+            show(&frame, next);
+            b.set_tooltip_text(Some(match next {
+                Side::Front => "Show the Back Cover",
+                Side::Back => "Show the Front Cover",
+            }));
+        });
     }
+    let overlay = gtk::Overlay::builder()
+        .child(&frame)
+        .valign(gtk::Align::Start)
+        .hexpand(false)
+        .build();
+    overlay.add_overlay(&flip);
+    overlay.upcast()
+}
+
+/// The cover, the issue's name, and the facts about it at a glance.
+fn summary(d: &IssueDetail, open_copy: Option<CopyId>, links: &Links) -> adw::PreferencesGroup {
+    let f = &d.issue.fields;
+    let s = &d.series.fields;
+    let cover = summary_cover(d, open_copy, links);
 
     let text = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
@@ -579,13 +660,9 @@ fn photo_slot(copy: CopyId, side: Side, has_photo: bool, links: &Links) -> gtk::
         .overflow(gtk::Overflow::Hidden)
         .css_classes(["card"])
         .build();
-    let texture = has_photo
-        .then(|| covers::thumbnail_of(copy, side))
-        .flatten();
-    match &texture {
-        Some(texture) => frame.append(&covers::picture(texture, gtk::ContentFit::Contain)),
-        None => frame.append(&covers::placeholder(missing, true)),
-    }
+    frame.append(&photo_or_placeholder(
+        copy, side, has_photo, missing, true, links,
+    ));
     let caption = gtk::Label::builder()
         .label(title)
         .css_classes(["caption-heading"])

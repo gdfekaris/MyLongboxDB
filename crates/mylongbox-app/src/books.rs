@@ -309,8 +309,11 @@ impl RelmListItem for Name {
     }
 }
 
-/// Styles the badge drawn over a cover.
+/// Styles the badge drawn over a cover, and covers that are buttons.
 pub const CSS: &str = "
+.cover-button {
+    padding: 0;
+}
 .cover-badge {
     background-color: alpha(black, 0.75);
     color: white;

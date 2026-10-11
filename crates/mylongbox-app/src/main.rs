@@ -16,6 +16,7 @@ mod prefs;
 mod prompt;
 mod settings;
 mod trash_page;
+mod viewer;
 mod window;
 
 const APP_ID: &str = "io.github.gdfekaris.MyLongboxDB";

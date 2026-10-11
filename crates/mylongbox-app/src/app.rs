@@ -20,7 +20,7 @@ use crate::form::{Focus, Form, Hooks};
 use crate::issue_page::{self, Links};
 use crate::settings::{self, Settings};
 use crate::window::MainWindow;
-use crate::{bulk_dialog, covers, format, photo_editor, prefs, prompt, trash_page};
+use crate::{bulk_dialog, covers, format, photo_editor, prefs, prompt, trash_page, viewer};
 
 /// What a sidebar section shows.
 #[derive(Clone, Copy)]
@@ -239,6 +239,7 @@ pub enum AppMsg {
     /// Put back a removed photo.
     RestorePhoto(CopyId, Side, Box<CoverPhoto>),
     SwapPhotos(CopyId),
+    ViewPhoto(CopyId, Side),
     /// Open Preferences, on the exchange rates if asked.
     ShowPreferences(bool),
     SettingsChanged(Settings),
@@ -608,6 +609,7 @@ impl Component for App {
                 }
                 Err(why) => root.toast(&format!("Could not swap the photos: {why}")),
             },
+            AppMsg::ViewPhoto(copy, side) => self.view_photo(copy, side, root),
             AppMsg::ShowPreferences(show_rates) => self.show_preferences(show_rates, root, &sender),
             AppMsg::SettingsChanged(settings) => {
                 self.settings = settings;
@@ -1160,6 +1162,24 @@ impl App {
         self.open_issue(issue, root, sender);
     }
 
+    /// Opens the full-size view of a copy's photos, decoded by the app's
+    /// own limited decoder like every stored photo.
+    fn view_photo(&self, copy: CopyId, side: Side, root: &MainWindow) {
+        let full = |side| {
+            self.with_db(|db| db.photo(copy, side))
+                .ok()
+                .flatten()
+                .and_then(|p| covers::texture(&p.full_jpeg))
+        };
+        let title = self
+            .with_db(|db| {
+                let edition = db.edition(db.copy(copy)?.edition)?;
+                Ok(db.issue_detail(edition.issue)?.label)
+            })
+            .unwrap_or_default();
+        viewer::open(root, &title, full(Side::Front), full(Side::Back), side);
+    }
+
     /// Stores a photo made or kept earlier, and shows the copy with it.
     fn store_photo(
         &mut self,
@@ -1254,6 +1274,10 @@ impl App {
                     swap_photos: {
                         let s = sender.clone();
                         Rc::new(move |copy| s.input(AppMsg::SwapPhotos(copy)))
+                    },
+                    view_photo: {
+                        let s = sender.clone();
+                        Rc::new(move |copy, side| s.input(AppMsg::ViewPhoto(copy, side)))
                     },
                 };
                 let open_copy = self.open_copy.take();
