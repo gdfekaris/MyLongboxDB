@@ -17,6 +17,9 @@ mod links;
 mod lookup;
 #[cfg(test)]
 mod lookup_tests;
+mod merge_series;
+#[cfg(test)]
+mod merge_series_tests;
 mod migrate;
 mod model;
 mod money;
@@ -33,6 +36,7 @@ pub use error::{Error, Result};
 pub use issue_number::{IssueNumber, IssueNumberError};
 pub use links::{Appearance, ArcPart, Credit, Named};
 pub use lookup::{Lookup, LookupId};
+pub use merge_series::SeriesMerge;
 pub use model::{
     Binding, BookCondition, BoxId, Category, CharacterId, Copy, CopyFields, CopyId, CoverDate,
     CreatorId, Distribution, Edition, EditionFields, EditionId, Grade, GradeType, Isbn, Issue,
