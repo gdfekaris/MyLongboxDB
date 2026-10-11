@@ -292,3 +292,139 @@ fn photo_paths_name_the_files_a_full_export_holds() {
         "only a full export holds files"
     );
 }
+
+#[test]
+fn a_full_export_holds_the_csv_photos_and_readme() {
+    use std::io::{Cursor, Read};
+    let db = Database::open_in_memory().unwrap();
+    let add = |n: &str| {
+        let choice = match db.list_series().unwrap().first() {
+            Some(s) => SeriesChoice::Existing(s.id),
+            None => new_series("Zot!", 1984, None),
+        };
+        db.add_book(&BookEntry::new(
+            Category::Comic,
+            choice,
+            Some(IssueNumber::new(n).unwrap()),
+        ))
+        .unwrap()
+        .copy
+    };
+    let (one, two, three) = (add("1"), add("2"), add("3"));
+    let jpeg = |tag: u8| CoverPhoto {
+        full_jpeg: vec![0xFF, 0xD8, 0xFF, tag, tag, tag],
+        thumb_jpeg: vec![0xFF, 0xD8, 0xFF, 0],
+        width: 1,
+        height: 1,
+        sha256: [tag; 32],
+    };
+    db.set_photo(one, Side::Front, &jpeg(1)).unwrap();
+    db.set_photo(one, Side::Back, &jpeg(2)).unwrap();
+    db.set_photo(three, Side::Back, &jpeg(3)).unwrap();
+    let uuid = |copy| db.copy(copy).unwrap().uuid.to_string();
+
+    let mut out = Cursor::new(Vec::new());
+    assert_eq!(db.export_zip(None, &mut out).unwrap(), 3);
+    let mut zip = zip::ZipArchive::new(Cursor::new(out.into_inner())).unwrap();
+    let mut names: Vec<String> = zip.file_names().map(str::to_owned).collect();
+    names.sort();
+    let mut wanted = vec![
+        "README.txt".to_owned(),
+        "collection.csv".to_owned(),
+        format!("images/{}_front.jpg", uuid(one)),
+        format!("images/{}_back.jpg", uuid(one)),
+        format!("images/{}_back.jpg", uuid(three)),
+    ];
+    wanted.sort();
+    assert_eq!(names, wanted);
+
+    let read = |zip: &mut zip::ZipArchive<Cursor<Vec<u8>>>, name: &str| {
+        let mut file = zip.by_name(name).unwrap();
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).unwrap();
+        (bytes, file.compression())
+    };
+    let (front, method) = read(&mut zip, &format!("images/{}_front.jpg", uuid(one)));
+    assert_eq!(front, jpeg(1).full_jpeg, "the full photo, unchanged");
+    assert_eq!(method, zip::CompressionMethod::Stored);
+    let (readme, method) = read(&mut zip, "README.txt");
+    assert_eq!(String::from_utf8(readme).unwrap(), crate::export::README);
+    assert_eq!(method, zip::CompressionMethod::Deflated);
+
+    let (csv_bytes, _) = read(&mut zip, "collection.csv");
+    let rows: Vec<Vec<String>> = csv::Reader::from_reader(csv_bytes.as_slice())
+        .records()
+        .map(|r| r.unwrap().iter().map(str::to_owned).collect())
+        .collect();
+    assert_eq!(rows.len(), 3);
+    let row = |copy| {
+        rows.iter()
+            .find(|r| cell(r, "Copy ID") == uuid(copy))
+            .unwrap()
+    };
+    assert_eq!(
+        cell(row(one), "Front Photo"),
+        format!("images/{}_front.jpg", uuid(one))
+    );
+    assert_eq!(
+        cell(row(one), "Back Photo"),
+        format!("images/{}_back.jpg", uuid(one))
+    );
+    assert_eq!(cell(row(two), "Front Photo"), "");
+    assert_eq!(
+        cell(row(three), "Back Photo"),
+        format!("images/{}_back.jpg", uuid(three))
+    );
+    // Every file the CSV names is in the archive.
+    for r in &rows {
+        for column in ["Front Photo", "Back Photo"] {
+            let path = cell(r, column);
+            assert!(path.is_empty() || names.iter().any(|n| n == path), "{path}");
+        }
+    }
+}
+
+#[test]
+fn a_full_export_of_chosen_copies_holds_only_their_photos() {
+    use std::io::Cursor;
+    let db = Database::open_in_memory().unwrap();
+    let first = db
+        .add_book(&BookEntry::new(
+            Category::Comic,
+            new_series("Zot!", 1984, None),
+            Some(IssueNumber::new("1").unwrap()),
+        ))
+        .unwrap()
+        .copy;
+    let zot = db.list_series().unwrap()[0].id;
+    let second = db
+        .add_book(&BookEntry::new(
+            Category::Comic,
+            SeriesChoice::Existing(zot),
+            Some(IssueNumber::new("2").unwrap()),
+        ))
+        .unwrap()
+        .copy;
+    for copy in [first, second] {
+        db.set_photo(
+            copy,
+            Side::Front,
+            &CoverPhoto {
+                full_jpeg: vec![0xFF, 0xD8, 0xFF],
+                thumb_jpeg: vec![0xFF, 0xD8, 0xFF],
+                width: 1,
+                height: 1,
+                sha256: [0; 32],
+            },
+        )
+        .unwrap();
+    }
+    let mut out = Cursor::new(Vec::new());
+    assert_eq!(db.export_zip(Some(&[second]), &mut out).unwrap(), 1);
+    let zip = zip::ZipArchive::new(Cursor::new(out.into_inner())).unwrap();
+    let photos = zip
+        .file_names()
+        .filter(|n| n.starts_with("images/"))
+        .count();
+    assert_eq!(photos, 1);
+}

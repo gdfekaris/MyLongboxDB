@@ -13,6 +13,9 @@ workspace = true
 [dependencies]
 # CSV export and import.
 csv = "1.4.0"
+# Full export archives: deflate only, through the pure-Rust zlib port,
+# without the many other formats and the encryption it offers.
+zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 # Edit distance, for finding what a mistyped search word meant.
 strsim = "0.11.1"
 rusqlite = { version = "0.40.2", features = ["backup", "bundled", "limits"] }

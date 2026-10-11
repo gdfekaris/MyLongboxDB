@@ -5,7 +5,10 @@
 //! joined with ` | `. A backslash keeps either separator, or itself, as
 //! part of a name: `\;`, `\|`, `\\`.
 
-use std::io::Write;
+use std::io::{Seek, Write};
+
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
 
 use crate::db::Database;
 use crate::error::{Error, Result};
@@ -329,5 +332,118 @@ impl Database {
         ]);
         debug_assert_eq!(row.len(), COLUMNS.len());
         Ok(row)
+    }
+}
+
+/// What a full export's `README.txt` says, so the archive explains
+/// itself to anyone opening it without MyLongboxDB.
+pub const README: &str = "\
+MyLongboxDB full export
+=======================
+
+This archive holds a comic collection exported from MyLongboxDB, in
+plain formats any spreadsheet or image viewer can open.
+
+collection.csv
+  One row per physical copy, UTF-8, comma-separated (RFC 4180), with a
+  header row naming each column. Every field the app keeps for a copy,
+  its edition, its issue, and its series is there.
+
+  IDs: the Copy, Edition, Issue, and Series ID columns are permanent
+  identifiers. Rows with the same Issue ID are copies of one issue.
+
+  Lists: a cell holding several names separates them with \"; \", for
+  example \"Wolverine; Hulk\". Signatures and value history entries have
+  parts separated by \" | \":
+    Signatures:     name | verification | certificate | date | place | sketch
+    Value History:  date | amount | currency | source
+  A backslash before ; or | or \\ means that character is part of a
+  name rather than a separator.
+
+  Story arcs give their part as \"Name (part 3)\". Characters and teams
+  that make their first appearance are also listed in the First
+  Appearances columns.
+
+  Amounts are a number and a currency code in separate columns:
+    USD  US dollars
+    XAU  troy ounces of gold
+    BTC  bitcoin
+  Each amount is exactly as it was entered.
+
+  Dates are YYYY-MM-DD. A cover date is YYYY-MM, or YYYY when only the
+  year is known. Date Added is a UTC time.
+
+  Fixed choices are written as codes:
+    Category: comic, magazine, collected
+    Grade Type: raw, cgc, cbcs, pgx
+    Book and dust jacket condition: sealed, new, like_new, very_good,
+      good, fair, poor
+    Binding: hardcover, softcover, oversized_hardcover
+    Distribution: direct, newsstand
+    Magazine Format: standard, treasury, digest
+    Signature verification: unverified, witnessed, coa, jsa, cgc_ss,
+      cgc_jsa, cbcs, pgx
+  Yes or no columns are \"yes\", \"no\", or empty when not recorded.
+
+  Collects, for collected editions, lists the issues the book reprints,
+  for example \"Amazing Spider-Man (1963) 1-10; Annual 1\".
+
+images/
+  The cover photos, as JPEG files named after the copy:
+    <Copy ID>_front.jpg
+    <Copy ID>_back.jpg
+  The Front Photo and Back Photo columns name each copy's files.
+
+MyLongboxDB can import this archive, or collection.csv on its own,
+with nothing lost.
+";
+
+impl Database {
+    /// Writes a full export to `out`: `collection.csv`, each copy's cover
+    /// photos under `images/`, and a `README.txt` explaining the format.
+    /// Returns how many copies it holds.
+    pub fn export_zip(&self, copies: Option<&[CopyId]>, out: impl Write + Seek) -> Result<usize> {
+        let tx = self.tx()?;
+        let ids: Vec<CopyId> = match copies {
+            Some(ids) => ids.to_vec(),
+            None => self
+                .browse(crate::Shelf::Everything)?
+                .into_iter()
+                .map(|r| r.copy)
+                .collect(),
+        };
+        let mut zip = ZipWriter::new(out);
+        let text = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Deflated)
+            .unix_permissions(0o644);
+        // Photos are JPEGs already; squeezing them again gains nothing.
+        let photo = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Stored)
+            .unix_permissions(0o644);
+        zip.start_file("README.txt", text).map_err(zip_error)?;
+        zip.write_all(README.as_bytes())?;
+        zip.start_file("collection.csv", text).map_err(zip_error)?;
+        self.export_csv(Some(&ids), &mut zip, true)?;
+        for id in &ids {
+            let uuid = self.copy(*id)?.uuid;
+            for side in self.photo_sides(*id)? {
+                let Some(stored) = self.photo(*id, side)? else {
+                    continue;
+                };
+                zip.start_file(format!("images/{uuid}_{}.jpg", side.code()), photo)
+                    .map_err(zip_error)?;
+                zip.write_all(&stored.full_jpeg)?;
+            }
+        }
+        zip.finish().map_err(zip_error)?;
+        tx.commit()?;
+        Ok(ids.len())
+    }
+}
+
+fn zip_error(e: zip::result::ZipError) -> Error {
+    match e {
+        zip::result::ZipError::Io(e) => Error::Io(e),
+        other => Error::Io(std::io::Error::other(other)),
     }
 }
