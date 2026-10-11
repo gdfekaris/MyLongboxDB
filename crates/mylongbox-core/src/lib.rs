@@ -46,7 +46,7 @@ pub use collects_text::{
 pub use date::{Date, DateError};
 pub use db::{APPLICATION_ID, Database};
 pub use detail::{CopyDetail, EditionDetail, IssueDetail, ValueEntry};
-pub use entry::{BookEntry, SavedBook, SeriesChoice};
+pub use entry::{BookEntry, Prefill, SavedBook, SeriesChoice};
 pub use error::{Error, Result};
 pub use issue_number::{IssueNumber, IssueNumberError};
 pub use links::{Appearance, ArcPart, Credit, Named};

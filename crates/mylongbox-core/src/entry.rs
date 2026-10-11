@@ -81,6 +81,18 @@ impl BookEntry {
     }
 }
 
+/// A new book to start from an existing copy, to save retyping what it
+/// shares with that copy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Prefill {
+    /// The next issue of the series, or the next volume of a book line.
+    NextIssue,
+    /// Another physical copy of the same edition.
+    AnotherCopy,
+    /// Another edition of the same issue, such as a cover variant.
+    Variant,
+}
+
 /// Where a saved book ended up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SavedBook {
@@ -236,6 +248,62 @@ impl Database {
         };
         tx.commit()?;
         Ok(entry)
+    }
+
+    /// An add form's contents, filled in from `copy` for `kind`.
+    ///
+    /// The next issue keeps the series, its creators and teams, the kind
+    /// of edition, and the box, and moves the number, cover date, and box
+    /// position on by one; what belongs to one issue (title, characters,
+    /// arcs, variant) and to one copy (grade, price, notes) starts blank.
+    /// When the number has no digits to advance, it is left blank.
+    pub fn prefilled_entry(&self, copy: CopyId, kind: Prefill) -> Result<BookEntry> {
+        let mut e = self.book_entry(copy)?;
+        let next_position = e.copy.box_position.and_then(|p| p.checked_add(1));
+        let blank_copy = CopyFields::default();
+        match kind {
+            Prefill::NextIssue => {
+                let mut issue = IssueFields::new(e.issue.number.as_ref().and_then(|n| n.next()));
+                issue.cover_date = e.issue.cover_date.and_then(|d| d.next_month());
+                e.issue = issue;
+                e.characters.clear();
+                e.story_arcs.clear();
+                e.collects.clear();
+                e.edition = EditionFields {
+                    distribution: e.edition.distribution,
+                    cover_price: e.edition.cover_price,
+                    binding: e.edition.binding,
+                    has_dust_jacket: e.edition.has_dust_jacket,
+                    has_slipcase: e.edition.has_slipcase,
+                    ..EditionFields::default()
+                };
+                e.cover_artists.clear();
+                e.copy = CopyFields {
+                    purchase_date: e.copy.purchase_date,
+                    seller: e.copy.seller.clone(),
+                    box_position: next_position,
+                    ..blank_copy
+                };
+                e.tags.clear();
+            }
+            Prefill::AnotherCopy => {
+                e.copy = CopyFields {
+                    box_position: next_position,
+                    ..blank_copy
+                };
+                e.tags.clear();
+            }
+            Prefill::Variant => {
+                e.edition = EditionFields::default();
+                e.cover_artists.clear();
+                e.copy = CopyFields {
+                    box_position: next_position,
+                    ..blank_copy
+                };
+                e.tags.clear();
+            }
+        }
+        Ok(e)
     }
 
     /// The live issue numbered `number` in a series, if there is one: the

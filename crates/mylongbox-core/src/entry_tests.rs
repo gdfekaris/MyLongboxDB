@@ -1,7 +1,9 @@
 //! Tests of saving books from the add and edit forms.
 
 use crate::model::*;
-use crate::{Amount, BookEntry, Currency, Database, Error, IssueNumber, SeriesChoice, Shelf};
+use crate::{
+    Amount, BookEntry, Currency, Database, Error, IssueNumber, Prefill, SeriesChoice, Shelf,
+};
 
 fn db() -> Database {
     Database::open_in_memory().unwrap()
@@ -409,4 +411,145 @@ fn contents_belong_only_to_collected_editions() {
     e.collects = "Avengers (1963) 1".into();
     assert!(matches!(db.add_book(&e), Err(Error::Invalid(_))));
     assert!(db.list_series().unwrap().is_empty());
+}
+
+/// X-Men #41, fully described, in Box 1 at position 7.
+fn described(db: &Database, n: &str) -> crate::SavedBook {
+    let mut e = comic("X-Men", n);
+    e.issue.title = "The Sentinels Live".into();
+    e.issue.cover_date = CoverDate::new(1967, Some(12));
+    e.issue.synopsis = "A synopsis.".into();
+    e.issue.is_key = true;
+    e.credits = vec![("Roy Thomas".into(), Role::Writer)];
+    e.characters = vec![("Cyclops".into(), true)];
+    e.teams = vec![("X-Men".into(), false)];
+    e.story_arcs = vec![("Sentinels".into(), Some(1))];
+    e.edition.variant = "Cover B".into();
+    e.edition.distribution = Some(Distribution::Newsstand);
+    e.edition.cover_price = Some(Amount::new(Currency::Usd, 12));
+    e.cover_artists = vec!["Don Heck".into()];
+    e.copy.grade = Grade::parse("7.0");
+    e.copy.purchase_date = Some(crate::Date::new(2024, 5, 1).unwrap());
+    e.copy.purchase_price = Some(Amount::new(Currency::Usd, 4000));
+    e.copy.seller = "Local shop".into();
+    e.copy.box_position = Some(7);
+    e.copy.notes = "Small tear.".into();
+    e.storage_box = Some("Box 1".into());
+    e.tags = vec!["Key".into()];
+    db.add_book(&e).unwrap()
+}
+
+#[test]
+fn next_issue_carries_the_run_forward() {
+    let db = db();
+    let saved = described(&db, "41");
+    let next = db.prefilled_entry(saved.copy, Prefill::NextIssue).unwrap();
+
+    assert_eq!(next.series, SeriesChoice::Existing(saved.series));
+    assert_eq!(next.issue.number, number("42"));
+    assert_eq!(next.issue.cover_date, CoverDate::new(1968, Some(1)));
+    assert_eq!(next.issue.title, "");
+    assert_eq!(next.issue.synopsis, "");
+    assert!(!next.issue.is_key);
+    assert_eq!(next.credits, [("Roy Thomas".to_owned(), Role::Writer)]);
+    assert!(next.characters.is_empty());
+    assert!(next.story_arcs.is_empty());
+    assert_eq!(next.teams.len(), 1);
+    assert_eq!(next.edition.variant, "");
+    assert_eq!(next.edition.distribution, Some(Distribution::Newsstand));
+    assert_eq!(
+        next.edition.cover_price,
+        Some(Amount::new(Currency::Usd, 12))
+    );
+    assert!(next.cover_artists.is_empty());
+    assert_eq!(next.copy.grade, None);
+    assert_eq!(next.copy.purchase_price, None);
+    assert_eq!(next.copy.seller, "Local shop");
+    assert_eq!(next.copy.notes, "");
+    assert_eq!(next.copy.box_position, Some(8));
+    assert_eq!(next.storage_box.as_deref(), Some("Box 1"));
+    assert!(next.tags.is_empty());
+
+    let added = db.add_book(&next).unwrap();
+    assert_eq!(added.series, saved.series);
+    assert_ne!(added.issue, saved.issue);
+    assert_eq!(
+        db.issue_detail(added.issue).unwrap().label,
+        "X-Men (1963) #42"
+    );
+}
+
+#[test]
+fn next_issue_advances_prefixed_numbers_and_stops_without_digits() {
+    let db = db();
+    let annual = db.add_book(&comic("X-Men", "Annual 3")).unwrap();
+    let next = db.prefilled_entry(annual.copy, Prefill::NextIssue).unwrap();
+    assert_eq!(next.issue.number, number("Annual 4"));
+
+    let alpha = db.add_book(&comic("X-Men", "Alpha")).unwrap();
+    let next = db.prefilled_entry(alpha.copy, Prefill::NextIssue).unwrap();
+    assert_eq!(next.issue.number, None);
+}
+
+#[test]
+fn next_volume_keeps_the_binding_and_drops_the_contents() {
+    let db = db();
+    let mut e = book("Omnibus", Some("2"));
+    e.edition.binding = Some(Binding::Hardcover);
+    e.edition.isbn = Some(Isbn::parse("978-0-306-40615-7").unwrap());
+    e.collects = "X-Men (1963) 1-5".into();
+    let saved = db.add_book(&e).unwrap();
+    let next = db.prefilled_entry(saved.copy, Prefill::NextIssue).unwrap();
+    assert_eq!(next.issue.number, number("3"));
+    assert_eq!(next.edition.binding, Some(Binding::Hardcover));
+    assert_eq!(next.edition.isbn, None);
+    assert_eq!(next.collects, "");
+}
+
+#[test]
+fn another_copy_joins_the_same_edition() {
+    let db = db();
+    let saved = described(&db, "41");
+    let again = db
+        .prefilled_entry(saved.copy, Prefill::AnotherCopy)
+        .unwrap();
+    assert_eq!(again.issue.title, "The Sentinels Live");
+    assert_eq!(again.edition.variant, "Cover B");
+    assert_eq!(again.copy.grade, None);
+    assert_eq!(again.copy.seller, "");
+    assert_eq!(again.copy.box_position, Some(8));
+
+    let added = db.add_book(&again).unwrap();
+    assert_eq!(added.edition, saved.edition);
+    assert_ne!(added.copy, saved.copy);
+    let d = db.issue_detail(saved.issue).unwrap();
+    assert_eq!(d.editions[0].copies.len(), 2);
+    assert_eq!(d.characters.len(), 1, "nothing about the issue changed");
+    assert_eq!(d.issue.fields.synopsis, "A synopsis.");
+}
+
+#[test]
+fn a_variant_starts_a_new_edition_of_the_same_issue() {
+    let db = db();
+    let saved = described(&db, "41");
+    let mut variant = db.prefilled_entry(saved.copy, Prefill::Variant).unwrap();
+    assert_eq!(variant.issue.title, "The Sentinels Live");
+    assert_eq!(variant.edition, EditionFields::default());
+    assert!(variant.cover_artists.is_empty());
+    variant.edition.variant = "Cover C".into();
+
+    let added = db.add_book(&variant).unwrap();
+    assert_eq!(added.issue, saved.issue);
+    assert_ne!(added.edition, saved.edition);
+}
+
+#[test]
+fn prefilling_from_a_trashed_copy_is_refused() {
+    let db = db();
+    let saved = described(&db, "41");
+    db.trash_copy(saved.copy).unwrap();
+    assert!(matches!(
+        db.prefilled_entry(saved.copy, Prefill::NextIssue),
+        Err(Error::InTrash)
+    ));
 }
