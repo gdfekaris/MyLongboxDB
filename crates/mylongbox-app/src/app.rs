@@ -6,8 +6,8 @@ use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
     Amount, BulkChange, Category, CollectionInfo, CollectionStore, CopyId, CoverPhoto, Currency,
-    Database, Date, EditionId, FilterSet, IssueId, Prefill, Shelf, ShelfEntry, ShelfList, Side,
-    TrashId, ValueEntry,
+    Database, Date, EditionId, FilterSet, IssueId, Prefill, SeriesId, Shelf, ShelfEntry, ShelfList,
+    Side, TrashId, ValueEntry,
 };
 use mylongbox_media::Edit;
 use relm4::typed_view::column::TypedColumnView;
@@ -21,7 +21,9 @@ use crate::form::{Focus, Form, Hooks};
 use crate::issue_page::{self, Links};
 use crate::settings::{self, Settings};
 use crate::window::MainWindow;
-use crate::{bulk_dialog, covers, form, format, photo_editor, prefs, prompt, trash_page, viewer};
+use crate::{
+    bulk_dialog, covers, form, format, gaps_page, photo_editor, prefs, prompt, trash_page, viewer,
+};
 
 /// What a sidebar section shows.
 #[derive(Clone, Copy)]
@@ -31,7 +33,8 @@ enum Content {
     /// A list of names, each leading to its books.
     Names(ShelfList, &'static str, &'static str),
     Trash,
-    NotYet,
+    /// The numbers missing from each run.
+    Gaps,
 }
 
 struct Section {
@@ -60,13 +63,6 @@ const fn names(
     Section {
         name,
         content: Content::Names(list, empty, hint),
-    }
-}
-
-const fn not_yet(name: &'static str) -> Section {
-    Section {
-        name,
-        content: Content::NotYet,
     }
 }
 
@@ -149,9 +145,22 @@ const SECTIONS: &[&[Section]] = &[
             "No Key Issues",
             "Issues you mark as key will appear here.",
         ),
-        not_yet("Gaps"),
-        not_yet("Duplicates"),
-        not_yet("Needs Attention"),
+        Section {
+            name: "Gaps",
+            content: Content::Gaps,
+        },
+        books(
+            "Duplicates",
+            Shelf::Duplicates,
+            "No Duplicates",
+            "Editions you own more than one copy of appear here.",
+        ),
+        books(
+            "Needs Attention",
+            Shelf::NeedsAttention,
+            "Nothing Needs Attention",
+            "Books missing a front cover photo, a grade, a storage box, or a value appear here.",
+        ),
     ],
     &[Section {
         name: "Trash",
@@ -211,6 +220,8 @@ pub struct App {
     found: usize,
     /// The open collection, for the filter panel to find series in.
     current_db: Rc<RefCell<Weak<Database>>>,
+    /// Whether issues in collected editions fill gaps.
+    gaps_collected: bool,
 }
 
 #[derive(Debug)]
@@ -294,6 +305,10 @@ pub enum AppMsg {
     FiltersChanged,
     /// Put the corrected spelling in the search box.
     UseCorrection,
+    /// Whether issues in collected editions fill gaps.
+    GapsCountCollected(bool),
+    /// Show a series' books, as from its gaps.
+    OpenSeries(SeriesId, String),
 }
 
 #[derive(Debug)]
@@ -494,6 +509,7 @@ impl Component for App {
             correction: None,
             found: 0,
             current_db,
+            gaps_collected: false,
         };
 
         let startup = match &model.store {
@@ -692,6 +708,19 @@ impl Component for App {
                     root.pop_to_section();
                     self.show(root);
                 }
+            }
+            AppMsg::GapsCountCollected(on) => {
+                self.gaps_collected = on;
+                self.show(root);
+            }
+            AppMsg::OpenSeries(series, name) => {
+                self.shelf = Some(ShelfEntry {
+                    shelf: Shelf::Series(series),
+                    name,
+                    detail: String::new(),
+                    copies: 0,
+                });
+                self.show(root);
             }
             AppMsg::UseCorrection => {
                 if let Some(corrected) = self.correction.take() {
@@ -1024,6 +1053,11 @@ impl Component for App {
                     return;
                 }
                 if self.shelf.take().is_some() {
+                    if !matches!(self.section.content, Content::Names(..)) {
+                        // A shelf opened from a report, such as Gaps.
+                        self.show(root);
+                        return;
+                    }
                     // The list kept its place while hidden; reloading it
                     // would scroll back to the top.
                     self.show_header(root);
@@ -1661,8 +1695,16 @@ impl App {
                 }
                 return Ok(());
             }
-            (None, Content::NotYet) => {
-                root.show_empty(self.section.name, "Not available yet.");
+            (None, Content::Gaps) => {
+                let gaps = db.gaps(self.gaps_collected)?;
+                let (count, open) = (self.sender.clone(), self.sender.clone());
+                let hooks = gaps_page::Hooks {
+                    count_collected: Rc::new(move |on| count.input(AppMsg::GapsCountCollected(on))),
+                    open: Rc::new(move |series, label| {
+                        open.input(AppMsg::OpenSeries(series, label))
+                    }),
+                };
+                root.show_custom(&gaps_page::page(&gaps, self.gaps_collected, &hooks));
                 return Ok(());
             }
         };

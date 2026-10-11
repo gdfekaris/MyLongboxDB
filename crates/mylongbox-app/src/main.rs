@@ -12,6 +12,7 @@ mod filter_fields;
 mod filter_panel;
 mod form;
 mod format;
+mod gaps_page;
 mod issue_page;
 mod photo_editor;
 mod prefs;
