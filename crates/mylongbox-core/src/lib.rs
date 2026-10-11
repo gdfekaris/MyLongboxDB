@@ -14,6 +14,9 @@ mod collects_tests;
 mod collects_text;
 mod date;
 mod db;
+mod detail;
+#[cfg(test)]
+mod detail_tests;
 mod error;
 #[cfg(test)]
 mod fixtures;
@@ -39,6 +42,7 @@ pub use collects_text::{
 };
 pub use date::{Date, DateError};
 pub use db::{APPLICATION_ID, Database};
+pub use detail::{CopyDetail, EditionDetail, IssueDetail, ValueEntry};
 pub use error::{Error, Result};
 pub use issue_number::{IssueNumber, IssueNumberError};
 pub use links::{Appearance, ArcPart, Credit, Named};
