@@ -37,6 +37,7 @@ mod merge_series_tests;
 mod migrate;
 mod model;
 mod money;
+mod rates;
 #[cfg(test)]
 mod schema_tests;
 mod shelf_ops;

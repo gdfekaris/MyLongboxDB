@@ -23,6 +23,15 @@ const LAST_OPENED: &str = "last-opened";
 /// Every SQLite database file begins with these 16 bytes.
 const SQLITE_HEADER: &[u8; 16] = b"SQLite format 3\0";
 
+/// Files SQLite may keep beside a database, named by adding these.
+const SIDE_FILES: [&str; 3] = ["-journal", "-wal", "-shm"];
+
+fn side_file(database: &Path, suffix: &str) -> PathBuf {
+    let mut name = database.as_os_str().to_owned();
+    name.push(suffix);
+    PathBuf::from(name)
+}
+
 /// Longest collection name, in characters.
 pub const MAX_NAME: usize = 60;
 
@@ -94,6 +103,62 @@ impl CollectionStore {
         let db = Database::open(&path)?;
         fs::write(self.dir.join(LAST_OPENED), name)?;
         Ok(db)
+    }
+
+    /// Renames a closed collection. A name another collection has gets a
+    /// number added, as when creating one.
+    pub fn rename(&self, name: &str, new_name: &str) -> Result<CollectionInfo> {
+        let from = self.path_for(name);
+        if !from.is_file() {
+            return Err(Error::NotFound);
+        }
+        let wanted = clean_name(new_name)?;
+        // Changing only the case keeps the name; anything else must not
+        // take another collection's.
+        let new_name = if wanted.eq_ignore_ascii_case(name) {
+            wanted
+        } else {
+            self.free_name(&wanted)?
+        };
+        // Taking the lock proves no window has it open.
+        drop(Database::open(&from)?);
+        let to = self.path_for(&new_name);
+        fs::rename(&from, &to)?;
+        for side in SIDE_FILES {
+            let old = side_file(&from, side);
+            if old.exists() {
+                fs::rename(old, side_file(&to, side))?;
+            }
+        }
+        if self.remembered().as_deref() == Some(name) {
+            fs::write(self.dir.join(LAST_OPENED), &new_name)?;
+        }
+        self.info(&new_name)
+    }
+
+    /// Deletes a closed collection for good.
+    pub fn delete(&self, name: &str) -> Result<()> {
+        let path = self.path_for(name);
+        if !path.is_file() {
+            return Err(Error::NotFound);
+        }
+        drop(Database::open(&path)?);
+        fs::remove_file(&path)?;
+        for side in SIDE_FILES {
+            let file = side_file(&path, side);
+            if file.exists() {
+                fs::remove_file(file)?;
+            }
+        }
+        if self.remembered().as_deref() == Some(name) {
+            fs::remove_file(self.dir.join(LAST_OPENED))?;
+        }
+        Ok(())
+    }
+
+    /// The name in the last-opened note, whether or not it still exists.
+    fn remembered(&self) -> Option<String> {
+        fs::read_to_string(self.dir.join(LAST_OPENED)).ok()
     }
 
     /// The collection opened most recently, if it still exists.
@@ -276,6 +341,47 @@ mod tests {
         assert_eq!(long.name.chars().count(), MAX_NAME);
         // Everything stayed inside the store.
         assert_eq!(fs::read_dir(&dir.0).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn collections_rename_and_keep_being_remembered() {
+        let dir = TempDir::new();
+        let store = store(&dir);
+        store.create("Comics").unwrap();
+        store.create("Books").unwrap();
+        drop(store.open("Comics").unwrap());
+        let renamed = store.rename("Comics", "My Comics").unwrap();
+        assert_eq!(renamed.name, "My Comics");
+        assert_eq!(store.last_opened().as_deref(), Some("My Comics"));
+        let names: Vec<_> = store.list().unwrap().into_iter().map(|c| c.name).collect();
+        assert_eq!(names, ["Books", "My Comics"]);
+        assert_eq!(
+            store.rename("My Comics", "books").unwrap().name,
+            "books (2)"
+        );
+        assert_eq!(
+            store.rename("books (2)", "BOOKS (2)").unwrap().name,
+            "BOOKS (2)"
+        );
+        assert!(matches!(store.rename("Missing", "X"), Err(Error::NotFound)));
+    }
+
+    #[test]
+    fn an_open_collection_is_neither_renamed_nor_deleted() {
+        let dir = TempDir::new();
+        let store = store(&dir);
+        store.create("Comics").unwrap();
+        let open = store.open("Comics").unwrap();
+        assert!(matches!(
+            store.rename("Comics", "Other"),
+            Err(Error::Locked)
+        ));
+        assert!(matches!(store.delete("Comics"), Err(Error::Locked)));
+        drop(open);
+        store.delete("Comics").unwrap();
+        assert!(store.list().unwrap().is_empty());
+        assert_eq!(store.last_opened(), None);
+        assert!(!store.dir().join(LAST_OPENED).exists());
     }
 
     #[test]

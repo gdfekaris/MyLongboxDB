@@ -288,6 +288,39 @@ impl Grade {
         self.0
     }
 
+    /// The letters graders use for this grade, such as `NM` for 9.4, or
+    /// `None` for a grade between the standard steps.
+    pub fn name(self) -> Option<&'static str> {
+        Some(match self.0 {
+            100 => "GM",
+            99 => "MT",
+            98 => "NM/M",
+            96 => "NM+",
+            94 => "NM",
+            92 => "NM-",
+            90 => "VF/NM",
+            85 => "VF+",
+            80 => "VF",
+            75 => "VF-",
+            70 => "FN/VF",
+            65 => "FN+",
+            60 => "FN",
+            55 => "FN-",
+            50 => "VG/FN",
+            45 => "VG+",
+            40 => "VG",
+            35 => "VG-",
+            30 => "G/VG",
+            25 => "G+",
+            20 => "GD",
+            18 => "GD-",
+            15 => "FR/GD",
+            10 => "FR",
+            5 => "PR",
+            _ => return None,
+        })
+    }
+
     /// Reads `9.8`, `10`, or `10.0`. Anything finer than tenths is refused.
     pub fn parse(text: &str) -> Option<Self> {
         let text = text.trim();
@@ -564,6 +597,21 @@ pub struct TrashGroup {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn standard_grades_have_names() {
+        let name = |text: &str| Grade::parse(text).unwrap().name();
+        assert_eq!(name("9.4"), Some("NM"));
+        assert_eq!(name("9.8"), Some("NM/M"));
+        assert_eq!(name("10"), Some("GM"));
+        assert_eq!(name("0.5"), Some("PR"));
+        assert_eq!(name("9.3"), None);
+        let named = (5..=100)
+            .filter_map(Grade::from_tenths)
+            .filter(|g| g.name().is_some())
+            .count();
+        assert_eq!(named, 25);
+    }
 
     #[test]
     fn grades_parse_in_tenths() {
