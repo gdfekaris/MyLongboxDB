@@ -1,16 +1,19 @@
 //! Reading HEIC photos, the format iPhones save in, through libheif.
 
+use image::metadata::Orientation;
 use image::{DynamicImage, ImageBuffer, Rgb, Rgba};
 use libheif_rs::{
     ColorSpace, HeifContext, HeifError, HeifErrorSubCode, ImageHandle, LibHeif, RgbChroma,
     SecurityLimits,
 };
 
-use crate::decode::{DecodeError, MAX_PIXELS, check_size, max_alloc};
+use crate::decode::{Colour, DecodeError, Decoded, Format, MAX_PIXELS, check_size, max_alloc};
 
 /// Decodes the main picture of a HEIC file, turned the way the file
-/// says to show it.
-pub(crate) fn decode(data: &[u8]) -> Result<DynamicImage, DecodeError> {
+/// says to show it. libheif applies the file's own rotation and mirroring,
+/// which the format says take the place of any EXIF orientation, so none
+/// is left to apply.
+pub(crate) fn decode(data: &[u8]) -> Result<Decoded, DecodeError> {
     let lib = LibHeif::new();
     let context = open(data)?;
     let handle = context.primary_image_handle().map_err(damaged)?;
@@ -20,11 +23,34 @@ pub(crate) fn decode(data: &[u8]) -> Result<DynamicImage, DecodeError> {
     // size must fit too.
     let stored = |n: i32| u32::try_from(n).unwrap_or(0);
     check_size(stored(handle.ispe_width()), stored(handle.ispe_height()))?;
-    pixels(&lib, &handle)
+    let image = pixels(&lib, &handle)
         .map_err(|e| refusal(e, width, height))?
         .ok_or_else(|| {
             DecodeError::Damaged("the decoded picture does not match its stated size".into())
-        })
+        })?;
+    Ok(Decoded {
+        image,
+        format: Format::Heic,
+        colour: colour(&handle),
+        orientation: Orientation::NoTransforms,
+    })
+}
+
+/// The colour space the file states, preferring an ICC profile, which
+/// iPhones embed for Display P3.
+fn colour(handle: &ImageHandle) -> Colour {
+    if let Some(icc) = handle.color_profile_raw()
+        && !icc.data.is_empty()
+    {
+        return Colour::Icc(icc.data);
+    }
+    match handle.color_profile_nclx() {
+        Some(nclx) => Colour::Cicp {
+            primaries: u8::try_from(nclx.color_primaries() as u32).unwrap_or(2),
+            transfer: u8::try_from(nclx.transfer_characteristics() as u32).unwrap_or(2),
+        },
+        None => Colour::Unstated,
+    }
 }
 
 /// Reads the file's structure, with libheif's own limits set first.

@@ -12,6 +12,10 @@ workspace = true
 
 [dependencies]
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
+# Already built as part of image; used directly for full ICC profiles,
+# which image's own conversions do not read.
+moxcms = "0.8.1"
+sha2 = { version = "0.11.0", default-features = false }
 # Reading HEIC needs libheif, which a plain host may lack, so it sits
 # behind a feature. The Flatpak builds libheif with its HEVC decoder.
 libheif-rs = { version = "3.0.0", default-features = false, features = ["v1_20"], optional = true }

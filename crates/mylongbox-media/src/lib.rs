@@ -8,7 +8,15 @@ mod decode;
 mod fixtures;
 #[cfg(feature = "heic")]
 mod heic;
+mod pipeline;
+#[cfg(test)]
+mod pipeline_tests;
 
 pub use decode::{
-    DecodeError, Decoded, Format, MAX_FILE_BYTES, MAX_PIXELS, MAX_SIDE, decode_bytes, decode_file,
+    Colour, DecodeError, Decoded, Format, MAX_FILE_BYTES, MAX_PIXELS, MAX_SIDE, decode_bytes,
+    decode_file,
+};
+pub use pipeline::{
+    DEFAULT_LONG_EDGE, DEFAULT_QUALITY, EncodeError, Encoded, LONG_EDGES, Output, QUALITIES,
+    THUMBNAIL_EDGE, encode, upright,
 };

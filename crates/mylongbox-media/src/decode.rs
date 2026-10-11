@@ -6,7 +6,8 @@ use std::fs::File;
 use std::io::{Cursor, Read};
 use std::path::Path;
 
-use image::{DynamicImage, ImageFormat, ImageReader, Limits};
+use image::metadata::Orientation;
+use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader, Limits};
 
 /// Largest file accepted.
 pub const MAX_FILE_BYTES: u64 = 50 * 1024 * 1024;
@@ -28,11 +29,26 @@ pub enum Format {
     Heic,
 }
 
-/// A decoded photo.
+/// A decoded photo, with what is needed to show it the right way up and
+/// in the right colours. Nothing else from the file is kept.
 #[derive(Debug)]
 pub struct Decoded {
     pub image: DynamicImage,
     pub format: Format,
+    pub colour: Colour,
+    /// How the pixels must be turned to stand upright.
+    pub orientation: Orientation,
+}
+
+/// The colour space the photo's pixels are in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Colour {
+    /// None stated, which by convention means sRGB.
+    Unstated,
+    /// An ICC profile, as cameras and phones embed.
+    Icc(Vec<u8>),
+    /// Code points from ITU-T H.273, as HEIC files may give instead.
+    Cicp { primaries: u8, transfer: u8 },
 }
 
 /// Why a photo was turned away. Each reads as a sentence for the user.
@@ -103,10 +119,7 @@ pub fn decode_bytes(data: &[u8]) -> Result<Decoded, DecodeError> {
         return Err(DecodeError::TooLarge { bytes });
     }
     if is_heic(data) {
-        return decode_heic(data).map(|image| Decoded {
-            image,
-            format: Format::Heic,
-        });
+        return decode_heic(data);
     }
     let reader = ImageReader::new(Cursor::new(data))
         .with_guessed_format()
@@ -124,17 +137,22 @@ pub fn decode_bytes(data: &[u8]) -> Result<Decoded, DecodeError> {
         .into_dimensions()
         .map_err(|e| DecodeError::Damaged(e.to_string()))?;
     check_size(width, height)?;
-    let image = decode_limited(data, width, height)?;
-    Ok(Decoded { image, format })
+    let (image, colour, orientation) = decode_limited(data, width, height)?;
+    Ok(Decoded {
+        image,
+        format,
+        colour,
+        orientation,
+    })
 }
 
 #[cfg(feature = "heic")]
-fn decode_heic(data: &[u8]) -> Result<DynamicImage, DecodeError> {
+fn decode_heic(data: &[u8]) -> Result<Decoded, DecodeError> {
     crate::heic::decode(data)
 }
 
 #[cfg(not(feature = "heic"))]
-fn decode_heic(_: &[u8]) -> Result<DynamicImage, DecodeError> {
+fn decode_heic(_: &[u8]) -> Result<Decoded, DecodeError> {
     Err(DecodeError::Unsupported)
 }
 
@@ -172,16 +190,35 @@ pub(crate) fn check_size(width: u32, height: u32) -> Result<(), DecodeError> {
 }
 
 /// Decodes with the allocation caps on, a second guard should a header
-/// understate what decoding needs.
-fn decode_limited(data: &[u8], width: u32, height: u32) -> Result<DynamicImage, DecodeError> {
+/// understate what decoding needs. The colour profile and orientation are
+/// read on the way; a damaged one is ignored rather than refusing the
+/// photo, since the pixels are what matter.
+fn decode_limited(
+    data: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<(DynamicImage, Colour, Orientation), DecodeError> {
+    let refused = |e| match e {
+        image::ImageError::Limits(_) => DecodeError::TooManyPixels { width, height },
+        other => DecodeError::Damaged(other.to_string()),
+    };
     let mut reader = ImageReader::new(Cursor::new(data))
         .with_guessed_format()
         .map_err(DecodeError::Io)?;
     reader.limits(limits());
-    reader.decode().map_err(|e| match e {
-        image::ImageError::Limits(_) => DecodeError::TooManyPixels { width, height },
-        other => DecodeError::Damaged(other.to_string()),
-    })
+    let mut decoder = reader.into_decoder().map_err(refused)?;
+    // The picture itself counts against the allocation cap too, which
+    // decoding through a decoder does not do by itself.
+    let mut caps = limits();
+    caps.reserve(decoder.total_bytes()).map_err(refused)?;
+    decoder.set_limits(caps).map_err(refused)?;
+    let colour = match decoder.icc_profile() {
+        Ok(Some(icc)) if !icc.is_empty() => Colour::Icc(icc),
+        _ => Colour::Unstated,
+    };
+    let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
+    let image = DynamicImage::from_decoder(decoder).map_err(refused)?;
+    Ok((image, colour, orientation))
 }
 
 /// Caps on what decoding may allocate, matching the pixel limit.
@@ -233,20 +270,7 @@ mod tests {
     /// A PNG that claims `width` × `height` pixels, with correct
     /// checksums but no picture data.
     fn png_header(width: u32, height: u32) -> Vec<u8> {
-        fn crc32(bytes: &[u8]) -> u32 {
-            let mut crc = !0u32;
-            for &b in bytes {
-                crc ^= u32::from(b);
-                for _ in 0..8 {
-                    crc = if crc & 1 == 1 {
-                        (crc >> 1) ^ 0xEDB8_8320
-                    } else {
-                        crc >> 1
-                    };
-                }
-            }
-            !crc
-        }
+        use crate::fixtures::crc32;
         let mut chunk = b"IHDR".to_vec();
         chunk.extend(width.to_be_bytes());
         chunk.extend(height.to_be_bytes());
@@ -351,6 +375,7 @@ mod tests {
 
     /// The HEIC fixture with its stated size changed, as a hostile file
     /// might.
+    #[cfg(feature = "heic")]
     fn heic_claiming(width: u32, height: u32) -> Vec<u8> {
         let mut data = HEIC.to_vec();
         let at = data.windows(4).position(|w| w == b"ispe").unwrap() + 8;

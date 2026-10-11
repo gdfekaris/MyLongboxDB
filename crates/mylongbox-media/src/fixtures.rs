@@ -1,5 +1,21 @@
 //! Generated pictures for the tests, kept as bytes so no photo files
-//! enter the repository.
+//! enter the repository, and helpers for building others.
+
+/// The CRC-32 that PNG chunks carry.
+pub(crate) fn crc32(bytes: &[u8]) -> u32 {
+    let mut crc = !0u32;
+    for &b in bytes {
+        crc ^= u32::from(b);
+        for _ in 0..8 {
+            crc = if crc & 1 == 1 {
+                (crc >> 1) ^ 0xEDB8_8320
+            } else {
+                crc >> 1
+            };
+        }
+    }
+    !crc
+}
 
 /// A 48 × 32 HEIC of a gradient, red rising by 5 a column and green by 8
 /// a row over a blue of 128, saved by pillow-heif at quality 90. Its
@@ -54,6 +70,7 @@ pub(crate) const GRADIENT_HEIC: &[u8] = &[
 /// A 16 × 16 HEIC with 10 bits a channel: red rising by 64 a column and
 /// green by 64 a row, out of 1023, over a blue of 512, saved by
 /// pillow-heif at quality 95 with full colour resolution (4:4:4).
+#[cfg(feature = "heic")]
 pub(crate) const DEEP_HEIC: &[u8] = &[
     0x00, 0x00, 0x00, 0x1c, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x78, 0x00, 0x00, 0x00, 0x00,
     0x6d, 0x69, 0x66, 0x31, 0x68, 0x65, 0x69, 0x78, 0x6d, 0x69, 0x61, 0x66, 0x00, 0x00, 0x01, 0x7e,
