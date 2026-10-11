@@ -594,6 +594,8 @@ impl Form {
                     volume: optional(&self.volume, "Enter the volume as a number")?,
                     publisher: Some(self.publisher.text().trim().to_owned())
                         .filter(|p| !p.is_empty()),
+                    magazine_format: None,
+                    black_and_white: None,
                 }
             }
         };

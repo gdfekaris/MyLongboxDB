@@ -17,6 +17,8 @@ fn new_series(name: &str) -> SeriesChoice {
         start_year: Some(1963),
         volume: None,
         publisher: Some("Marvel".into()),
+        magazine_format: None,
+        black_and_white: None,
     }
 }
 
@@ -282,4 +284,129 @@ fn adding_never_unmarks_or_clears_what_is_there() {
     );
     assert_eq!(edition.cover_artists.len(), 2);
     assert_eq!(edition.copies.len(), 2);
+}
+
+fn book(line: &str, n: Option<&str>) -> BookEntry {
+    BookEntry::new(
+        Category::CollectedEdition,
+        SeriesChoice::New {
+            name: line.into(),
+            start_year: Some(2014),
+            volume: None,
+            publisher: None,
+            magazine_format: None,
+            black_and_white: None,
+        },
+        n.and_then(number),
+    )
+}
+
+#[test]
+fn magazines_keep_their_format_and_article_credits() {
+    let db = db();
+    let mut e = BookEntry::new(
+        Category::Magazine,
+        SeriesChoice::New {
+            name: "Savage Sword of Conan".into(),
+            start_year: Some(1974),
+            volume: None,
+            publisher: None,
+            magazine_format: Some(MagazineFormat::Standard),
+            black_and_white: Some(true),
+        },
+        number("1"),
+    );
+    e.credits = vec![("Roy Thomas".into(), Role::Article)];
+    e.copy.grade = Grade::parse("8.5");
+    let saved = db.add_book(&e).unwrap();
+    let d = db.issue_detail(saved.issue).unwrap();
+    assert_eq!(d.series.fields.category, Category::Magazine);
+    assert_eq!(d.series.fields.black_and_white, Some(true));
+    assert_eq!(
+        d.series.fields.magazine_format,
+        Some(MagazineFormat::Standard)
+    );
+    assert_eq!(d.credits[0].role, Role::Article);
+}
+
+#[test]
+fn collected_editions_save_their_book_details_and_contents() {
+    let db = db();
+    let mut e = book("Epic Collection: Amazing Spider-Man", Some("1"));
+    e.edition.isbn = Some(Isbn::parse("978-0-306-40615-7").unwrap());
+    e.edition.binding = Some(Binding::Softcover);
+    e.edition.has_dust_jacket = Some(false);
+    e.copy.book_condition = Some(BookCondition::LikeNew);
+    e.collects = "Amazing Spider-Man (1963) 1-3; Amazing Fantasy (1962) 15".into();
+    let saved = db.add_book(&e).unwrap();
+
+    let d = db.issue_detail(saved.issue).unwrap();
+    assert_eq!(d.collects.len(), 4);
+    let fields = &d.editions[0].edition.fields;
+    assert_eq!(fields.binding, Some(Binding::Softcover));
+    assert!(fields.isbn.is_some());
+    assert_eq!(
+        d.editions[0].copies[0].copy.fields.book_condition,
+        Some(BookCondition::LikeNew)
+    );
+
+    let mut edit = db.book_entry(saved.copy).unwrap();
+    assert_eq!(
+        edit.collects,
+        "Amazing Spider-Man (1963) 1\u{2013}3; Amazing Fantasy (1962) 15"
+    );
+    edit.collects = "Amazing Spider-Man (1963) 1-2".into();
+    db.update_book(saved.copy, &edit).unwrap();
+    assert_eq!(db.issue_detail(saved.issue).unwrap().collects.len(), 2);
+    edit.collects.clear();
+    db.update_book(saved.copy, &edit).unwrap();
+    assert!(db.issue_detail(saved.issue).unwrap().collects.is_empty());
+}
+
+#[test]
+fn adding_another_copy_of_a_book_keeps_its_contents_unless_retyped() {
+    let db = db();
+    let mut e = book("Omnibus", Some("1"));
+    e.collects = "X-Men (1963) 1-5".into();
+    let saved = db.add_book(&e).unwrap();
+    let again = db.add_book(&book("Omnibus", Some("1"))).unwrap();
+    assert_eq!(again.issue, saved.issue);
+    assert_eq!(db.issue_detail(saved.issue).unwrap().collects.len(), 5);
+
+    let mut retyped = book("Omnibus", Some("1"));
+    retyped.collects = "X-Men (1963) 1-2".into();
+    db.add_book(&retyped).unwrap();
+    assert_eq!(db.issue_detail(saved.issue).unwrap().collects.len(), 2);
+}
+
+#[test]
+fn standalone_books_are_each_their_own_entry() {
+    let db = db();
+    let mut first = book("Graphic Novels", None);
+    first.issue.title = "Watchmen".into();
+    let mut second = book("Graphic Novels", None);
+    second.issue.title = "Maus".into();
+    let a = db.add_book(&first).unwrap();
+    let b = db.add_book(&second).unwrap();
+    assert_eq!(a.series, b.series);
+    assert_ne!(a.issue, b.issue);
+}
+
+#[test]
+fn bad_contents_undo_the_whole_book() {
+    let db = db();
+    let mut e = book("Omnibus", Some("1"));
+    e.collects = "X-Men (1963) 1-5; Avengers (1963) 10-1".into();
+    assert!(matches!(db.add_book(&e), Err(Error::Invalid(_))));
+    assert!(db.list_series().unwrap().is_empty());
+    assert!(db.browse(Shelf::Everything).unwrap().is_empty());
+}
+
+#[test]
+fn contents_belong_only_to_collected_editions() {
+    let db = db();
+    let mut e = comic("X-Men", "1");
+    e.collects = "Avengers (1963) 1".into();
+    assert!(matches!(db.add_book(&e), Err(Error::Invalid(_))));
+    assert!(db.list_series().unwrap().is_empty());
 }

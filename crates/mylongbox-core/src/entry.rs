@@ -13,7 +13,8 @@ use crate::issue_number::IssueNumber;
 use crate::lookup::LookupId;
 use crate::model::{
     BoxId, Category, CharacterId, CopyFields, CopyId, CreatorId, EditionFields, EditionId,
-    IssueFields, IssueId, PublisherId, Role, SeriesFields, SeriesId, StoryArcId, TagId, TeamId,
+    IssueFields, IssueId, MagazineFormat, PublisherId, Role, SeriesFields, SeriesId, StoryArcId,
+    TagId, TeamId,
 };
 
 /// The series a book belongs to: one picked from the list, or one typed
@@ -27,6 +28,10 @@ pub enum SeriesChoice {
         start_year: Option<u16>,
         volume: Option<u32>,
         publisher: Option<String>,
+        /// Magazines only.
+        magazine_format: Option<MagazineFormat>,
+        /// Magazines only.
+        black_and_white: Option<bool>,
     },
 }
 
@@ -50,6 +55,10 @@ pub struct BookEntry {
     pub copy: CopyFields,
     pub storage_box: Option<String>,
     pub tags: Vec<String>,
+    /// For a collected edition, the issues it reprints in the form
+    /// `parse_collects` reads, such as `Amazing Spider-Man (1963) 1-10`.
+    /// Empty for none.
+    pub collects: String,
 }
 
 impl BookEntry {
@@ -67,6 +76,7 @@ impl BookEntry {
             copy: CopyFields::default(),
             storage_box: None,
             tags: Vec::new(),
+            collects: String::new(),
         }
     }
 }
@@ -125,6 +135,9 @@ impl Database {
         };
         let copy = self.create_copy(edition, &self.copy_fields(entry)?)?;
         self.set_tags(copy, &self.names::<TagId>(&entry.tags)?)?;
+        if !entry.collects.trim().is_empty() {
+            self.set_collects(issue, &entry.collects)?;
+        }
         tx.commit()?;
         Ok(SavedBook {
             series,
@@ -154,6 +167,9 @@ impl Database {
         self.set_characters(issue, &self.appearances::<CharacterId>(&entry.characters)?)?;
         self.set_teams(issue, &self.appearances::<TeamId>(&entry.teams)?)?;
         self.set_story_arcs(issue, &self.arcs_of(entry)?)?;
+        if entry.category == Category::CollectedEdition {
+            self.set_collects(issue, &entry.collects)?;
+        }
         self.update_edition(edition, &entry.edition)?;
         self.set_cover_artists(edition, &self.names::<CreatorId>(&entry.cover_artists)?)?;
         self.update_copy(copy, &self.copy_fields(entry)?)?;
@@ -209,6 +225,11 @@ impl Database {
                 .map(|b| self.lookup::<BoxId>(b).map(|l| l.name))
                 .transpose()?,
             tags: self.tags(copy)?.into_iter().map(|t| t.name).collect(),
+            collects: if series.fields.category == Category::CollectedEdition {
+                self.collects_text(issue.id)?
+            } else {
+                String::new()
+            },
             issue: issue.fields,
             edition: edition.fields,
             copy: c.fields,
@@ -246,6 +267,8 @@ impl Database {
                 start_year,
                 volume,
                 publisher,
+                magazine_format,
+                black_and_white,
             } => {
                 let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
                 let found: Option<SeriesId> = self
@@ -265,6 +288,8 @@ impl Database {
                         let mut fields = SeriesFields::new(name, entry.category);
                         fields.start_year = *start_year;
                         fields.volume = *volume;
+                        fields.magazine_format = *magazine_format;
+                        fields.black_and_white = *black_and_white;
                         fields.publisher = publisher
                             .as_deref()
                             .filter(|p| !p.trim().is_empty())
