@@ -6,8 +6,8 @@ use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
     Amount, BulkChange, Category, CollectionInfo, CollectionStore, CopyId, CopyRow, CoverPhoto,
-    Currency, Database, Date, EditionId, FilterSet, IssueId, Prefill, SeriesId, Shelf, ShelfEntry,
-    ShelfList, Side, TrashId, ValueEntry,
+    Currency, Database, Date, EditionId, FilterSet, ImportSource, IssueId, Prefill, SeriesId,
+    Shelf, ShelfEntry, ShelfList, Side, TrashId, ValueEntry,
 };
 use mylongbox_media::Edit;
 use relm4::typed_view::column::TypedColumnView;
@@ -23,8 +23,8 @@ use crate::settings::{self, Settings};
 use crate::sorting::SortBy;
 use crate::window::MainWindow;
 use crate::{
-    bulk_dialog, covers, form, format, gaps_page, photo_editor, prefs, prompt, sorting, trash_page,
-    viewer,
+    bulk_dialog, covers, form, format, gaps_page, import_dialog, photo_editor, prefs, prompt,
+    sorting, trash_page, viewer,
 };
 
 /// What a sidebar section shows.
@@ -245,6 +245,11 @@ pub enum AppMsg {
     ZipPicked(PathBuf),
     /// Write the full export, once the message saying so has shown.
     WriteZip(PathBuf),
+    /// Ask for a CSV file or full export to add books from.
+    ImportBooks,
+    BooksFilePicked(PathBuf),
+    /// The import wizard added this many books.
+    BooksImported(usize),
     SectionSelected(usize),
     NameActivated(u32),
     /// A book in the grid or list, by position.
@@ -328,6 +333,13 @@ pub enum AppMsg {
 #[derive(Debug)]
 pub enum CommandMsg {
     Imported(Result<CollectionInfo, String>),
+    /// A file to add books from, read for the collection opened as
+    /// number `opened`.
+    BooksFileRead {
+        opened: u64,
+        name: String,
+        source: Result<Box<ImportSource>, String>,
+    },
     /// A photo file read and ready for the editor, for the collection
     /// opened as number `opened`.
     PhotoLoaded {
@@ -371,6 +383,7 @@ impl Component for App {
         });
         add_action(&root, "export-csv", &sender, || AppMsg::ExportCsv(false));
         add_action(&root, "export-zip", &sender, || AppMsg::ExportZip);
+        add_action(&root, "import-books", &sender, || AppMsg::ImportBooks);
         add_action(&root, "export-shown-csv", &sender, || {
             AppMsg::ExportCsv(true)
         });
@@ -698,6 +711,32 @@ impl Component for App {
                     Ok(n) => root.toast(&format!("Exported {n} books with their photos")),
                     Err(why) => root.toast(&format!("Could not export: {why}")),
                 }
+            }
+            AppMsg::ImportBooks => match &self.open {
+                Some(_) => pick_books_file(root, &sender),
+                None => root.toast("Open a collection first"),
+            },
+            AppMsg::BooksFilePicked(path) => {
+                root.toast("Reading the file\u{2026}");
+                let opened = self.opened;
+                let name = path
+                    .file_name()
+                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+                sender.spawn_oneshot_command(move || CommandMsg::BooksFileRead {
+                    opened,
+                    name,
+                    source: ImportSource::open(&path)
+                        .map(Box::new)
+                        .map_err(|e| e.to_string()),
+                });
+            }
+            AppMsg::BooksImported(added) => {
+                self.show(root);
+                root.toast(&match added {
+                    0 => "No books were added".to_owned(),
+                    1 => "Imported 1 book".to_owned(),
+                    n => format!("Imported {} books", format::grouped(&n.to_string())),
+                });
             }
             AppMsg::SectionSelected(index) => {
                 if let Some(section) = sections().nth(index) {
@@ -1264,6 +1303,22 @@ impl Component for App {
                 root.toast(&format!("Imported \u{201c}{}\u{201d}", info.name));
             }
             CommandMsg::Imported(Err(why)) => root.toast(&format!("Could not import: {why}")),
+            CommandMsg::BooksFileRead { opened, .. } if opened != self.opened => {}
+            CommandMsg::BooksFileRead {
+                name,
+                source: Ok(source),
+                ..
+            } => {
+                if let Some((_, db)) = &self.open {
+                    let s = sender.clone();
+                    import_dialog::open(root, &name, *source, db, self.settings.photos, move |n| {
+                        s.input(AppMsg::BooksImported(n));
+                    });
+                }
+            }
+            CommandMsg::BooksFileRead {
+                source: Err(why), ..
+            } => root.toast(&format!("Could not read the file: {why}")),
         }
     }
 }
@@ -1675,6 +1730,7 @@ impl App {
             "export-csv",
             "export-shown-csv",
             "export-zip",
+            "import-books",
             "add-comic",
             "add-magazine",
             "add-collected",
@@ -2015,6 +2071,34 @@ fn collection_filters() -> gio::ListStore {
     filters.append(&collections);
     filters.append(&all);
     filters
+}
+
+/// Asks for a CSV file or a full export to add books from.
+fn pick_books_file(root: &MainWindow, sender: &ComponentSender<App>) {
+    let books = gtk::FileFilter::new();
+    books.set_name(Some("CSV files and full exports"));
+    for suffix in ["csv", "tsv", "txt", "zip"] {
+        books.add_suffix(suffix);
+    }
+    for mime in ["text/csv", "text/tab-separated-values", "application/zip"] {
+        books.add_mime_type(mime);
+    }
+    let filters = gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&books);
+    let dialog = gtk::FileDialog::builder()
+        .title("Import Books")
+        .modal(true)
+        .filters(&filters)
+        .default_filter(&books)
+        .build();
+    let sender = sender.clone();
+    dialog.open(Some(root), None::<&gio::Cancellable>, move |result| {
+        if let Ok(file) = result
+            && let Some(path) = file.path()
+        {
+            sender.input(AppMsg::BooksFilePicked(path));
+        }
+    });
 }
 
 fn pick_file_to_import(root: &MainWindow, sender: &ComponentSender<App>) {

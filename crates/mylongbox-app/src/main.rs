@@ -13,6 +13,7 @@ mod filter_panel;
 mod form;
 mod format;
 mod gaps_page;
+mod import_dialog;
 mod issue_page;
 mod photo_editor;
 mod prefs;

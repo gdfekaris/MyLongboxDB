@@ -155,6 +155,14 @@ pub fn finish(full: &RgbImage, edit: &Edit, output: Output) -> Result<CoverPhoto
     })
 }
 
+/// Makes the JPEGs the collection keeps from a photo file's bytes,
+/// decoded with the same limits as a photo picked by hand. Slow, so it
+/// runs away from the window.
+pub fn prepare(bytes: &[u8], output: Output) -> Result<CoverPhoto, String> {
+    let full = upright(decode_bytes(bytes).map_err(|e| e.to_string())?);
+    finish(&full, &Edit::default(), output)
+}
+
 /// What stands in for a missing photo: a card naming the missing side.
 /// A `small` one, for the grid, shows only a short line.
 pub fn placeholder(text: &str, small: bool) -> gtk::Box {
