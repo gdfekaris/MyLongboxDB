@@ -120,6 +120,14 @@ code_enum! {
 }
 
 code_enum! {
+    /// Which side of a book a cover photo shows.
+    pub enum Side {
+        Front = "front",
+        Back = "back",
+    }
+}
+
+code_enum! {
     pub enum Binding {
         Hardcover = "hardcover",
         Softcover = "softcover",

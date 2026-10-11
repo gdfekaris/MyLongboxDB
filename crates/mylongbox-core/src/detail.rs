@@ -7,7 +7,7 @@ use crate::db::Database;
 use crate::error::Result;
 use crate::links::{Appearance, ArcPart, Credit, Named, Signature};
 use crate::model::{
-    BoxId, CharacterId, Copy, CreatorId, Edition, Issue, IssueId, PublisherId, Series, TagId,
+    BoxId, CharacterId, Copy, CreatorId, Edition, Issue, IssueId, PublisherId, Series, Side, TagId,
     TeamId,
 };
 use crate::values::ValueEntry;
@@ -21,6 +21,8 @@ pub struct CopyDetail {
     pub signatures: Vec<Signature>,
     /// Valuations, oldest first; the last is what it is worth now.
     pub values: Vec<ValueEntry>,
+    /// The sides that have photos, front first.
+    pub photos: Vec<Side>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -110,6 +112,7 @@ impl Database {
             tags: self.tags(copy.id)?,
             signatures: self.signatures(copy.id)?,
             values: self.values(copy.id)?,
+            photos: self.photo_sides(copy.id)?,
             copy,
         })
     }
