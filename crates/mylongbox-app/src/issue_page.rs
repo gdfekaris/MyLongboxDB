@@ -7,11 +7,11 @@ use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
     Category, CopyDetail, CopyId, EditionDetail, EditionId, IssueDetail, IssueId, MagazineFormat,
-    Prefill, Role, ValueEntry, format_collects,
+    Prefill, Role, Side, ValueEntry, format_collects,
 };
 
 use crate::books::version;
-use crate::{chart, format};
+use crate::{chart, covers, format};
 
 /// What the page's rows do when chosen.
 #[derive(Clone)]
@@ -28,13 +28,17 @@ pub struct Links {
     /// Deletes a value of a copy; the value is passed whole so it can be
     /// put back.
     pub delete_value: Rc<dyn Fn(CopyId, ValueEntry)>,
+    /// Asks for a photo of one side of a copy, new or replacing one.
+    pub add_photo: Rc<dyn Fn(CopyId, Side)>,
+    pub remove_photo: Rc<dyn Fn(CopyId, Side)>,
+    pub swap_photos: Rc<dyn Fn(CopyId)>,
 }
 
 /// The page for `d`, with the row of `open_copy` unfolded, as after a
 /// change to that copy.
 pub fn page(d: &IssueDetail, links: &Links, open_copy: Option<CopyId>) -> adw::NavigationPage {
     let prefs = adw::PreferencesPage::new();
-    prefs.add(&summary(d));
+    prefs.add(&summary(d, open_copy));
     if !d.issue.fields.synopsis.is_empty() {
         let group = group("Synopsis");
         group.add(&paragraph(&d.issue.fields.synopsis));
@@ -148,26 +152,41 @@ fn series_title(name: &str, start_year: Option<u16>) -> String {
     }
 }
 
+/// The copy whose front cover stands for the issue: the one asked for
+/// if it has a front photo, else the first that does.
+fn cover_copy(d: &IssueDetail, open_copy: Option<CopyId>) -> Option<CopyId> {
+    let with_front = || {
+        d.editions
+            .iter()
+            .flat_map(|e| &e.copies)
+            .filter(|c| c.photos.contains(&Side::Front))
+    };
+    with_front()
+        .find(|c| Some(c.copy.id) == open_copy)
+        .or_else(|| with_front().next())
+        .map(|c| c.copy.id)
+}
+
 /// The cover, the issue's name, and the facts about it at a glance.
-fn summary(d: &IssueDetail) -> adw::PreferencesGroup {
+fn summary(d: &IssueDetail, open_copy: Option<CopyId>) -> adw::PreferencesGroup {
     let f = &d.issue.fields;
     let s = &d.series.fields;
-    let placeholder = gtk::Image::builder()
-        .icon_name("image-x-generic-symbolic")
-        .pixel_size(64)
-        .hexpand(true)
-        .vexpand(true)
-        .css_classes(["dim-label"])
-        .build();
     let cover = gtk::Box::builder()
         .width_request(160)
         .height_request(242)
         .valign(gtk::Align::Start)
-        // The placeholder inside expands; the cover keeps its size.
+        // What is inside expands; the cover keeps its size.
         .hexpand(false)
+        .overflow(gtk::Overflow::Hidden)
         .css_classes(["card"])
         .build();
-    cover.append(&placeholder);
+    match cover_copy(d, open_copy).and_then(covers::thumbnail) {
+        Some(texture) => cover.append(&covers::picture(&texture, gtk::ContentFit::Contain)),
+        None => cover.append(&covers::placeholder(
+            "No Front Cover Image for This Issue",
+            false,
+        )),
+    }
 
     let text = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
@@ -441,6 +460,7 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
     edit.connect_clicked(move |_| hook(copy));
     row.add_suffix(&edit);
     row.add_suffix(&more_menu(&row, copy, category, links));
+    row.add_row(&photo_row(c, links));
     let add = |label: &str, value: String| {
         if !value.is_empty() {
             row.add_row(&property(label, &value));
@@ -511,6 +531,104 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
     );
     value_history(&row, c, links);
     row
+}
+
+/// The copy's front and back photos, each with ways to add, replace, or
+/// remove it.
+fn photo_row(c: &CopyDetail, links: &Links) -> gtk::ListBoxRow {
+    let copy = c.copy.id;
+    let slots = gtk::Box::builder()
+        .spacing(18)
+        .margin_top(12)
+        .margin_bottom(12)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+    for side in [Side::Front, Side::Back] {
+        slots.append(&photo_slot(copy, side, c.photos.contains(&side), links));
+    }
+    if !c.photos.is_empty() {
+        let swap = gtk::Button::builder()
+            .icon_name("object-flip-horizontal-symbolic")
+            .tooltip_text("Swap Front and Back")
+            .valign(gtk::Align::Center)
+            .css_classes(["flat", "circular"])
+            .build();
+        let hook = links.swap_photos.clone();
+        swap.connect_clicked(move |_| hook(copy));
+        slots.append(&swap);
+    }
+    gtk::ListBoxRow::builder()
+        .activatable(false)
+        .selectable(false)
+        .child(&slots)
+        .build()
+}
+
+fn photo_slot(copy: CopyId, side: Side, has_photo: bool, links: &Links) -> gtk::Box {
+    let (title, missing) = match side {
+        Side::Front => ("Front Cover", "No Front Cover Image"),
+        Side::Back => ("Back Cover", "No Back Cover Image"),
+    };
+    let frame = gtk::Box::builder()
+        .width_request(120)
+        .height_request(182)
+        // What is inside expands; the frame keeps its size.
+        .hexpand(false)
+        .vexpand(false)
+        .overflow(gtk::Overflow::Hidden)
+        .css_classes(["card"])
+        .build();
+    let texture = has_photo
+        .then(|| covers::thumbnail_of(copy, side))
+        .flatten();
+    match &texture {
+        Some(texture) => frame.append(&covers::picture(texture, gtk::ContentFit::Contain)),
+        None => frame.append(&covers::placeholder(missing, true)),
+    }
+    let caption = gtk::Label::builder()
+        .label(title)
+        .css_classes(["caption-heading"])
+        .build();
+    let buttons = gtk::Box::builder()
+        .spacing(6)
+        .halign(gtk::Align::Center)
+        .build();
+    let button = |label: &str, tip: &str| {
+        gtk::Button::builder()
+            .label(label)
+            .use_underline(true)
+            .tooltip_text(tip)
+            .css_classes(["flat"])
+            .build()
+    };
+    if has_photo {
+        let replace = button("_Replace\u{2026}", &format!("Replace the {title} Photo"));
+        let hook = links.add_photo.clone();
+        replace.connect_clicked(move |_| hook(copy, side));
+        let remove = gtk::Button::builder()
+            .icon_name("user-trash-symbolic")
+            .tooltip_text(format!("Remove the {title} Photo"))
+            .css_classes(["flat"])
+            .build();
+        let hook = links.remove_photo.clone();
+        remove.connect_clicked(move |_| hook(copy, side));
+        buttons.append(&replace);
+        buttons.append(&remove);
+    } else {
+        let add = button("_Add Photo\u{2026}", &format!("Add a {title} Photo"));
+        let hook = links.add_photo.clone();
+        add.connect_clicked(move |_| hook(copy, side));
+        buttons.append(&add);
+    }
+    let slot = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(6)
+        .build();
+    slot.append(&frame);
+    slot.append(&caption);
+    slot.append(&buttons);
+    slot
 }
 
 /// The copy's values over time: a small chart once there are two, each

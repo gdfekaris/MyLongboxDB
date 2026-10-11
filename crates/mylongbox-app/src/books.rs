@@ -7,12 +7,14 @@ use relm4::typed_view::column::{RelmColumn, TypedColumnView};
 use relm4::typed_view::grid::RelmGridItem;
 use relm4::typed_view::list::RelmListItem;
 
-use crate::format;
+use crate::{covers, format};
 
 /// One physical book in the cover grid or the list.
 pub struct Book(pub CopyRow);
 
 pub struct BookWidgets {
+    photo: gtk::Picture,
+    missing: gtk::Box,
     badge: gtk::Label,
     signed: gtk::Label,
     series: gtk::Label,
@@ -28,19 +30,23 @@ impl RelmGridItem for Book {
     type Widgets = BookWidgets;
 
     fn setup(_: &gtk::ListItem) -> (gtk::Box, BookWidgets) {
-        let placeholder = gtk::Image::builder()
-            .icon_name("image-x-generic-symbolic")
-            .pixel_size(48)
+        let missing = covers::placeholder("No Cover Image", true);
+        // Filling the tile keeps the grid even; the book's page shows the
+        // whole photo.
+        let photo = gtk::Picture::builder()
+            .content_fit(gtk::ContentFit::Cover)
+            .can_shrink(true)
             .hexpand(true)
             .vexpand(true)
-            .css_classes(["dim-label"])
             .build();
         let cover = gtk::Box::builder()
             .width_request(COVER_WIDTH)
             .height_request(COVER_HEIGHT)
+            .overflow(gtk::Overflow::Hidden)
             .css_classes(["card"])
             .build();
-        cover.append(&placeholder);
+        cover.append(&photo);
+        cover.append(&missing);
         let badge = gtk::Label::builder()
             .halign(gtk::Align::End)
             .valign(gtk::Align::Start)
@@ -91,6 +97,8 @@ impl RelmGridItem for Book {
         (
             root,
             BookWidgets {
+                photo,
+                missing,
                 badge,
                 signed,
                 series,
@@ -101,6 +109,10 @@ impl RelmGridItem for Book {
 
     fn bind(&mut self, widgets: &mut BookWidgets, root: &mut gtk::Box) {
         let row = &self.0;
+        let texture = covers::thumbnail(row.copy);
+        widgets.photo.set_paintable(texture.as_ref());
+        widgets.photo.set_visible(texture.is_some());
+        widgets.missing.set_visible(texture.is_none());
         let badge = badge(row);
         widgets.badge.set_visible(!badge.is_empty());
         widgets.badge.set_label(&badge);

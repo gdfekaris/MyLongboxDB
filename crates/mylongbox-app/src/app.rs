@@ -4,8 +4,9 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
-    Amount, BulkChange, Category, CollectionInfo, CollectionStore, CopyId, Currency, Database,
-    Date, EditionId, IssueId, Prefill, Shelf, ShelfEntry, ShelfList, TrashId, ValueEntry,
+    Amount, BulkChange, Category, CollectionInfo, CollectionStore, CopyId, CoverPhoto, Currency,
+    Database, Date, EditionId, IssueId, Prefill, Shelf, ShelfEntry, ShelfList, Side, TrashId,
+    ValueEntry,
 };
 use relm4::typed_view::column::TypedColumnView;
 use relm4::typed_view::grid::TypedGridView;
@@ -17,7 +18,7 @@ use crate::form::{Focus, Form, Hooks};
 use crate::issue_page::{self, Links};
 use crate::settings::{self, Settings};
 use crate::window::MainWindow;
-use crate::{bulk_dialog, format, prefs, prompt, trash_page};
+use crate::{bulk_dialog, covers, format, prefs, prompt, trash_page};
 
 /// What a sidebar section shows.
 #[derive(Clone, Copy)]
@@ -173,6 +174,9 @@ pub struct App {
     /// The open collection and its name. Pages hold only weak references,
     /// so closing it here releases its lock.
     open: Option<(String, Rc<Database>)>,
+    /// Counts collections opened, so work finishing in the background
+    /// can tell whether the one it was for is still open.
+    opened: u64,
     /// The add or edit form, while one is open.
     form: Option<Form>,
     /// The copy saved or shown most recently, which "add next issue"
@@ -218,6 +222,13 @@ pub enum AppMsg {
     AddValue(CopyId),
     SaveValue(CopyId, Date, Amount, String),
     DeleteValue(CopyId, ValueEntry),
+    /// Ask for a photo file for one side of a copy.
+    AddPhoto(CopyId, Side),
+    PhotoPicked(CopyId, Side, PathBuf),
+    RemovePhoto(CopyId, Side),
+    /// Put back a removed photo.
+    RestorePhoto(CopyId, Side, Box<CoverPhoto>),
+    SwapPhotos(CopyId),
     /// Open Preferences, on the exchange rates if asked.
     ShowPreferences(bool),
     SettingsChanged(Settings),
@@ -260,6 +271,14 @@ pub enum AppMsg {
 #[derive(Debug)]
 pub enum CommandMsg {
     Imported(Result<CollectionInfo, String>),
+    /// A photo file read and saved as JPEGs, ready to store in the
+    /// collection opened as number `opened`.
+    PhotoReady {
+        opened: u64,
+        copy: CopyId,
+        side: Side,
+        photo: Result<Box<CoverPhoto>, String>,
+    },
 }
 
 impl Component for App {
@@ -379,6 +398,7 @@ impl Component for App {
         let mut model = App {
             store,
             open: None,
+            opened: 0,
             form: None,
             recent_copy: None,
             open_copy: None,
@@ -519,6 +539,41 @@ impl Component for App {
                     Err(why) => root.toast(&format!("Could not delete the value: {why}")),
                 }
             }
+            AppMsg::AddPhoto(copy, side) => pick_photo(root, &sender, copy, side),
+            AppMsg::PhotoPicked(copy, side, path) => {
+                root.toast("Preparing the photo\u{2026}");
+                let (output, opened) = (self.settings.photos, self.opened);
+                sender.spawn_oneshot_command(move || CommandMsg::PhotoReady {
+                    opened,
+                    copy,
+                    side,
+                    photo: covers::prepare(&path, output).map(Box::new),
+                });
+            }
+            AppMsg::RemovePhoto(copy, side) => match self.with_db(|db| db.remove_photo(copy, side))
+            {
+                Ok(photo) => {
+                    covers::forget(copy);
+                    self.refresh_copy(copy, root, &sender);
+                    let undo = sender.clone();
+                    let photo = Box::new(photo);
+                    root.toast_undo(&photo_message(side, "removed"), move || {
+                        undo.input(AppMsg::RestorePhoto(copy, side, photo.clone()));
+                    });
+                }
+                Err(why) => root.toast(&format!("Could not remove the photo: {why}")),
+            },
+            AppMsg::RestorePhoto(copy, side, photo) => {
+                self.store_photo(copy, side, &photo, "put back", root, &sender);
+            }
+            AppMsg::SwapPhotos(copy) => match self.with_db(|db| db.swap_photos(copy)) {
+                Ok(()) => {
+                    covers::forget(copy);
+                    self.refresh_copy(copy, root, &sender);
+                    root.toast("Front and back swapped");
+                }
+                Err(why) => root.toast(&format!("Could not swap the photos: {why}")),
+            },
             AppMsg::ShowPreferences(show_rates) => self.show_preferences(show_rates, root, &sender),
             AppMsg::SettingsChanged(settings) => {
                 self.settings = settings;
@@ -860,8 +915,20 @@ impl Component for App {
         }
     }
 
-    fn update_cmd(&mut self, msg: CommandMsg, _sender: ComponentSender<Self>, root: &Self::Root) {
+    fn update_cmd(&mut self, msg: CommandMsg, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
+            CommandMsg::PhotoReady { opened, .. } if opened != self.opened => {
+                root.toast("The photo was not added, as another collection is open now");
+            }
+            CommandMsg::PhotoReady {
+                copy,
+                side,
+                photo: Ok(photo),
+                ..
+            } => self.store_photo(copy, side, &photo, "added", root, &sender),
+            CommandMsg::PhotoReady {
+                photo: Err(why), ..
+            } => root.toast(&format!("Could not add the photo: {why}")),
             CommandMsg::Imported(Ok(info)) => {
                 self.open_collection(&info.name, root);
                 root.toast(&format!("Imported \u{201c}{}\u{201d}", info.name));
@@ -1027,6 +1094,26 @@ impl App {
         self.open_issue(issue, root, sender);
     }
 
+    /// Stores a photo made or kept earlier, and shows the copy with it.
+    fn store_photo(
+        &mut self,
+        copy: CopyId,
+        side: Side,
+        photo: &CoverPhoto,
+        done: &str,
+        root: &MainWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        match self.with_db(|db| db.set_photo(copy, side, photo)) {
+            Ok(()) => {
+                covers::forget(copy);
+                self.refresh_copy(copy, root, sender);
+                root.toast(&photo_message(side, done));
+            }
+            Err(why) => root.toast(&format!("Could not save the photo: {why}")),
+        }
+    }
+
     /// Shows the collection as it is after something moved to Trash, back
     /// on the page of `issue` if it is still there, and offers Undo.
     fn after_trash(
@@ -1089,6 +1176,18 @@ impl App {
                     delete_value: {
                         let s = sender.clone();
                         Rc::new(move |copy, entry| s.input(AppMsg::DeleteValue(copy, entry)))
+                    },
+                    add_photo: {
+                        let s = sender.clone();
+                        Rc::new(move |copy, side| s.input(AppMsg::AddPhoto(copy, side)))
+                    },
+                    remove_photo: {
+                        let s = sender.clone();
+                        Rc::new(move |copy, side| s.input(AppMsg::RemovePhoto(copy, side)))
+                    },
+                    swap_photos: {
+                        let s = sender.clone();
+                        Rc::new(move |copy| s.input(AppMsg::SwapPhotos(copy)))
                     },
                 };
                 let open_copy = self.open_copy.take();
@@ -1196,11 +1295,17 @@ impl App {
         // An entry names a row of the old collection.
         self.shelf = None;
         root.pop_to_section();
+        self.opened += 1;
+        covers::set_database(std::rc::Weak::new());
         match self
             .store()
             .and_then(|s| s.open(name).map_err(|e| e.to_string()))
         {
-            Ok(db) => self.open = Some((name.to_owned(), Rc::new(db))),
+            Ok(db) => {
+                let db = Rc::new(db);
+                covers::set_database(Rc::downgrade(&db));
+                self.open = Some((name.to_owned(), db));
+            }
             Err(why) => root.toast(&format!("Could not open \u{201c}{name}\u{201d}: {why}")),
         }
         self.refresh_display(root);
@@ -1385,6 +1490,52 @@ fn ask_for_name(root: &MainWindow, sender: &ComponentSender<App>) {
     dialog.choose(Some(root), None::<&gio::Cancellable>, move |response| {
         if response == "create" {
             sender.input(AppMsg::CreateCollection(entry.text().into()));
+        }
+    });
+}
+
+/// e.g. "Front cover removed".
+fn photo_message(side: Side, what: &str) -> String {
+    match side {
+        Side::Front => format!("Front cover {what}"),
+        Side::Back => format!("Back cover {what}"),
+    }
+}
+
+/// Asks for a photo file through the system file chooser, which also
+/// grants the app access to just that file.
+fn pick_photo(root: &MainWindow, sender: &ComponentSender<App>, copy: CopyId, side: Side) {
+    let photos = gtk::FileFilter::new();
+    photos.set_name(Some("Photos"));
+    for mime in [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/heic",
+        "image/heif",
+    ] {
+        photos.add_mime_type(mime);
+    }
+    for suffix in ["jpg", "jpeg", "png", "webp", "heic", "heif"] {
+        photos.add_suffix(suffix);
+    }
+    let filters = gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&photos);
+    let dialog = gtk::FileDialog::builder()
+        .title(match side {
+            Side::Front => "Choose a Front Cover Photo",
+            Side::Back => "Choose a Back Cover Photo",
+        })
+        .modal(true)
+        .filters(&filters)
+        .default_filter(&photos)
+        .build();
+    let sender = sender.clone();
+    dialog.open(Some(root), None::<&gio::Cancellable>, move |result| {
+        if let Ok(file) = result
+            && let Some(path) = file.path()
+        {
+            sender.input(AppMsg::PhotoPicked(copy, side, path));
         }
     });
 }

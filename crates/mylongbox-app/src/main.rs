@@ -7,6 +7,7 @@ mod autocomplete;
 mod books;
 mod bulk_dialog;
 mod chart;
+mod covers;
 mod form;
 mod format;
 mod issue_page;
