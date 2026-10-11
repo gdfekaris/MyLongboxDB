@@ -6,7 +6,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::glib;
 use mylongbox_core::{
-    Category, CopyDetail, EditionDetail, IssueDetail, IssueId, MagazineFormat, Role,
+    Category, CopyDetail, Date, EditionDetail, IssueDetail, IssueId, MagazineFormat, Role,
     format_collects,
 };
 
@@ -436,12 +436,39 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category) -> adw::ExpanderR
     add("Notes", f.notes.clone());
     add(
         "Added",
-        c.copy
-            .added_at
-            .get(..10)
-            .and_then(|d| d.parse().ok())
+        local_date(&c.copy.added_at)
             .map(format::date)
             .unwrap_or_default(),
     );
     row
+}
+
+/// The local calendar date of a stored UTC timestamp, so a book added
+/// late in the evening is not shown as added tomorrow.
+fn local_date(timestamp: &str) -> Option<Date> {
+    let local = glib::DateTime::from_iso8601(timestamp, None)
+        .and_then(|t| t.to_local())
+        .ok()?;
+    Date::new(
+        u16::try_from(local.year()).ok()?,
+        u8::try_from(local.month()).ok()?,
+        u8::try_from(local.day_of_month()).ok()?,
+    )
+    .ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timestamps_become_local_dates() {
+        // The exact day depends on the machine's time zone, but a stored
+        // timestamp always lands within a day of its UTC date.
+        let date = local_date("2026-10-11T03:00:00Z").unwrap();
+        let utc = Date::new(2026, 10, 11).unwrap();
+        assert!(date.days_until(utc).abs() <= 1, "{date}");
+        assert_eq!(local_date("yesterday"), None);
+        assert_eq!(local_date(""), None);
+    }
 }
