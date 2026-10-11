@@ -12,6 +12,8 @@ mod collects_text;
 mod date;
 mod db;
 mod error;
+#[cfg(test)]
+mod fixtures;
 mod issue_number;
 mod links;
 mod lookup;
