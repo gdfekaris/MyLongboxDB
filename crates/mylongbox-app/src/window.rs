@@ -89,9 +89,12 @@ impl MainWindow {
             Some(first) => first.to_uppercase().chain(chars).collect(),
             None => String::new(),
         };
-        self.imp()
-            .toast_overlay
-            .add_toast(adw::Toast::new(&message));
+        // Messages carry collection names and error text, which must not
+        // be read as markup; markup goes off before the title is set.
+        let toast = adw::Toast::new("");
+        toast.set_use_markup(false);
+        toast.set_title(&message);
+        self.imp().toast_overlay.add_toast(toast);
     }
 
     /// Shows the welcome page, or the open collection.
@@ -184,7 +187,10 @@ impl MainWindow {
         let imp = self.imp();
         imp.view_toggle.set_visible(false);
         imp.empty_page.set_title(title);
-        imp.empty_page.set_description(Some(description));
+        // The description is always read as markup, and can hold error
+        // text.
+        imp.empty_page
+            .set_description(Some(&glib::markup_escape_text(description)));
         imp.content_stack.set_visible_child_name("empty");
     }
 
