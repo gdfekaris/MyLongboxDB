@@ -3,7 +3,9 @@
 #![forbid(unsafe_code)]
 
 mod app;
+mod autocomplete;
 mod books;
+mod form;
 mod format;
 mod issue_page;
 mod window;

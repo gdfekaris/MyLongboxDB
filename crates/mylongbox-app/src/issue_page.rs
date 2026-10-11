@@ -6,17 +6,22 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::glib;
 use mylongbox_core::{
-    Category, CopyDetail, Date, EditionDetail, IssueDetail, IssueId, MagazineFormat, Role,
+    Category, CopyDetail, CopyId, Date, EditionDetail, IssueDetail, IssueId, MagazineFormat, Role,
     format_collects,
 };
 
 use crate::books::version;
 use crate::format;
 
-/// Opens another issue's page, such as one a book reprints.
-pub type OpenIssue = Rc<dyn Fn(IssueId)>;
+/// What the page's rows do when chosen.
+#[derive(Clone)]
+pub struct Links {
+    /// Opens another issue's page, such as one a book reprints.
+    pub open: Rc<dyn Fn(IssueId)>,
+    pub edit: Rc<dyn Fn(CopyId)>,
+}
 
-pub fn page(d: &IssueDetail, open: OpenIssue) -> adw::NavigationPage {
+pub fn page(d: &IssueDetail, links: &Links) -> adw::NavigationPage {
     let prefs = adw::PreferencesPage::new();
     prefs.add(&summary(d));
     if !d.issue.fields.synopsis.is_empty() {
@@ -49,7 +54,7 @@ pub fn page(d: &IssueDetail, open: OpenIssue) -> adw::NavigationPage {
                 series_title(&c.entry.series.name, c.entry.series.start_year),
                 c.entry.number
             );
-            issues.add_row(&link_row(&title, "", c.issue, &open));
+            issues.add_row(&link_row(&title, "", c.issue, links));
         }
         group.add(&issues);
         prefs.add(&group);
@@ -58,13 +63,13 @@ pub fn page(d: &IssueDetail, open: OpenIssue) -> adw::NavigationPage {
         let group = group("Also Collected In");
         for c in &d.collected_in {
             let owned = if c.owned { "In your collection" } else { "" };
-            group.add(&link_row(&c.label, owned, c.collection, &open));
+            group.add(&link_row(&c.label, owned, c.collection, links));
         }
         prefs.add(&group);
     }
     let category = d.series.fields.category;
     for (n, edition) in d.editions.iter().enumerate() {
-        prefs.add(&edition_group(edition, n, category));
+        prefs.add(&edition_group(edition, n, category, links));
     }
 
     let toolbar = adw::ToolbarView::new();
@@ -105,11 +110,11 @@ fn expander(title: &str, subtitle: &str) -> adw::ExpanderRow {
     row
 }
 
-fn link_row(title: &str, subtitle: &str, issue: IssueId, open: &OpenIssue) -> adw::ActionRow {
+fn link_row(title: &str, subtitle: &str, issue: IssueId, links: &Links) -> adw::ActionRow {
     let row = row(title, subtitle);
     row.set_activatable(true);
     row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
-    let open = open.clone();
+    let open = links.open.clone();
     row.connect_activated(move |_| open(issue));
     row
 }
@@ -208,7 +213,9 @@ fn summary(d: &IssueDetail) -> adw::PreferencesGroup {
         text.append(&label(&key, &["accent", "heading"]));
     }
 
-    let top = gtk::Box::builder().spacing(24).build();
+    // The placeholder expands to fill the cover; that must not make the
+    // whole summary take up the page.
+    let top = gtk::Box::builder().spacing(24).vexpand(false).build();
     top.append(&cover);
     top.append(&text);
     let group = adw::PreferencesGroup::new();
@@ -296,7 +303,12 @@ fn appearances(d: &IssueDetail) -> Option<adw::PreferencesGroup> {
 }
 
 /// An edition's own facts, then one expandable row per copy.
-fn edition_group(e: &EditionDetail, index: usize, category: Category) -> adw::PreferencesGroup {
+fn edition_group(
+    e: &EditionDetail,
+    index: usize,
+    category: Category,
+    links: &Links,
+) -> adw::PreferencesGroup {
     let f = &e.edition.fields;
     let name = match version(&f.variant, f.printing) {
         v if v.is_empty() && index == 0 => "Standard Edition".to_owned(),
@@ -347,12 +359,12 @@ fn edition_group(e: &EditionDetail, index: usize, category: Category) -> adw::Pr
         group.add(&none);
     }
     for (n, copy) in e.copies.iter().enumerate() {
-        group.add(&copy_row(copy, n + 1, category));
+        group.add(&copy_row(copy, n + 1, category, links));
     }
     group
 }
 
-fn copy_row(c: &CopyDetail, number: usize, category: Category) -> adw::ExpanderRow {
+fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) -> adw::ExpanderRow {
     let f = &c.copy.fields;
     let condition = match category {
         Category::CollectedEdition => f
@@ -380,6 +392,19 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category) -> adw::ExpanderR
         &format!("Copy {number} · {condition}"),
         &format::joined([location.as_str(), value.as_str()]),
     );
+    // The form holds comic fields only.
+    if category == Category::Comic {
+        let edit = gtk::Button::builder()
+            .icon_name("document-edit-symbolic")
+            .valign(gtk::Align::Center)
+            .tooltip_text("Edit This Copy")
+            .css_classes(["flat"])
+            .build();
+        let hook = links.edit.clone();
+        let copy = c.copy.id;
+        edit.connect_clicked(move |_| hook(copy));
+        row.add_suffix(&edit);
+    }
     let add = |label: &str, value: String| {
         if !value.is_empty() {
             row.add_row(&property(label, &value));

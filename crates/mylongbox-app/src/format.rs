@@ -103,6 +103,61 @@ pub fn cover_date(date: Option<CoverDate>) -> String {
     }
 }
 
+/// Reads a cover date as people write it: `1975`, `1975-03`, `3/1975`,
+/// `Mar 1975`, or `March 1975`. Empty text is no date; `Err` means the
+/// text is not a date.
+pub fn parse_cover_date(text: &str) -> Result<Option<CoverDate>, ()> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Ok(None);
+    }
+    let year = |t: &str| -> Result<u16, ()> {
+        if t.len() == 4 && t.bytes().all(|b| b.is_ascii_digit()) {
+            t.parse().map_err(|_| ())
+        } else {
+            Err(())
+        }
+    };
+    let month = |t: &str| -> Result<u8, ()> {
+        if let Ok(m) = t.parse::<u8>() {
+            return Ok(m);
+        }
+        let t = t.to_lowercase();
+        let found = MONTHS
+            .iter()
+            .position(|m| t.len() >= 3 && m.to_lowercase().starts_with(&t[..3.min(t.len())]))
+            .ok_or(())?;
+        let full = [
+            "january",
+            "february",
+            "march",
+            "april",
+            "may",
+            "june",
+            "july",
+            "august",
+            "september",
+            "october",
+            "november",
+            "december",
+        ];
+        if !full[found].starts_with(t.trim_end_matches('.')) {
+            return Err(());
+        }
+        u8::try_from(found + 1).map_err(|_| ())
+    };
+    let date = if let Some((y, m)) = text.split_once('-') {
+        CoverDate::new(year(y)?, Some(month(m)?))
+    } else if let Some((m, y)) = text.split_once('/') {
+        CoverDate::new(year(y)?, Some(month(m)?))
+    } else if let Some((m, y)) = text.split_once(' ') {
+        CoverDate::new(year(y.trim())?, Some(month(m)?))
+    } else {
+        CoverDate::new(year(text)?, None)
+    };
+    date.map(Some).ok_or(())
+}
+
 /// e.g. `Mar 5, 1975`.
 pub fn date(date: Date) -> String {
     format!(
@@ -167,6 +222,36 @@ mod tests {
         assert_eq!(cover_date(CoverDate::new(1975, None)), "1975");
         assert_eq!(cover_date(None), "");
         assert_eq!(date(Date::new(2024, 12, 5).unwrap()), "Dec 5, 2024");
+    }
+
+    #[test]
+    fn cover_dates_parse_as_people_write_them() {
+        let mar = CoverDate::new(1975, Some(3));
+        for text in [
+            "1975-03",
+            "1975-3",
+            "3/1975",
+            "Mar 1975",
+            "march 1975",
+            "Mar. 1975",
+        ] {
+            assert_eq!(parse_cover_date(text), Ok(mar), "{text}");
+        }
+        assert_eq!(parse_cover_date("1975"), Ok(CoverDate::new(1975, None)));
+        assert_eq!(parse_cover_date("  "), Ok(None));
+        for bad in [
+            "75",
+            "13/1975",
+            "Marz 1975",
+            "Ma 1975",
+            "1975-00",
+            "spring",
+            "1975 03 01",
+        ] {
+            assert_eq!(parse_cover_date(bad), Err(()), "{bad}");
+        }
+        // What the form shows reads back as the same date.
+        assert_eq!(parse_cover_date(&cover_date(mar)), Ok(mar));
     }
 
     #[test]

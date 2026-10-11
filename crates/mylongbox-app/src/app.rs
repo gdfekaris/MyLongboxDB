@@ -4,7 +4,8 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
-    Category, CollectionInfo, CollectionStore, Database, IssueId, Shelf, ShelfEntry, ShelfList,
+    Category, CollectionInfo, CollectionStore, CopyId, Database, IssueId, Shelf, ShelfEntry,
+    ShelfList,
 };
 use relm4::typed_view::column::TypedColumnView;
 use relm4::typed_view::grid::TypedGridView;
@@ -12,7 +13,8 @@ use relm4::typed_view::list::TypedListView;
 use relm4::{Component, ComponentParts, ComponentSender};
 
 use crate::books::{self, Book, Name};
-use crate::issue_page::{self, OpenIssue};
+use crate::form::{Form, Hooks};
+use crate::issue_page::{self, Links};
 use crate::window::MainWindow;
 
 /// What a sidebar section shows.
@@ -154,8 +156,11 @@ fn sections() -> impl Iterator<Item = &'static Section> {
 pub struct App {
     /// The folder of collections, or why it could not be used.
     store: Result<CollectionStore, String>,
-    /// The open collection and its name.
-    open: Option<(String, Database)>,
+    /// The open collection and its name. Pages hold only weak references,
+    /// so closing it here releases its lock.
+    open: Option<(String, Rc<Database>)>,
+    /// The add or edit form, while one is open.
+    form: Option<Form>,
     section: &'static Section,
     /// The name-list entry whose books are shown, if any.
     shelf: Option<ShelfEntry>,
@@ -178,6 +183,12 @@ pub enum AppMsg {
     /// A book in the grid or list, by position.
     BookActivated(u32),
     OpenIssue(IssueId),
+    AddComic,
+    EditCopy(CopyId),
+    FormSave,
+    /// Leave the form, asking first if it has unsaved changes.
+    FormCancel,
+    FormClose,
     ShelfBack,
     ViewChanged(bool),
 }
@@ -214,6 +225,8 @@ impl Component for App {
             AppMsg::ExportCollection
         });
         add_action(&root, "shelf-back", &sender, || AppMsg::ShelfBack);
+        add_action(&root, "add-comic", &sender, || AppMsg::AddComic);
+        relm4::main_application().set_accels_for_action("win.add-comic", &["<Control>n"]);
         relm4::main_application().set_accels_for_action("win.shelf-back", &["<Alt>Left"]);
         fill_sidebar(&root, &sender);
 
@@ -271,6 +284,7 @@ impl Component for App {
         let mut model = App {
             store,
             open: None,
+            form: None,
             section: &SECTIONS[0][0],
             shelf: None,
             as_list: false,
@@ -356,7 +370,26 @@ impl Component for App {
                 }
             }
             AppMsg::OpenIssue(issue) => self.open_issue(issue, root, &sender),
+            AppMsg::AddComic => self.open_form(None, root, &sender),
+            AppMsg::EditCopy(copy) => self.open_form(Some(copy), root, &sender),
+            AppMsg::FormSave => self.save_form(root, &sender),
+            AppMsg::FormCancel => match &self.form {
+                Some(form) if form.is_dirty() => confirm_discard(root, &sender),
+                Some(_) => sender.input(AppMsg::FormClose),
+                None => {}
+            },
+            AppMsg::FormClose => {
+                if self.form.take().is_some() {
+                    root.pop_page();
+                }
+            }
             AppMsg::ShelfBack => {
+                // The form is left only through its Cancel, which asks
+                // before discarding.
+                if self.form.is_some() {
+                    sender.input(AppMsg::FormCancel);
+                    return;
+                }
                 if root.pop_page() {
                     return;
                 }
@@ -398,9 +431,78 @@ impl App {
         };
         match db.issue_detail(issue) {
             Ok(detail) => {
-                let sender = sender.clone();
-                let open: OpenIssue = Rc::new(move |issue| sender.input(AppMsg::OpenIssue(issue)));
-                root.push_page(&issue_page::page(&detail, open));
+                let open = sender.clone();
+                let edit = sender.clone();
+                let links = Links {
+                    open: Rc::new(move |issue| open.input(AppMsg::OpenIssue(issue))),
+                    edit: Rc::new(move |copy| edit.input(AppMsg::EditCopy(copy))),
+                };
+                root.push_page(&issue_page::page(&detail, &links));
+            }
+            Err(why) => root.toast(&why.to_string()),
+        }
+    }
+
+    fn open_form(
+        &mut self,
+        copy: Option<CopyId>,
+        root: &MainWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some((_, db)) = &self.open else {
+            return;
+        };
+        if self.form.is_some() {
+            return;
+        }
+        let entry = match copy.map(|c| db.book_entry(c)).transpose() {
+            Ok(entry) => entry,
+            Err(why) => {
+                root.toast(&why.to_string());
+                return;
+            }
+        };
+        let save = sender.clone();
+        let cancel = sender.clone();
+        let hooks = Hooks {
+            save: Rc::new(move || save.input(AppMsg::FormSave)),
+            cancel: Rc::new(move || cancel.input(AppMsg::FormCancel)),
+        };
+        let form = Form::new(db, Category::Comic, copy, entry.as_ref(), hooks);
+        root.push_page(&form.page);
+        form.focus_first();
+        self.form = Some(form);
+    }
+
+    fn save_form(&mut self, root: &MainWindow, sender: &ComponentSender<Self>) {
+        let (Some(form), Some((_, db))) = (&self.form, &self.open) else {
+            return;
+        };
+        let entry = match form.entry() {
+            Ok(entry) => entry,
+            Err(invalid) => {
+                form.show_invalid(&invalid);
+                root.toast(&invalid.message);
+                return;
+            }
+        };
+        let saved = match form.target {
+            None => db.add_book(&entry),
+            Some(copy) => db.update_book(copy, &entry),
+        };
+        match saved {
+            Ok(saved) => {
+                let edited = form.target.is_some();
+                self.form = None;
+                root.pop_page();
+                // An edit replaces the stale detail page under the form;
+                // an add shows the new book.
+                if edited {
+                    root.pop_page();
+                }
+                self.show(root);
+                self.open_issue(saved.issue, root, sender);
+                root.toast("Saved");
             }
             Err(why) => root.toast(&why.to_string()),
         }
@@ -408,6 +510,7 @@ impl App {
 
     fn open_collection(&mut self, name: &str, root: &MainWindow) {
         // Release the current collection's lock before taking another.
+        self.form = None;
         self.open = None;
         // An entry names a row of the old collection.
         self.shelf = None;
@@ -416,7 +519,7 @@ impl App {
             .store()
             .and_then(|s| s.open(name).map_err(|e| e.to_string()))
         {
-            Ok(db) => self.open = Some((name.to_owned(), db)),
+            Ok(db) => self.open = Some((name.to_owned(), Rc::new(db))),
             Err(why) => root.toast(&format!("Could not open \u{201c}{name}\u{201d}: {why}")),
         }
         self.show(root);
@@ -426,10 +529,12 @@ impl App {
     /// collection, reading it afresh.
     fn show(&mut self, root: &MainWindow) {
         root.show_welcome(self.open.is_none());
-        if let Some(action) = root.lookup_action("export-collection")
-            && let Ok(action) = action.downcast::<gio::SimpleAction>()
-        {
-            action.set_enabled(self.open.is_some());
+        for name in ["export-collection", "add-comic"] {
+            if let Some(action) = root.lookup_action(name)
+                && let Ok(action) = action.downcast::<gio::SimpleAction>()
+            {
+                action.set_enabled(self.open.is_some());
+            }
         }
         if self.open.is_none() {
             return;
@@ -604,6 +709,23 @@ fn pick_export_file(root: &MainWindow, sender: &ComponentSender<App>, name: &str
             && let Some(path) = file.path()
         {
             sender.input(AppMsg::ExportPicked(path));
+        }
+    });
+}
+
+fn confirm_discard(root: &MainWindow, sender: &ComponentSender<App>) {
+    let dialog = adw::AlertDialog::builder()
+        .heading("Discard Changes?")
+        .body("The changes made in this form have not been saved.")
+        .default_response("keep")
+        .close_response("keep")
+        .build();
+    dialog.add_responses(&[("keep", "_Keep Editing"), ("discard", "_Discard")]);
+    dialog.set_response_appearance("discard", adw::ResponseAppearance::Destructive);
+    let sender = sender.clone();
+    dialog.choose(Some(root), None::<&gio::Cancellable>, move |response| {
+        if response == "discard" {
+            sender.input(AppMsg::FormClose);
         }
     });
 }

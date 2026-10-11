@@ -119,6 +119,13 @@ template $MainWindow: Adw.ApplicationWindow {
                     }
 
                     [end]
+                    Button {
+                      icon-name: "list-add-symbolic";
+                      tooltip-text: _("Add Comic");
+                      action-name: "win.add-comic";
+                    }
+
+                    [end]
                     Adw.ToggleGroup view_toggle {
                       active-name: "grid";
 
