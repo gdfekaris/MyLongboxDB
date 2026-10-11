@@ -106,6 +106,19 @@ template $MainWindow: Adw.ApplicationWindow {
                       visible: false;
                     }
 
+                    [start]
+                    ToggleButton search_toggle {
+                      icon-name: "system-search-symbolic";
+                      tooltip-text: _("Search");
+                    }
+
+                    [start]
+                    ToggleButton filter_toggle {
+                      label: _("_Filters");
+                      use-underline: true;
+                      tooltip-text: _("Filter by Any Field");
+                    }
+
                     title-widget: Adw.WindowTitle window_title {
                       title: _("Everything");
                     };
@@ -159,6 +172,39 @@ template $MainWindow: Adw.ApplicationWindow {
                         tooltip: _("List");
                       }
                     }
+                  }
+
+                  [top]
+                  SearchBar search_bar {
+                    search-mode-enabled: bind search_toggle.active bidirectional;
+
+                    child: Adw.Clamp {
+                      maximum-size: 560;
+
+                      child: SearchEntry search_entry {
+                        placeholder-text: _("Search series, titles, people, characters, tags, notes…");
+                        search-delay: 150;
+                        hexpand: true;
+                      };
+                    };
+                  }
+
+                  [top]
+                  Revealer filter_revealer {
+                    reveal-child: bind filter_toggle.active;
+                    transition-type: slide_down;
+
+                    child: Adw.Bin filter_bin {
+                      styles [
+                        "toolbar",
+                      ]
+                    };
+                  }
+
+                  [top]
+                  Adw.Banner correction_banner {
+                    button-label: _("_Use This Spelling");
+                    use-markup: false;
                   }
 
                   [top]

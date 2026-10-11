@@ -1,13 +1,13 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
     Amount, BulkChange, Category, CollectionInfo, CollectionStore, CopyId, CoverPhoto, Currency,
-    Database, Date, EditionId, IssueId, Prefill, Shelf, ShelfEntry, ShelfList, Side, TrashId,
-    ValueEntry,
+    Database, Date, EditionId, FilterSet, IssueId, Prefill, Shelf, ShelfEntry, ShelfList, Side,
+    TrashId, ValueEntry,
 };
 use mylongbox_media::Edit;
 use relm4::typed_view::column::TypedColumnView;
@@ -16,11 +16,12 @@ use relm4::typed_view::list::TypedListView;
 use relm4::{Component, ComponentParts, ComponentSender};
 
 use crate::books::{self, Book, Name};
+use crate::filter_panel::FilterPanel;
 use crate::form::{Focus, Form, Hooks};
 use crate::issue_page::{self, Links};
 use crate::settings::{self, Settings};
 use crate::window::MainWindow;
-use crate::{bulk_dialog, covers, format, photo_editor, prefs, prompt, trash_page, viewer};
+use crate::{bulk_dialog, covers, form, format, photo_editor, prefs, prompt, trash_page, viewer};
 
 /// What a sidebar section shows.
 #[derive(Clone, Copy)]
@@ -199,6 +200,17 @@ pub struct App {
     /// Whether clicks select books, for changing several at once.
     selecting: bool,
     names: TypedListView<Name, gtk::SingleSelection>,
+    /// What is typed in the search box.
+    query: String,
+    filters: Rc<FilterPanel>,
+    /// Whether the filter panel is open; its rows apply only then.
+    filters_shown: bool,
+    /// The spelling the last search was corrected to, if any.
+    correction: Option<String>,
+    /// How many books the last search found.
+    found: usize,
+    /// The open collection, for the filter panel to find series in.
+    current_db: Rc<RefCell<Weak<Database>>>,
 }
 
 #[derive(Debug)]
@@ -277,6 +289,11 @@ pub enum AppMsg {
     FormClose,
     ShelfBack,
     ViewChanged(bool),
+    SearchChanged(String),
+    ShowFilters(bool),
+    FiltersChanged,
+    /// Put the corrected spelling in the search box.
+    UseCorrection,
 }
 
 #[derive(Debug)]
@@ -414,6 +431,47 @@ impl Component for App {
 
         let store = CollectionStore::new(glib::user_data_dir().join("collections"))
             .map_err(|e| e.to_string());
+        let current_db: Rc<RefCell<Weak<Database>>> = Rc::default();
+        let filters = {
+            let (changed, db) = (sender.clone(), current_db.clone());
+            FilterPanel::new(
+                move || changed.input(AppMsg::FiltersChanged),
+                Rc::new(move |label: &str| {
+                    let db = db.borrow().upgrade()?;
+                    let label = label.trim().to_lowercase();
+                    db.list_series().ok()?.into_iter().find_map(|s| {
+                        let listed = form::series_label(&s.fields.name, s.fields.start_year);
+                        (listed.to_lowercase() == label).then_some(s.id)
+                    })
+                }),
+            )
+        };
+        root.set_filter_panel(filters.widget());
+        {
+            let sender = sender.clone();
+            root.search_entry().connect_search_changed(move |entry| {
+                sender.input(AppMsg::SearchChanged(entry.text().into()));
+            });
+        }
+        {
+            let sender = sender.clone();
+            root.filter_toggle()
+                .connect_toggled(move |b| sender.input(AppMsg::ShowFilters(b.is_active())));
+        }
+        {
+            let sender = sender.clone();
+            root.correction_banner()
+                .connect_button_clicked(move |_| sender.input(AppMsg::UseCorrection));
+        }
+        {
+            // Ctrl+F opens the search box, or closes it.
+            let search = gio::SimpleAction::new("search", None);
+            let toggle = root.search_toggle();
+            search.connect_activate(move |_, _| toggle.set_active(!toggle.is_active()));
+            root.add_action(&search);
+            relm4::main_application().set_accels_for_action("win.search", &["<Control>f"]);
+        }
+
         let mut model = App {
             store,
             open: None,
@@ -430,6 +488,12 @@ impl Component for App {
             table,
             selecting: false,
             names,
+            query: String::new(),
+            filters,
+            filters_shown: false,
+            correction: None,
+            found: 0,
+            current_db,
         };
 
         let startup = match &model.store {
@@ -490,6 +554,7 @@ impl Component for App {
                 if let Some(section) = sections().nth(index) {
                     self.section = section;
                     self.shelf = None;
+                    self.end_search(root);
                     root.pop_to_section();
                     self.show(root);
                     root.show_content();
@@ -610,6 +675,29 @@ impl Component for App {
                 Err(why) => root.toast(&format!("Could not swap the photos: {why}")),
             },
             AppMsg::ViewPhoto(copy, side) => self.view_photo(copy, side, root),
+            AppMsg::SearchChanged(query) => {
+                if query != self.query {
+                    self.query = query;
+                    root.pop_to_section();
+                    self.show(root);
+                }
+            }
+            AppMsg::ShowFilters(shown) => {
+                self.filters_shown = shown;
+                root.pop_to_section();
+                self.show(root);
+            }
+            AppMsg::FiltersChanged => {
+                if self.filters_shown {
+                    root.pop_to_section();
+                    self.show(root);
+                }
+            }
+            AppMsg::UseCorrection => {
+                if let Some(corrected) = self.correction.take() {
+                    root.search_entry().set_text(&corrected);
+                }
+            }
             AppMsg::ShowPreferences(show_rates) => self.show_preferences(show_rates, root, &sender),
             AppMsg::SettingsChanged(settings) => {
                 self.settings = settings;
@@ -1385,6 +1473,7 @@ impl App {
         // An entry names a row of the old collection.
         self.shelf = None;
         root.pop_to_section();
+        self.end_search(root);
         self.opened += 1;
         covers::set_database(std::rc::Weak::new());
         match self
@@ -1394,6 +1483,7 @@ impl App {
             Ok(db) => {
                 let db = Rc::new(db);
                 covers::set_database(Rc::downgrade(&db));
+                self.current_db.replace(Rc::downgrade(&db));
                 self.open = Some((name.to_owned(), db));
             }
             Err(why) => root.toast(&format!("Could not open \u{201c}{name}\u{201d}: {why}")),
@@ -1429,10 +1519,81 @@ impl App {
         }
     }
 
+    /// Whether search words or filters decide what is shown, rather than
+    /// the section.
+    fn searching(&self) -> bool {
+        !self.query.trim().is_empty()
+            || (self.filters_shown && self.filters.filter_set() != FilterSet::default())
+    }
+
+    /// Shows the books matching the search words and the open filter
+    /// panel, across the whole collection.
+    fn load_search(&mut self, root: &MainWindow) -> mylongbox_core::Result<()> {
+        let Some((_, db)) = &self.open else {
+            return Ok(());
+        };
+        let filters = if self.filters_shown {
+            self.filters.filter_set()
+        } else {
+            FilterSet::default()
+        };
+        let query = self.query.trim();
+        let (rows, correction) = if query.is_empty() {
+            (db.filter_books(&filters)?, None)
+        } else {
+            let found = db.quick_search(query)?;
+            let rows = match db.matching_copies(&filters)? {
+                None => found.rows,
+                Some(allowed) => found
+                    .rows
+                    .into_iter()
+                    .filter(|r| allowed.contains(&r.copy))
+                    .collect(),
+            };
+            (rows, found.did_you_mean)
+        };
+        root.show_correction(query, correction.as_deref());
+        self.correction = correction;
+        self.found = rows.len();
+        // The header counts what was found, which is known only now.
+        self.show_header(root);
+        self.grid.clear();
+        self.table.clear();
+        if rows.is_empty() {
+            root.show_empty(
+                "No Books Found",
+                "Try other words, or fewer filters. Search looks at series, titles, \
+                 publishers, people, characters, teams, story arcs, tags, boxes, and notes.",
+            );
+        } else {
+            self.grid.extend_from_iter(rows.iter().cloned().map(Book));
+            self.table.extend_from_iter(rows.into_iter().map(Book));
+            root.show_books(self.as_list);
+        }
+        Ok(())
+    }
+
+    /// Leaves search, as when another section is chosen.
+    fn end_search(&mut self, root: &MainWindow) {
+        self.query.clear();
+        self.filters_shown = false;
+        self.correction = None;
+        root.end_search();
+    }
+
     fn show_header(&self, root: &MainWindow) {
         let Some((collection, _)) = &self.open else {
             return;
         };
+        if self.searching() {
+            let found = match self.found {
+                1 => "1 book".to_owned(),
+                n => format!("{n} books"),
+            };
+            root.set_location(collection, "Search Results", &found);
+            root.set_back_visible(false);
+            return;
+        }
         match &self.shelf {
             Some(entry) => root.set_location(collection, &entry.name, self.section.name),
             None => root.set_location(collection, self.section.name, collection),
@@ -1451,6 +1612,10 @@ impl App {
     }
 
     fn load(&mut self, root: &MainWindow) -> mylongbox_core::Result<()> {
+        if self.searching() {
+            return self.load_search(root);
+        }
+        root.show_correction("", None);
         let Some((_, db)) = &self.open else {
             return Ok(());
         };

@@ -43,6 +43,18 @@ mod imp {
         #[template_child]
         pub rates_banner: TemplateChild<adw::Banner>,
         #[template_child]
+        pub search_toggle: TemplateChild<gtk::ToggleButton>,
+        #[template_child]
+        pub filter_toggle: TemplateChild<gtk::ToggleButton>,
+        #[template_child]
+        pub search_bar: TemplateChild<gtk::SearchBar>,
+        #[template_child]
+        pub search_entry: TemplateChild<gtk::SearchEntry>,
+        #[template_child]
+        pub filter_bin: TemplateChild<adw::Bin>,
+        #[template_child]
+        pub correction_banner: TemplateChild<adw::Banner>,
+        #[template_child]
         pub selection_label: TemplateChild<gtk::Label>,
         #[template_child]
         pub content_stack: TemplateChild<gtk::Stack>,
@@ -186,6 +198,65 @@ impl MainWindow {
         let banner = &self.imp().rates_banner;
         banner.set_title(reminder.unwrap_or(""));
         banner.set_revealed(reminder.is_some());
+    }
+
+    pub fn search_entry(&self) -> gtk::SearchEntry {
+        self.imp().search_entry.get()
+    }
+
+    pub fn filter_toggle(&self) -> gtk::ToggleButton {
+        self.imp().filter_toggle.get()
+    }
+
+    pub fn search_toggle(&self) -> gtk::ToggleButton {
+        self.imp().search_toggle.get()
+    }
+
+    pub fn correction_banner(&self) -> adw::Banner {
+        self.imp().correction_banner.get()
+    }
+
+    /// Puts the filter panel under the header, shown by the Filters
+    /// button.
+    pub fn set_filter_panel(&self, panel: &impl IsA<gtk::Widget>) {
+        let imp = self.imp();
+        imp.filter_bin.set_child(Some(panel));
+        imp.search_bar.connect_entry(&*imp.search_entry);
+        // Closing the search box, as with Escape, also stops searching.
+        let entry = imp.search_entry.get();
+        imp.search_toggle.connect_toggled(move |toggle| {
+            if !toggle.is_active() {
+                entry.set_text("");
+            }
+        });
+        // Typing over the books starts a search, as in other GNOME apps.
+        imp.search_bar
+            .set_key_capture_widget(Some(&*imp.content_stack));
+    }
+
+    /// Says which corrected spelling the results are for, or hides the
+    /// note.
+    pub fn show_correction(&self, typed: &str, corrected: Option<&str>) {
+        let banner = &self.imp().correction_banner;
+        match corrected {
+            Some(corrected) => {
+                banner.set_title(&format!(
+                    "Nothing matches \u{201c}{typed}\u{201d}. Showing results for \u{201c}{corrected}\u{201d}."
+                ));
+                banner.set_revealed(true);
+            }
+            None => banner.set_revealed(false),
+        }
+    }
+
+    /// Leaves searching and filtering, keeping the filter rows for next
+    /// time.
+    pub fn end_search(&self) {
+        let imp = self.imp();
+        imp.search_entry.set_text("");
+        imp.search_toggle.set_active(false);
+        imp.filter_toggle.set_active(false);
+        imp.correction_banner.set_revealed(false);
     }
 
     pub fn select_toggle(&self) -> gtk::ToggleButton {

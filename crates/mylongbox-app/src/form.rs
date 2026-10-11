@@ -947,7 +947,7 @@ fn split_year(text: &str) -> (String, Option<u16>) {
     (text.to_owned(), None)
 }
 
-fn series_label(name: &str, start_year: Option<u16>) -> String {
+pub fn series_label(name: &str, start_year: Option<u16>) -> String {
     match start_year {
         Some(year) => format!("{name} ({year})"),
         None => name.to_owned(),
