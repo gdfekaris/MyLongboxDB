@@ -5,6 +5,7 @@
 mod app;
 mod autocomplete;
 mod books;
+mod bulk_dialog;
 mod chart;
 mod form;
 mod format;

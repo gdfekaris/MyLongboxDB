@@ -126,6 +126,12 @@ template $MainWindow: Adw.ApplicationWindow {
                     }
 
                     [end]
+                    ToggleButton select_toggle {
+                      icon-name: "selection-mode-symbolic";
+                      tooltip-text: _("Select");
+                    }
+
+                    [end]
                     Adw.ToggleGroup view_toggle {
                       active-name: "grid";
 
@@ -144,6 +150,32 @@ template $MainWindow: Adw.ApplicationWindow {
                         icon-name: "view-list-symbolic";
                         tooltip: _("List");
                       }
+                    }
+                  }
+
+                  [bottom]
+                  ActionBar selection_bar {
+                    revealed: false;
+
+                    [start]
+                    Label selection_label {}
+
+                    [end]
+                    Button {
+                      label: _("_Edit Selected…");
+                      use-underline: true;
+                      action-name: "win.bulk-edit";
+
+                      styles [
+                        "suggested-action",
+                      ]
+                    }
+
+                    [end]
+                    Button {
+                      label: _("Move to _Trash");
+                      use-underline: true;
+                      action-name: "win.trash-selected";
                     }
                   }
 

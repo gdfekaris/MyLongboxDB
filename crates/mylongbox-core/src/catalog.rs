@@ -611,7 +611,7 @@ impl Database {
 
     // Helpers --------------------------------------------------------------
 
-    fn category_of_issue(&self, issue: IssueId) -> Result<Category> {
+    pub(crate) fn category_of_issue(&self, issue: IssueId) -> Result<Category> {
         Ok(self.series(self.issue(issue)?.series)?.fields.category)
     }
 
@@ -655,7 +655,7 @@ fn require_trash_group(conn: &Connection, trash: TrashId) -> Result<()> {
     if exists { Ok(()) } else { Err(Error::NotFound) }
 }
 
-fn new_trash_group(conn: &Connection, label: &str) -> Result<TrashId> {
+pub(crate) fn new_trash_group(conn: &Connection, label: &str) -> Result<TrashId> {
     conn.execute("INSERT INTO trash (label) VALUES (?1)", [label])?;
     Ok(TrashId(conn.last_insert_rowid()))
 }

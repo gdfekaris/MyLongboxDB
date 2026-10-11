@@ -218,7 +218,7 @@ text_column!(ValueColumn, "Value", expand: false, xalign: 1.0, |r| {
     r.value.map(|v| v.to_string()).unwrap_or_default()
 });
 
-pub fn book_table() -> TypedColumnView<Book, gtk::SingleSelection> {
+pub fn book_table() -> TypedColumnView<Book, gtk::MultiSelection> {
     let mut table = TypedColumnView::new();
     table.append_column::<SeriesColumn>();
     table.append_column::<NumberColumn>();

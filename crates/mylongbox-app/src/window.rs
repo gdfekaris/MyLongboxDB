@@ -35,6 +35,12 @@ mod imp {
         #[template_child]
         pub view_toggle: TemplateChild<adw::ToggleGroup>,
         #[template_child]
+        pub select_toggle: TemplateChild<gtk::ToggleButton>,
+        #[template_child]
+        pub selection_bar: TemplateChild<gtk::ActionBar>,
+        #[template_child]
+        pub selection_label: TemplateChild<gtk::Label>,
+        #[template_child]
         pub content_stack: TemplateChild<gtk::Stack>,
         #[template_child]
         pub grid_scroller: TemplateChild<gtk::ScrolledWindow>,
@@ -169,6 +175,21 @@ impl MainWindow {
         imp.names_scroller.set_child(Some(names));
     }
 
+    pub fn select_toggle(&self) -> gtk::ToggleButton {
+        self.imp().select_toggle.get()
+    }
+
+    /// Shows the bar of actions for selected books, saying how many.
+    pub fn show_selection(&self, selecting: bool, count: u32) {
+        let imp = self.imp();
+        imp.selection_bar.set_revealed(selecting);
+        imp.selection_label.set_label(&match count {
+            0 => "Select books to change".to_owned(),
+            1 => "1 selected".to_owned(),
+            n => format!("{n} selected"),
+        });
+    }
+
     pub fn view_toggle(&self) -> adw::ToggleGroup {
         self.imp().view_toggle.get()
     }
@@ -177,6 +198,7 @@ impl MainWindow {
     pub fn show_books(&self, as_list: bool) {
         let imp = self.imp();
         imp.view_toggle.set_visible(true);
+        imp.select_toggle.set_visible(true);
         imp.content_stack
             .set_visible_child_name(if as_list { "list" } else { "grid" });
     }
@@ -192,6 +214,8 @@ impl MainWindow {
     pub fn show_custom(&self, view: &impl IsA<gtk::Widget>) {
         let imp = self.imp();
         imp.view_toggle.set_visible(false);
+        imp.select_toggle.set_visible(false);
+        imp.select_toggle.set_active(false);
         imp.custom_bin.set_child(Some(view));
         imp.content_stack.set_visible_child_name("custom");
     }
@@ -199,6 +223,8 @@ impl MainWindow {
     pub fn show_names(&self) {
         let imp = self.imp();
         imp.view_toggle.set_visible(false);
+        imp.select_toggle.set_visible(false);
+        imp.select_toggle.set_active(false);
         imp.content_stack.set_visible_child_name("names");
     }
 
@@ -206,6 +232,8 @@ impl MainWindow {
     pub fn show_empty(&self, title: &str, description: &str) {
         let imp = self.imp();
         imp.view_toggle.set_visible(false);
+        imp.select_toggle.set_visible(false);
+        imp.select_toggle.set_active(false);
         imp.empty_page.set_title(title);
         // The description is always read as markup, and can hold error
         // text.

@@ -4,8 +4,8 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
-    Amount, Category, CollectionInfo, CollectionStore, CopyId, Currency, Database, Date, EditionId,
-    IssueId, Prefill, Shelf, ShelfEntry, ShelfList, TrashId, ValueEntry,
+    Amount, BulkChange, Category, CollectionInfo, CollectionStore, CopyId, Currency, Database,
+    Date, EditionId, IssueId, Prefill, Shelf, ShelfEntry, ShelfList, TrashId, ValueEntry,
 };
 use relm4::typed_view::column::TypedColumnView;
 use relm4::typed_view::grid::TypedGridView;
@@ -16,7 +16,7 @@ use crate::books::{self, Book, Name};
 use crate::form::{Focus, Form, Hooks};
 use crate::issue_page::{self, Links};
 use crate::window::MainWindow;
-use crate::{format, trash_page};
+use crate::{bulk_dialog, format, trash_page};
 
 /// What a sidebar section shows.
 #[derive(Clone, Copy)]
@@ -185,8 +185,10 @@ pub struct App {
     /// The name-list entry whose books are shown, if any.
     shelf: Option<ShelfEntry>,
     as_list: bool,
-    grid: TypedGridView<Book, gtk::SingleSelection>,
-    table: TypedColumnView<Book, gtk::SingleSelection>,
+    grid: TypedGridView<Book, gtk::MultiSelection>,
+    table: TypedColumnView<Book, gtk::MultiSelection>,
+    /// Whether clicks select books, for changing several at once.
+    selecting: bool,
     names: TypedListView<Name, gtk::SingleSelection>,
 }
 
@@ -213,6 +215,12 @@ pub enum AppMsg {
     AddValue(CopyId),
     SaveValue(CopyId, Date, Amount, String),
     DeleteValue(CopyId, ValueEntry),
+    Selecting(bool),
+    SelectionChanged,
+    /// Ask what to change on the selected copies.
+    BulkEdit,
+    ApplyBulk(Vec<CopyId>, BulkChange),
+    TrashSelected,
     TrashCopy(CopyId),
     TrashEdition(EditionId),
     TrashIssue(IssueId),
@@ -283,11 +291,21 @@ impl Component for App {
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
 
-        let grid = TypedGridView::<Book, gtk::SingleSelection>::new();
-        grid.selection_model.set_autoselect(false);
+        let grid = TypedGridView::<Book, gtk::MultiSelection>::new();
         grid.view.set_max_columns(24);
         let table = books::book_table();
-        table.selection_model.set_autoselect(false);
+        for model in [&grid.selection_model, &table.selection_model] {
+            let sender = sender.clone();
+            model.connect_selection_changed(move |_, _, _| sender.input(AppMsg::SelectionChanged));
+        }
+        {
+            let sender = sender.clone();
+            root.select_toggle()
+                .connect_active_notify(move |t| sender.input(AppMsg::Selecting(t.is_active())));
+        }
+        add_action(&root, "bulk-edit", &sender, || AppMsg::BulkEdit);
+        add_action(&root, "trash-selected", &sender, || AppMsg::TrashSelected);
+        relm4::main_application().set_accels_for_action("win.trash-selected", &["Delete"]);
         table.view.add_css_class("data-table");
         table.view.set_reorderable(false);
         let names = TypedListView::<Name, gtk::SingleSelection>::new();
@@ -338,6 +356,7 @@ impl Component for App {
             as_list: false,
             grid,
             table,
+            selecting: false,
             names,
         };
 
@@ -467,6 +486,53 @@ impl Component for App {
                     Err(why) => root.toast(&format!("Could not delete the value: {why}")),
                 }
             }
+            AppMsg::Selecting(on) => {
+                self.selecting = on;
+                for view in [
+                    self.grid.view.upcast_ref::<gtk::Widget>(),
+                    self.table.view.upcast_ref(),
+                ] {
+                    view.set_property("single-click-activate", !on);
+                    view.set_property("enable-rubberband", on);
+                }
+                if !on {
+                    self.grid.selection_model.unselect_all();
+                    self.table.selection_model.unselect_all();
+                }
+                self.update_selection(root);
+            }
+            AppMsg::SelectionChanged => self.update_selection(root),
+            AppMsg::BulkEdit => {
+                let copies = self.selected_copies();
+                if let (Some((_, db)), false) = (&self.open, copies.is_empty()) {
+                    let count = copies.len();
+                    let s = sender.clone();
+                    bulk_dialog::ask(root, count, db, move |change| {
+                        s.input(AppMsg::ApplyBulk(copies.clone(), change));
+                    });
+                }
+            }
+            AppMsg::ApplyBulk(copies, change) => {
+                match self.with_db(|db| db.bulk_edit(&copies, &change)) {
+                    Ok(()) => {
+                        root.select_toggle().set_active(false);
+                        self.show(root);
+                        root.toast(&match copies.len() {
+                            1 => "Changed 1 copy".to_owned(),
+                            n => format!("Changed {n} copies"),
+                        });
+                    }
+                    Err(why) => root.toast(&format!("Nothing was changed: {why}")),
+                }
+            }
+            AppMsg::TrashSelected => {
+                let copies = self.selected_copies();
+                if !copies.is_empty() {
+                    let trashed = self.with_db(|db| db.trash_copies(&copies));
+                    root.select_toggle().set_active(false);
+                    self.after_trash(trashed, None, root, &sender);
+                }
+            }
             AppMsg::TrashCopy(copy) => {
                 let issue = self.with_db(|db| Ok(db.edition(db.copy(copy)?.edition)?.issue));
                 let trashed = self.with_db(|db| db.trash_copy(copy));
@@ -556,6 +622,41 @@ impl Component for App {
 impl App {
     fn store(&self) -> Result<&CollectionStore, String> {
         self.store.as_ref().map_err(Clone::clone)
+    }
+
+    /// The copies selected in the view showing, in the order shown.
+    fn selected_copies(&self) -> Vec<CopyId> {
+        let model: &gtk::MultiSelection = if self.as_list {
+            &self.table.selection_model
+        } else {
+            &self.grid.selection_model
+        };
+        (0..model.n_items())
+            .filter(|&i| model.is_selected(i))
+            .filter_map(|i| {
+                let item = if self.as_list {
+                    self.table.get_visible(i)
+                } else {
+                    self.grid.get_visible(i)
+                }?;
+                let copy = item.borrow().0.copy;
+                Some(copy)
+            })
+            .collect()
+    }
+
+    /// Shows how many books are selected, and offers the actions only
+    /// when there is something to act on.
+    fn update_selection(&self, root: &MainWindow) {
+        let count = u32::try_from(self.selected_copies().len()).unwrap_or(u32::MAX);
+        root.show_selection(self.selecting, count);
+        for name in ["bulk-edit", "trash-selected"] {
+            if let Some(action) = root.lookup_action(name)
+                && let Ok(action) = action.downcast::<gio::SimpleAction>()
+            {
+                action.set_enabled(self.selecting && count > 0 && self.form.is_none());
+            }
+        }
     }
 
     /// Runs `f` on the open collection.

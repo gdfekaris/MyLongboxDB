@@ -5,6 +5,9 @@
 mod browse;
 #[cfg(test)]
 mod browse_tests;
+mod bulk;
+#[cfg(test)]
+mod bulk_tests;
 mod catalog;
 #[cfg(test)]
 mod catalog_tests;
@@ -40,6 +43,7 @@ mod store;
 mod values;
 
 pub use browse::{CopyRow, Shelf, ShelfEntry, ShelfList};
+pub use bulk::BulkChange;
 pub use collects::{CollectedIn, CollectedIssue, Ownership, PreviewEntry};
 pub use collects_text::{
     CollectsEntry, MAX_ENTRIES, MAX_RANGE, SeriesRef, format_collects, parse_collects,

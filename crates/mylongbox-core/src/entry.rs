@@ -523,7 +523,7 @@ impl Database {
     }
 
     /// The entry with this name or alternate name, added if there is none.
-    fn name<I: LookupId>(&self, name: &str) -> Result<I> {
+    pub(crate) fn name<I: LookupId>(&self, name: &str) -> Result<I> {
         match self.find_lookup::<I>(name)? {
             Some(id) => Ok(id),
             None => self.create_lookup::<I>(name),
