@@ -100,7 +100,7 @@ impl Database {
 
     pub fn update_series(&self, id: SeriesId, fields: &SeriesFields) -> Result<()> {
         let f = clean_series(fields)?;
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         live(self.series(id)?.trash)?;
         check_category_fits_children(&tx, id, f.category)?;
         tx.execute(
@@ -141,7 +141,7 @@ impl Database {
     // Issues ---------------------------------------------------------------
 
     pub fn create_issue(&self, series: SeriesId, fields: &IssueFields) -> Result<IssueId> {
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         let parent = self.series(series)?;
         live(parent.trash)?;
         let f = clean_issue(fields, parent.fields.category)?;
@@ -181,7 +181,7 @@ impl Database {
     }
 
     pub fn update_issue(&self, id: IssueId, fields: &IssueFields) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         let current = self.issue(id)?;
         live(current.trash)?;
         let f = clean_issue(fields, self.series(current.series)?.fields.category)?;
@@ -386,7 +386,7 @@ impl Database {
 
     /// Moves a series and everything in it to Trash as one group.
     pub fn trash_series(&self, id: SeriesId) -> Result<TrashId> {
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         let series = self.series(id)?;
         live(series.trash)?;
         let trash = new_trash_group(&tx, &series_label(&series))?;
@@ -415,7 +415,7 @@ impl Database {
 
     /// Moves an issue, its editions, and their copies to Trash as one group.
     pub fn trash_issue(&self, id: IssueId) -> Result<TrashId> {
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         let issue = self.issue(id)?;
         live(issue.trash)?;
         let label = issue_label(&self.series(issue.series)?, &issue);
@@ -439,7 +439,7 @@ impl Database {
 
     /// Moves an edition and its copies to Trash as one group.
     pub fn trash_edition(&self, id: EditionId) -> Result<TrashId> {
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         let edition = self.edition(id)?;
         live(edition.trash)?;
         let label = self.edition_label(&edition)?;
@@ -458,7 +458,7 @@ impl Database {
 
     /// Moves one copy to Trash.
     pub fn trash_copy(&self, id: CopyId) -> Result<TrashId> {
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         let copy = self.copy(id)?;
         live(copy.trash)?;
         let label = self.edition_label(&self.edition(copy.edition)?)?;
@@ -489,7 +489,7 @@ impl Database {
 
     /// Puts a group back exactly where it was.
     pub fn restore(&self, trash: TrashId) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         require_trash_group(&tx, trash)?;
         let parent: Option<String> = tx
             .query_row(
@@ -554,7 +554,7 @@ impl Database {
     }
 
     fn delete_trash(&self, only: Option<TrashId>) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         let deleted = tx.execute("DELETE FROM trash WHERE ?1 IS NULL OR id = ?1", [only]);
         if let Err(e) = deleted {
             if e.sqlite_error_code() == Some(rusqlite::ErrorCode::ConstraintViolation) {

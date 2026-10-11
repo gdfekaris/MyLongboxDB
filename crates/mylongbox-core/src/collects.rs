@@ -71,7 +71,7 @@ impl Database {
     /// Replaces a collected edition's contents with `text`, creating any
     /// series and issues that do not exist yet. Empty text clears it.
     pub fn set_collects(&self, collection: IssueId, text: &str) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         let issue = self.issue(collection)?;
         live(issue.trash)?;
         if self.series(issue.series)?.fields.category != Category::CollectedEdition {

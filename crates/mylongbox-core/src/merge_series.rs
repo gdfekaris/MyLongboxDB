@@ -83,7 +83,7 @@ impl Database {
                 "choose a different series to merge into".into(),
             ));
         }
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         let (source, target) = (self.series(from)?, self.series(into)?);
         live(source.trash)?;
         live(target.trash)?;

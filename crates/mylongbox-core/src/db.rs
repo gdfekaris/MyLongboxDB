@@ -99,6 +99,52 @@ impl Database {
     }
 }
 
+/// A unit of work that either all happens or none of it does. Units
+/// nest: saving a whole book is one unit made of smaller ones, such as
+/// creating its series, and if any part fails, everything rolls back.
+///
+/// Built on SQLite savepoints, which nest where plain transactions
+/// cannot. The outermost savepoint opens a transaction of its own.
+pub(crate) struct Tx<'a> {
+    conn: &'a Connection,
+    done: bool,
+}
+
+impl Database {
+    pub(crate) fn tx(&self) -> Result<Tx<'_>> {
+        self.conn.execute_batch("SAVEPOINT unit")?;
+        Ok(Tx {
+            conn: &self.conn,
+            done: false,
+        })
+    }
+}
+
+impl Tx<'_> {
+    pub(crate) fn commit(mut self) -> Result<()> {
+        self.conn.execute_batch("RELEASE unit")?;
+        self.done = true;
+        Ok(())
+    }
+}
+
+impl std::ops::Deref for Tx<'_> {
+    type Target = Connection;
+
+    fn deref(&self) -> &Connection {
+        self.conn
+    }
+}
+
+impl Drop for Tx<'_> {
+    fn drop(&mut self) {
+        if !self.done {
+            // Undoes this unit only; an enclosing unit decides for itself.
+            let _ = self.conn.execute_batch("ROLLBACK TO unit; RELEASE unit");
+        }
+    }
+}
+
 /// Runs fixed statements in order with `?1` and `?2` bound to `ids`.
 /// A step that names only `?1` gets only the first, because rusqlite
 /// refuses values a statement does not use.
@@ -298,5 +344,41 @@ mod tests {
         conn.execute_batch("CREATE TABLE someone_elses (x)")
             .unwrap();
         assert!(matches!(connect(conn), Err(Error::NotACollection)));
+    }
+
+    fn publishers(db: &Database) -> Vec<String> {
+        db.list_lookups::<crate::PublisherId>()
+            .unwrap()
+            .into_iter()
+            .map(|p| p.name)
+            .collect()
+    }
+
+    #[test]
+    fn units_nest_and_roll_back_on_their_own() {
+        let db = Database::open_in_memory().unwrap();
+        let outer = db.tx().unwrap();
+        db.create_lookup::<crate::PublisherId>("Kept").unwrap();
+        {
+            let _inner = db.tx().unwrap();
+            db.create_lookup::<crate::PublisherId>("Dropped").unwrap();
+            // Dropped without commit: only the inner unit is undone.
+        }
+        outer.commit().unwrap();
+        assert_eq!(publishers(&db), ["Kept"]);
+    }
+
+    #[test]
+    fn an_outer_rollback_undoes_committed_inner_units() {
+        let db = Database::open_in_memory().unwrap();
+        {
+            let _outer = db.tx().unwrap();
+            let inner = db.tx().unwrap();
+            db.create_lookup::<crate::PublisherId>("Gone").unwrap();
+            inner.commit().unwrap();
+        }
+        assert!(publishers(&db).is_empty());
+        // The connection is usable afterwards, outside any transaction.
+        assert!(db.conn.is_autocommit());
     }
 }

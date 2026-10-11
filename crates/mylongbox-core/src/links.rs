@@ -68,7 +68,7 @@ impl Database {
 
     pub fn set_credits(&self, issue: IssueId, credits: &[(CreatorId, Role)]) -> Result<()> {
         self.require_live_issue(issue)?;
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         tx.execute("DELETE FROM credit WHERE issue_id = ?1", [issue])?;
         for (creator, role) in unique(credits) {
             tx.execute(
@@ -100,7 +100,7 @@ impl Database {
     /// Characters with their first-appearance flags.
     pub fn set_characters(&self, issue: IssueId, characters: &[(CharacterId, bool)]) -> Result<()> {
         self.require_live_issue(issue)?;
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         tx.execute("DELETE FROM issue_character WHERE issue_id = ?1", [issue])?;
         for (character, first) in unique_by_id(characters) {
             tx.execute(
@@ -133,7 +133,7 @@ impl Database {
     /// Teams with their first-appearance flags.
     pub fn set_teams(&self, issue: IssueId, teams: &[(TeamId, bool)]) -> Result<()> {
         self.require_live_issue(issue)?;
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         tx.execute("DELETE FROM issue_team WHERE issue_id = ?1", [issue])?;
         for (team, first) in unique_by_id(teams) {
             tx.execute(
@@ -168,7 +168,7 @@ impl Database {
         if arcs.iter().any(|(_, part)| *part == Some(0)) {
             return Err(crate::Error::Invalid("story arc parts start at 1".into()));
         }
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         tx.execute("DELETE FROM issue_story_arc WHERE issue_id = ?1", [issue])?;
         for (arc, part) in unique_by_id(arcs) {
             tx.execute(
@@ -199,7 +199,7 @@ impl Database {
     pub fn set_cover_artists(&self, edition: EditionId, artists: &[CreatorId]) -> Result<()> {
         let current = self.edition(edition)?;
         crate::catalog::live(current.trash)?;
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         tx.execute(
             "DELETE FROM edition_cover_artist WHERE edition_id = ?1",
             [edition],
@@ -232,7 +232,7 @@ impl Database {
     pub fn set_tags(&self, copy: CopyId, tags: &[TagId]) -> Result<()> {
         let current = self.copy(copy)?;
         crate::catalog::live(current.trash)?;
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         tx.execute("DELETE FROM copy_tag WHERE copy_id = ?1", [copy])?;
         for tag in unique(tags) {
             tx.execute(

@@ -287,7 +287,7 @@ impl Database {
     pub fn create_lookup<I: LookupId>(&self, name: &str) -> Result<I> {
         let sql = I::SQL;
         let name = clean_name(sql, name)?;
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         check_name_free::<I>(&tx, &name, None)?;
         tx.execute(sql.insert, params![RowUuid::new_random(), name])?;
         let id = I::from_raw(tx.last_insert_rowid());
@@ -334,7 +334,7 @@ impl Database {
     pub fn rename_lookup<I: LookupId>(&self, id: I, name: &str) -> Result<()> {
         let sql = I::SQL;
         let name = clean_name(sql, name)?;
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         self.lookup(id)?;
         check_name_free::<I>(&tx, &name, Some(id))?;
         // Renaming to one of its own alternate names swaps them over.
@@ -355,7 +355,7 @@ impl Database {
             )));
         };
         let alias = clean_name(sql, alias)?;
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         let entry = self.lookup(id)?;
         if entry.name.eq_ignore_ascii_case(&alias)
             || entry.aliases.iter().any(|a| a.eq_ignore_ascii_case(&alias))
@@ -386,7 +386,7 @@ impl Database {
                 I::SQL.noun
             )));
         }
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         self.lookup(from)?;
         self.lookup(into)?;
         run_steps(&tx, I::SQL.merge, [from.raw(), into.raw()])?;
@@ -396,7 +396,7 @@ impl Database {
 
     /// Deletes an entry that nothing links to.
     pub fn delete_lookup<I: LookupId>(&self, id: I) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         self.lookup(id)?;
         let uses: i64 = tx.query_row(I::SQL.usage, [id.raw()], |row| row.get(0))?;
         let uses = u64::try_from(uses).unwrap_or(0);

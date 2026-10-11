@@ -65,7 +65,7 @@ impl Database {
     /// The detail page of an issue that is not in Trash, read as one
     /// consistent snapshot.
     pub fn issue_detail(&self, id: IssueId) -> Result<IssueDetail> {
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.tx()?;
         let issue = self.issue(id)?;
         // Trashing a series marks its issues too.
         live(issue.trash)?;
