@@ -78,13 +78,15 @@ its authors:
   tests check each of these settings.
 - **No `unsafe` code** outside the small `mylongbox-sandbox` crate.
   Every other crate declares `#![forbid(unsafe_code)]`.
-- **Photos are decoded within limits.** A photo over 50 MB, 100
-  megapixels, or 40,000 pixels on a side is refused before its pixels
-  are decoded. HEIC photos are read by a copy of libheif built into the
-  Flatpak with only the libde265 HEVC decoder and with plugin loading
-  off, so no other code is loaded. Verify with
-  `sdk cargo test -p mylongbox-media --features heic` and the `libheif`
-  module in the Flatpak manifest.
+- **Photos are decoded within limits and saved as pixels only.** A
+  photo over 50 MB, 100 megapixels, or 40,000 pixels on a side is
+  refused before its pixels are decoded. HEIC photos are read by a copy
+  of libheif built into the Flatpak with only the libde265 HEVC decoder
+  and with plugin loading off, so no other code is loaded. Each photo is
+  re-encoded from its pixels, so no EXIF, GPS, XMP, camera, or comment
+  data from the original file is kept, and the original is never
+  changed. Verify with `sdk cargo test -p mylongbox-media --features heic`
+  and the `libheif` module in the Flatpak manifest.
 
 - **No network or file access from the sandbox.** The Flatpak manifest
   grants exactly `--socket=wayland`, `--socket=fallback-x11`,
