@@ -61,6 +61,18 @@ impl Database {
     }
 }
 
+/// Runs fixed statements in order with `?1` and `?2` bound to `ids`.
+/// A step that names only `?1` gets only the first, because rusqlite
+/// refuses values a statement does not use.
+pub(crate) fn run_steps(conn: &Connection, steps: &[&str], ids: [i64; 2]) -> Result<()> {
+    for step in steps {
+        let mut stmt = conn.prepare(step)?;
+        let count = stmt.parameter_count();
+        stmt.execute(rusqlite::params_from_iter(&ids[..count]))?;
+    }
+    Ok(())
+}
+
 /// Hardens a fresh connection and confirms the file is ours to use.
 ///
 /// Every collection file is treated as untrusted, since it may have come

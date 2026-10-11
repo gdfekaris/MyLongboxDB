@@ -4,7 +4,7 @@
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::db::Database;
+use crate::db::{Database, run_steps};
 use crate::error::{Error, Result};
 use crate::model::{
     BoxId, CharacterId, CreatorId, PublisherId, RowUuid, StoryArcId, TagId, TeamId,
@@ -389,13 +389,7 @@ impl Database {
         let tx = self.conn.unchecked_transaction()?;
         self.lookup(from)?;
         self.lookup(into)?;
-        let ids = [from.raw(), into.raw()];
-        for statement in I::SQL.merge {
-            // Some steps name only ?1, and rusqlite refuses extra values.
-            let mut stmt = tx.prepare(statement)?;
-            let count = stmt.parameter_count();
-            stmt.execute(rusqlite::params_from_iter(&ids[..count]))?;
-        }
+        run_steps(&tx, I::SQL.merge, [from.raw(), into.raw()])?;
         tx.commit()?;
         Ok(())
     }
