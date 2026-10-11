@@ -4,8 +4,8 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
-    Category, CollectionInfo, CollectionStore, CopyId, Database, IssueId, Shelf, ShelfEntry,
-    ShelfList,
+    Category, CollectionInfo, CollectionStore, CopyId, Database, IssueId, Prefill, Shelf,
+    ShelfEntry, ShelfList,
 };
 use relm4::typed_view::column::TypedColumnView;
 use relm4::typed_view::grid::TypedGridView;
@@ -13,7 +13,7 @@ use relm4::typed_view::list::TypedListView;
 use relm4::{Component, ComponentParts, ComponentSender};
 
 use crate::books::{self, Book, Name};
-use crate::form::{Form, Hooks};
+use crate::form::{Focus, Form, Hooks};
 use crate::issue_page::{self, Links};
 use crate::window::MainWindow;
 
@@ -153,6 +153,14 @@ fn sections() -> impl Iterator<Item = &'static Section> {
     SECTIONS.iter().flat_map(|group| group.iter())
 }
 
+/// Which form to open.
+#[derive(Clone, Copy)]
+enum FormKind {
+    New(Category),
+    Edit(CopyId),
+    From(CopyId, Prefill),
+}
+
 pub struct App {
     /// The folder of collections, or why it could not be used.
     store: Result<CollectionStore, String>,
@@ -161,6 +169,9 @@ pub struct App {
     open: Option<(String, Rc<Database>)>,
     /// The add or edit form, while one is open.
     form: Option<Form>,
+    /// The copy saved or shown most recently, which "add next issue"
+    /// follows on from.
+    recent_copy: Option<CopyId>,
     section: &'static Section,
     /// The name-list entry whose books are shown, if any.
     shelf: Option<ShelfEntry>,
@@ -185,6 +196,10 @@ pub enum AppMsg {
     OpenIssue(IssueId),
     Add(Category),
     EditCopy(CopyId),
+    /// Start a new book from a copy.
+    AddFrom(CopyId, Prefill),
+    /// Start the issue after the copy saved or opened most recently.
+    AddNext,
     FormSave,
     /// Leave the form, asking first if it has unsaved changes.
     FormCancel,
@@ -232,6 +247,8 @@ impl Component for App {
         add_action(&root, "add-collected", &sender, || {
             AppMsg::Add(Category::CollectedEdition)
         });
+        add_action(&root, "add-next", &sender, || AppMsg::AddNext);
+        relm4::main_application().set_accels_for_action("win.add-next", &["<Control><Shift>n"]);
         relm4::main_application().set_accels_for_action("win.add-comic", &["<Control>n"]);
         relm4::main_application().set_accels_for_action("win.shelf-back", &["<Alt>Left"]);
         fill_sidebar(&root, &sender);
@@ -291,6 +308,7 @@ impl Component for App {
             store,
             open: None,
             form: None,
+            recent_copy: None,
             section: &SECTIONS[0][0],
             shelf: None,
             as_list: false,
@@ -376,9 +394,17 @@ impl Component for App {
                 }
             }
             AppMsg::OpenIssue(issue) => self.open_issue(issue, root, &sender),
-            AppMsg::Add(category) => self.open_form(category, None, root, &sender),
-            // The form takes the book's own category from what it loads.
-            AppMsg::EditCopy(copy) => self.open_form(Category::Comic, Some(copy), root, &sender),
+            AppMsg::Add(category) => self.open_form(FormKind::New(category), root, &sender),
+            AppMsg::EditCopy(copy) => self.open_form(FormKind::Edit(copy), root, &sender),
+            AppMsg::AddFrom(copy, kind) => {
+                self.open_form(FormKind::From(copy, kind), root, &sender);
+            }
+            AppMsg::AddNext => match self.recent_copy {
+                Some(copy) => {
+                    self.open_form(FormKind::From(copy, Prefill::NextIssue), root, &sender);
+                }
+                None => root.toast("Open or add a book first, then add the issue after it"),
+            },
             AppMsg::FormSave => self.save_form(root, &sender),
             AppMsg::FormCancel => match &self.form {
                 Some(form) if form.is_dirty() => confirm_discard(root, &sender),
@@ -432,17 +458,22 @@ impl App {
         self.store.as_ref().map_err(Clone::clone)
     }
 
-    fn open_issue(&self, issue: IssueId, root: &MainWindow, sender: &ComponentSender<Self>) {
+    fn open_issue(&mut self, issue: IssueId, root: &MainWindow, sender: &ComponentSender<Self>) {
         let Some((_, db)) = &self.open else {
             return;
         };
         match db.issue_detail(issue) {
             Ok(detail) => {
+                if let Some(copy) = detail.editions.iter().flat_map(|e| &e.copies).next() {
+                    self.recent_copy = Some(copy.copy.id);
+                }
                 let open = sender.clone();
                 let edit = sender.clone();
+                let prefill = sender.clone();
                 let links = Links {
                     open: Rc::new(move |issue| open.input(AppMsg::OpenIssue(issue))),
                     edit: Rc::new(move |copy| edit.input(AppMsg::EditCopy(copy))),
+                    prefill: Rc::new(move |copy, kind| prefill.input(AppMsg::AddFrom(copy, kind))),
                 };
                 root.push_page(&issue_page::page(&detail, &links));
             }
@@ -450,25 +481,42 @@ impl App {
         }
     }
 
-    fn open_form(
-        &mut self,
-        category: Category,
-        copy: Option<CopyId>,
-        root: &MainWindow,
-        sender: &ComponentSender<Self>,
-    ) {
+    fn open_form(&mut self, kind: FormKind, root: &MainWindow, sender: &ComponentSender<Self>) {
         let Some((_, db)) = &self.open else {
             return;
         };
         if self.form.is_some() {
             return;
         }
-        let entry = match copy.map(|c| db.book_entry(c)).transpose() {
+        let loaded = match kind {
+            FormKind::New(_) => Ok(None),
+            FormKind::Edit(copy) => db.book_entry(copy).map(Some),
+            FormKind::From(copy, prefill) => db.prefilled_entry(copy, prefill).map(Some),
+        };
+        let entry = match loaded {
             Ok(entry) => entry,
             Err(why) => {
                 root.toast(&why.to_string());
                 return;
             }
+        };
+        let category = match (&kind, &entry) {
+            (FormKind::New(category), _) => *category,
+            (_, Some(e)) => e.category,
+            (_, None) => return,
+        };
+        let target = match kind {
+            FormKind::Edit(copy) => Some(copy),
+            FormKind::New(_) | FormKind::From(..) => None,
+        };
+        let heading = match kind {
+            FormKind::From(_, Prefill::NextIssue) if category == Category::CollectedEdition => {
+                Some("Add Next Volume")
+            }
+            FormKind::From(_, Prefill::NextIssue) => Some("Add Next Issue"),
+            FormKind::From(_, Prefill::AnotherCopy) => Some("Add Another Copy"),
+            FormKind::From(_, Prefill::Variant) => Some("Add Variant"),
+            FormKind::New(_) | FormKind::Edit(_) => None,
         };
         let save = sender.clone();
         let cancel = sender.clone();
@@ -476,10 +524,15 @@ impl App {
             save: Rc::new(move || save.input(AppMsg::FormSave)),
             cancel: Rc::new(move || cancel.input(AppMsg::FormCancel)),
         };
-        let category = entry.as_ref().map_or(category, |e| e.category);
-        let form = Form::new(db, category, copy, entry.as_ref(), hooks);
+        let focus = match kind {
+            FormKind::New(_) => Focus::Series,
+            FormKind::Edit(_) => Focus::Nowhere,
+            FormKind::From(_, Prefill::NextIssue) => Focus::Title,
+            FormKind::From(_, Prefill::Variant) => Focus::Variant,
+            FormKind::From(_, Prefill::AnotherCopy) => Focus::Copy,
+        };
+        let form = Form::new(db, category, target, entry.as_ref(), heading, focus, hooks);
         root.push_page(&form.page);
-        form.focus_first();
         self.form = Some(form);
     }
 
@@ -503,6 +556,7 @@ impl App {
             Ok(saved) => {
                 let edited = form.target.is_some();
                 self.form = None;
+                self.recent_copy = Some(saved.copy);
                 root.pop_page();
                 // An edit replaces the stale detail page under the form;
                 // an add shows the new book.
@@ -520,6 +574,7 @@ impl App {
     fn open_collection(&mut self, name: &str, root: &MainWindow) {
         // Release the current collection's lock before taking another.
         self.form = None;
+        self.recent_copy = None;
         self.open = None;
         // An entry names a row of the old collection.
         self.shelf = None;
@@ -543,6 +598,7 @@ impl App {
             "add-comic",
             "add-magazine",
             "add-collected",
+            "add-next",
         ] {
             if let Some(action) = root.lookup_action(name)
                 && let Ok(action) = action.downcast::<gio::SimpleAction>()

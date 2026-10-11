@@ -56,6 +56,7 @@ pub struct Form {
     pub page: adw::NavigationPage,
     /// The copy being edited, or `None` when adding.
     pub target: Option<CopyId>,
+    focus: Focus,
     category: Category,
     dirty: Dirty,
 
@@ -112,6 +113,23 @@ pub struct Form {
 
 /// Names to offer for what has been typed so far.
 type Suggest = Rc<dyn Fn(&str) -> Vec<String>>;
+
+/// Where the cursor starts: in the field the user most likely types
+/// first for this kind of form.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    /// A blank form starts at the series.
+    Series,
+    /// The next issue starts at its story title.
+    Title,
+    /// A variant starts at its variant name, with the edition open.
+    Variant,
+    /// Another copy starts at its grade or condition.
+    Copy,
+    /// An edit form leaves the cursor alone, so typing cannot replace
+    /// anything by accident.
+    Nowhere,
+}
 
 /// What the form needs from the app.
 pub struct Hooks {
@@ -172,6 +190,8 @@ impl Form {
         category: Category,
         target: Option<CopyId>,
         entry: Option<&BookEntry>,
+        heading: Option<&str>,
+        focus: Focus,
         hooks: Hooks,
     ) -> Self {
         let db = Rc::downgrade(db);
@@ -181,9 +201,10 @@ impl Form {
             Category::CollectedEdition => "Collected Edition",
         };
         let window_title = adw::WindowTitle::new(
-            &match target {
-                None => format!("Add {noun}"),
-                Some(_) => format!("Edit {noun}"),
+            &match (heading, target) {
+                (Some(heading), _) => heading.to_owned(),
+                (None, None) => format!("Add {noun}"),
+                (None, Some(_)) => format!("Edit {noun}"),
             },
             "",
         );
@@ -355,7 +376,7 @@ impl Form {
             &prefs,
             "Edition",
             Some("Shared by every copy of this cover and printing"),
-            false,
+            focus == Focus::Variant,
         );
         let variant = entry_row("Variant (blank for the standard cover)");
         let printing = entry_row("Printing (blank for a first printing)");
@@ -509,6 +530,7 @@ impl Form {
         let form = Self {
             page,
             target,
+            focus,
             category,
             dirty,
             series,
@@ -562,16 +584,32 @@ impl Form {
         form.watch_all();
         form.dirty.changed.set(false);
         form.dirty.title.set_subtitle("");
+        form.focus_when_shown();
         form
     }
 
-    /// Puts the cursor in the series field of a new book, once the page
-    /// is showing. An edit form leaves it alone, so typing cannot replace
-    /// the series by accident.
-    pub fn focus_first(&self) {
-        if self.target.is_none() {
-            self.series.grab_focus();
-        }
+    /// Puts the cursor where this kind of form starts once the page has
+    /// finished sliding in; before that it has no layout to scroll.
+    fn focus_when_shown(&self) {
+        let book = self.category == Category::CollectedEdition;
+        let field: adw::PreferencesRow = match self.focus {
+            Focus::Series => self.series.clone().upcast(),
+            Focus::Title => self.title.clone().upcast(),
+            Focus::Variant => self.variant.clone().upcast(),
+            Focus::Copy if book => self.book_condition.clone().upcast(),
+            Focus::Copy => self.grade.clone().upcast(),
+            Focus::Nowhere => return,
+        };
+        self.page.connect_shown(move |_| {
+            field.grab_focus();
+            // Focus alone leaves a field further down out of sight.
+            if let Some(viewport) = field
+                .ancestor(gtk::Viewport::static_type())
+                .and_downcast::<gtk::Viewport>()
+            {
+                viewport.scroll_to(&field, None);
+            }
+        });
     }
 
     pub fn is_dirty(&self) -> bool {

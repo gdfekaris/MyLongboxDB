@@ -4,10 +4,10 @@
 use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk::glib;
+use gtk::{gio, glib};
 use mylongbox_core::{
-    Category, CopyDetail, CopyId, Date, EditionDetail, IssueDetail, IssueId, MagazineFormat, Role,
-    format_collects,
+    Category, CopyDetail, CopyId, Date, EditionDetail, IssueDetail, IssueId, MagazineFormat,
+    Prefill, Role, format_collects,
 };
 
 use crate::books::version;
@@ -19,6 +19,8 @@ pub struct Links {
     /// Opens another issue's page, such as one a book reprints.
     pub open: Rc<dyn Fn(IssueId)>,
     pub edit: Rc<dyn Fn(CopyId)>,
+    /// Starts a new book from a copy.
+    pub prefill: Rc<dyn Fn(CopyId, Prefill)>,
 }
 
 pub fn page(d: &IssueDetail, links: &Links) -> adw::NavigationPage {
@@ -402,6 +404,7 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
     let copy = c.copy.id;
     edit.connect_clicked(move |_| hook(copy));
     row.add_suffix(&edit);
+    row.add_suffix(&more_menu(&row, copy, category, links));
     let add = |label: &str, value: String| {
         if !value.is_empty() {
             row.add_row(&property(label, &value));
@@ -463,6 +466,41 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
             .unwrap_or_default(),
     );
     row
+}
+
+/// The ways to start a new book from this copy, as a menu of actions
+/// that belong to the copy's row.
+fn more_menu(
+    row: &adw::ExpanderRow,
+    copy: CopyId,
+    category: Category,
+    links: &Links,
+) -> gtk::MenuButton {
+    let next = match category {
+        Category::CollectedEdition => "Add _Next Volume",
+        Category::Comic | Category::Magazine => "Add _Next Issue",
+    };
+    let actions = gio::SimpleActionGroup::new();
+    let menu = gio::Menu::new();
+    for (name, label, kind) in [
+        ("another", "Add Another _Copy", Prefill::AnotherCopy),
+        ("variant", "Add _Variant", Prefill::Variant),
+        ("next", next, Prefill::NextIssue),
+    ] {
+        let action = gio::SimpleAction::new(name, None);
+        let hook = links.prefill.clone();
+        action.connect_activate(move |_, _| hook(copy, kind));
+        actions.add_action(&action);
+        menu.append(Some(label), Some(&format!("copy.{name}")));
+    }
+    row.insert_action_group("copy", Some(&actions));
+    gtk::MenuButton::builder()
+        .icon_name("view-more-symbolic")
+        .valign(gtk::Align::Center)
+        .tooltip_text("More Ways to Add")
+        .css_classes(["flat"])
+        .menu_model(&menu)
+        .build()
 }
 
 /// The local calendar date of a stored UTC timestamp, so a book added
