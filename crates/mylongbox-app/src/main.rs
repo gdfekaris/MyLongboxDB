@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 mod app;
+mod books;
 mod window;
 
 const APP_ID: &str = "io.github.gdfekaris.MyLongboxDB";

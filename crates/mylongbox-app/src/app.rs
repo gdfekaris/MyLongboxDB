@@ -2,33 +2,165 @@ use std::path::PathBuf;
 
 use adw::prelude::*;
 use gtk::{gio, glib};
-use mylongbox_core::{CollectionInfo, CollectionStore, Database};
+use mylongbox_core::{
+    Category, CollectionInfo, CollectionStore, Database, Shelf, ShelfEntry, ShelfList,
+};
+use relm4::typed_view::column::TypedColumnView;
+use relm4::typed_view::grid::TypedGridView;
+use relm4::typed_view::list::TypedListView;
 use relm4::{Component, ComponentParts, ComponentSender};
 
+use crate::books::{self, Book, Name};
 use crate::window::MainWindow;
 
+/// What a sidebar section shows.
+#[derive(Clone, Copy)]
+enum Content {
+    /// Books, or what to say when there are none.
+    Books(Shelf, &'static str, &'static str),
+    /// A list of names, each leading to its books.
+    Names(ShelfList, &'static str, &'static str),
+    NotYet,
+}
+
+struct Section {
+    name: &'static str,
+    content: Content,
+}
+
+const fn books(
+    name: &'static str,
+    shelf: Shelf,
+    empty: &'static str,
+    hint: &'static str,
+) -> Section {
+    Section {
+        name,
+        content: Content::Books(shelf, empty, hint),
+    }
+}
+
+const fn names(
+    name: &'static str,
+    list: ShelfList,
+    empty: &'static str,
+    hint: &'static str,
+) -> Section {
+    Section {
+        name,
+        content: Content::Names(list, empty, hint),
+    }
+}
+
+const fn not_yet(name: &'static str) -> Section {
+    Section {
+        name,
+        content: Content::NotYet,
+    }
+}
+
 /// The sidebar, in groups separated by a line.
-const SECTIONS: &[&[&str]] = &[
-    &["Everything", "Comics", "Magazines", "Collected Editions"],
+const SECTIONS: &[&[Section]] = &[
     &[
-        "Series",
-        "Publishers",
-        "Creators",
-        "Characters",
-        "Teams",
-        "Story Arcs",
-        "Storage Locations",
+        books(
+            "Everything",
+            Shelf::Everything,
+            "Nothing Here Yet",
+            "Comics, magazines, and collected editions you add will appear here.",
+        ),
+        books(
+            "Comics",
+            Shelf::Category(Category::Comic),
+            "No Comics",
+            "Comics you add will appear here.",
+        ),
+        books(
+            "Magazines",
+            Shelf::Category(Category::Magazine),
+            "No Magazines",
+            "Magazines you add will appear here.",
+        ),
+        books(
+            "Collected Editions",
+            Shelf::Category(Category::CollectedEdition),
+            "No Collected Editions",
+            "Trades, omnibuses, and other books you add will appear here.",
+        ),
     ],
-    &["Key Issues", "Gaps", "Duplicates", "Needs Attention"],
-    &["Trash"],
+    &[
+        names(
+            "Series",
+            ShelfList::Series,
+            "No Series",
+            "Series appear here as you add books.",
+        ),
+        names(
+            "Publishers",
+            ShelfList::Publishers,
+            "No Publishers",
+            "Publishers appear here as you add them to series.",
+        ),
+        names(
+            "Creators",
+            ShelfList::Creators,
+            "No Creators",
+            "Writers, artists, and editors appear here as you credit them.",
+        ),
+        names(
+            "Characters",
+            ShelfList::Characters,
+            "No Characters",
+            "Characters appear here as you add them to issues.",
+        ),
+        names(
+            "Teams",
+            ShelfList::Teams,
+            "No Teams",
+            "Teams appear here as you add them to issues.",
+        ),
+        names(
+            "Story Arcs",
+            ShelfList::StoryArcs,
+            "No Story Arcs",
+            "Story arcs appear here as you add them to issues.",
+        ),
+        names(
+            "Storage Locations",
+            ShelfList::StorageBoxes,
+            "No Storage Locations",
+            "Boxes appear here as you file books in them.",
+        ),
+    ],
+    &[
+        books(
+            "Key Issues",
+            Shelf::KeyIssues,
+            "No Key Issues",
+            "Issues you mark as key will appear here.",
+        ),
+        not_yet("Gaps"),
+        not_yet("Duplicates"),
+        not_yet("Needs Attention"),
+    ],
+    &[not_yet("Trash")],
 ];
+
+fn sections() -> impl Iterator<Item = &'static Section> {
+    SECTIONS.iter().flat_map(|group| group.iter())
+}
 
 pub struct App {
     /// The folder of collections, or why it could not be used.
     store: Result<CollectionStore, String>,
     /// The open collection and its name.
     open: Option<(String, Database)>,
-    section: &'static str,
+    section: &'static Section,
+    /// The name-list entry whose books are shown, if any.
+    shelf: Option<ShelfEntry>,
+    as_list: bool,
+    grid: TypedGridView<Book, gtk::SingleSelection>,
+    table: TypedColumnView<Book, gtk::SingleSelection>,
+    names: TypedListView<Name, gtk::SingleSelection>,
 }
 
 #[derive(Debug)]
@@ -40,6 +172,9 @@ pub enum AppMsg {
     ExportCollection,
     ExportPicked(PathBuf),
     SectionSelected(usize),
+    NameActivated(u32),
+    ShelfBack,
+    ViewChanged(bool),
 }
 
 #[derive(Debug)]
@@ -73,14 +208,57 @@ impl Component for App {
         add_action(&root, "export-collection", &sender, || {
             AppMsg::ExportCollection
         });
+        add_action(&root, "shelf-back", &sender, || AppMsg::ShelfBack);
+        relm4::main_application().set_accels_for_action("win.shelf-back", &["<Alt>Left"]);
         fill_sidebar(&root, &sender);
+
+        let css = gtk::CssProvider::new();
+        css.load_from_string(books::CSS);
+        gtk::style_context_add_provider_for_display(
+            &WidgetExt::display(&root),
+            &css,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+
+        let grid = TypedGridView::<Book, gtk::SingleSelection>::new();
+        grid.selection_model.set_autoselect(false);
+        grid.view.set_max_columns(24);
+        let table = books::book_table();
+        table.selection_model.set_autoselect(false);
+        table.view.add_css_class("data-table");
+        table.view.set_reorderable(false);
+        let names = TypedListView::<Name, gtk::SingleSelection>::new();
+        names.selection_model.set_autoselect(false);
+        names.view.set_single_click_activate(true);
+        names.view.add_css_class("navigation-sidebar");
+        {
+            let sender = sender.clone();
+            names
+                .view
+                .connect_activate(move |_, position| sender.input(AppMsg::NameActivated(position)));
+        }
+        root.set_views(&grid.view, &table.view, &names.view);
+        {
+            let sender = sender.clone();
+            root.view_toggle()
+                .connect_active_name_notify(move |toggle| {
+                    sender.input(AppMsg::ViewChanged(
+                        toggle.active_name().as_deref() == Some("list"),
+                    ));
+                });
+        }
 
         let store = CollectionStore::new(glib::user_data_dir().join("collections"))
             .map_err(|e| e.to_string());
         let mut model = App {
             store,
             open: None,
-            section: SECTIONS[0][0],
+            section: &SECTIONS[0][0],
+            shelf: None,
+            as_list: false,
+            grid,
+            table,
+            names,
         };
 
         let startup = match &model.store {
@@ -138,10 +316,31 @@ impl Component for App {
                 }
             }
             AppMsg::SectionSelected(index) => {
-                if let Some(section) = SECTIONS.iter().flat_map(|g| g.iter()).nth(index) {
+                if let Some(section) = sections().nth(index) {
                     self.section = section;
+                    self.shelf = None;
                     self.show(root);
                     root.show_content();
+                }
+            }
+            AppMsg::NameActivated(position) => {
+                if let Some(entry) = self.names.get_visible(position) {
+                    self.shelf = Some(entry.borrow().0.clone());
+                    self.show(root);
+                }
+            }
+            AppMsg::ShelfBack => {
+                if self.shelf.take().is_some() {
+                    // The list kept its place while hidden; reloading it
+                    // would scroll back to the top.
+                    self.show_header(root);
+                    root.show_names();
+                }
+            }
+            AppMsg::ViewChanged(as_list) => {
+                self.as_list = as_list;
+                if root.is_showing_books() {
+                    root.show_books(as_list);
                 }
             }
         }
@@ -166,6 +365,8 @@ impl App {
     fn open_collection(&mut self, name: &str, root: &MainWindow) {
         // Release the current collection's lock before taking another.
         self.open = None;
+        // An entry names a row of the old collection.
+        self.shelf = None;
         match self
             .store()
             .and_then(|s| s.open(name).map_err(|e| e.to_string()))
@@ -176,16 +377,74 @@ impl App {
         self.show(root);
     }
 
-    fn show(&self, root: &MainWindow) {
+    /// Shows the welcome page, or the current section of the open
+    /// collection, reading it afresh.
+    fn show(&mut self, root: &MainWindow) {
         root.show_welcome(self.open.is_none());
-        if let Some((name, _)) = &self.open {
-            root.set_location(name, self.section);
-        }
         if let Some(action) = root.lookup_action("export-collection")
             && let Ok(action) = action.downcast::<gio::SimpleAction>()
         {
             action.set_enabled(self.open.is_some());
         }
+        if self.open.is_none() {
+            return;
+        }
+        self.show_header(root);
+        if let Err(why) = self.load(root) {
+            root.toast(&why.to_string());
+            root.show_empty("Could Not Read the Collection", &why.to_string());
+        }
+    }
+
+    fn show_header(&self, root: &MainWindow) {
+        let Some((collection, _)) = &self.open else {
+            return;
+        };
+        match &self.shelf {
+            Some(entry) => root.set_location(collection, &entry.name, self.section.name),
+            None => root.set_location(collection, self.section.name, collection),
+        }
+        root.set_back_visible(self.shelf.is_some());
+    }
+
+    fn load(&mut self, root: &MainWindow) -> mylongbox_core::Result<()> {
+        let Some((_, db)) = &self.open else {
+            return Ok(());
+        };
+        let (shelf, empty, hint) = match (&self.shelf, self.section.content) {
+            (Some(entry), _) => (
+                entry.shelf,
+                "No Books Here",
+                "You don\u{2019}t own any of these books.",
+            ),
+            (None, Content::Books(shelf, empty, hint)) => (shelf, empty, hint),
+            (None, Content::Names(list, empty, hint)) => {
+                let entries = db.shelf_list(list)?;
+                self.names.clear();
+                if entries.is_empty() {
+                    root.show_empty(empty, hint);
+                } else {
+                    self.names.extend_from_iter(entries.into_iter().map(Name));
+                    root.show_names();
+                }
+                return Ok(());
+            }
+            (None, Content::NotYet) => {
+                root.show_empty(self.section.name, "Not available yet.");
+                return Ok(());
+            }
+        };
+        let rows = db.browse(shelf)?;
+        self.grid.clear();
+        self.table.clear();
+        if rows.is_empty() {
+            root.show_empty(empty, hint);
+        } else {
+            self.grid.extend_from_iter(rows.iter().cloned().map(Book));
+            self.table.extend_from_iter(rows.into_iter().map(Book));
+            root.show_books(self.as_list);
+        }
+        Ok(())
     }
 }
 
@@ -202,9 +461,9 @@ fn fill_sidebar(root: &MainWindow, sender: &ComponentSender<App>) {
     let mut index = 0;
     for group in SECTIONS {
         group_starts.push(index);
-        for name in *group {
+        for section in *group {
             let label = gtk::Label::builder()
-                .label(*name)
+                .label(section.name)
                 .xalign(0.0)
                 .margin_start(6)
                 .margin_end(6)

@@ -24,6 +24,22 @@ mod imp {
         pub content_page: TemplateChild<adw::NavigationPage>,
         #[template_child]
         pub window_title: TemplateChild<adw::WindowTitle>,
+        #[template_child]
+        pub content_header: TemplateChild<adw::HeaderBar>,
+        #[template_child]
+        pub back_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub view_toggle: TemplateChild<adw::ToggleGroup>,
+        #[template_child]
+        pub content_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub grid_scroller: TemplateChild<gtk::ScrolledWindow>,
+        #[template_child]
+        pub list_scroller: TemplateChild<gtk::ScrolledWindow>,
+        #[template_child]
+        pub names_scroller: TemplateChild<gtk::ScrolledWindow>,
+        #[template_child]
+        pub empty_page: TemplateChild<adw::StatusPage>,
     }
 
     #[glib::object_subclass]
@@ -84,13 +100,64 @@ impl MainWindow {
         self.imp().sidebar.get()
     }
 
-    /// Names the open collection and the section being shown.
-    pub fn set_location(&self, collection: &str, section: &str) {
+    /// Names the open collection in the window title, and what the
+    /// content shows in its header.
+    pub fn set_location(&self, collection: &str, title: &str, subtitle: &str) {
         let imp = self.imp();
-        imp.window_title.set_title(section);
-        imp.window_title.set_subtitle(collection);
-        imp.content_page.set_title(section);
+        imp.window_title.set_title(title);
+        imp.window_title.set_subtitle(subtitle);
+        imp.content_page.set_title(title);
         self.set_title(Some(&format!("{collection} — MyLongboxDB")));
+    }
+
+    /// Shows the back button that leaves a shelf for its list of names.
+    /// On narrow windows it replaces the button back to the sidebar.
+    pub fn set_back_visible(&self, visible: bool) {
+        let imp = self.imp();
+        imp.back_button.set_visible(visible);
+        imp.content_header.set_show_back_button(!visible);
+    }
+
+    /// Puts the views of books and names in their places.
+    pub fn set_views(&self, grid: &gtk::GridView, list: &gtk::ColumnView, names: &gtk::ListView) {
+        let imp = self.imp();
+        imp.grid_scroller.set_child(Some(grid));
+        imp.list_scroller.set_child(Some(list));
+        imp.names_scroller.set_child(Some(names));
+    }
+
+    pub fn view_toggle(&self) -> adw::ToggleGroup {
+        self.imp().view_toggle.get()
+    }
+
+    /// Shows books as a cover grid or a list.
+    pub fn show_books(&self, as_list: bool) {
+        let imp = self.imp();
+        imp.view_toggle.set_visible(true);
+        imp.content_stack
+            .set_visible_child_name(if as_list { "list" } else { "grid" });
+    }
+
+    pub fn is_showing_books(&self) -> bool {
+        matches!(
+            self.imp().content_stack.visible_child_name().as_deref(),
+            Some("grid" | "list")
+        )
+    }
+
+    pub fn show_names(&self) {
+        let imp = self.imp();
+        imp.view_toggle.set_visible(false);
+        imp.content_stack.set_visible_child_name("names");
+    }
+
+    /// Explains why there is nothing to show.
+    pub fn show_empty(&self, title: &str, description: &str) {
+        let imp = self.imp();
+        imp.view_toggle.set_visible(false);
+        imp.empty_page.set_title(title);
+        imp.empty_page.set_description(Some(description));
+        imp.content_stack.set_visible_child_name("empty");
     }
 
     /// On narrow windows, moves from the sidebar to the content.
