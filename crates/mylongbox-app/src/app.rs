@@ -1,9 +1,10 @@
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
-    Category, CollectionInfo, CollectionStore, Database, Shelf, ShelfEntry, ShelfList,
+    Category, CollectionInfo, CollectionStore, Database, IssueId, Shelf, ShelfEntry, ShelfList,
 };
 use relm4::typed_view::column::TypedColumnView;
 use relm4::typed_view::grid::TypedGridView;
@@ -11,6 +12,7 @@ use relm4::typed_view::list::TypedListView;
 use relm4::{Component, ComponentParts, ComponentSender};
 
 use crate::books::{self, Book, Name};
+use crate::issue_page::{self, OpenIssue};
 use crate::window::MainWindow;
 
 /// What a sidebar section shows.
@@ -173,6 +175,9 @@ pub enum AppMsg {
     ExportPicked(PathBuf),
     SectionSelected(usize),
     NameActivated(u32),
+    /// A book in the grid or list, by position.
+    BookActivated(u32),
+    OpenIssue(IssueId),
     ShelfBack,
     ViewChanged(bool),
 }
@@ -236,6 +241,19 @@ impl Component for App {
             names
                 .view
                 .connect_activate(move |_, position| sender.input(AppMsg::NameActivated(position)));
+        }
+        grid.view.set_single_click_activate(true);
+        table.view.set_single_click_activate(true);
+        {
+            let sender = sender.clone();
+            grid.view
+                .connect_activate(move |_, position| sender.input(AppMsg::BookActivated(position)));
+        }
+        {
+            let sender = sender.clone();
+            table
+                .view
+                .connect_activate(move |_, position| sender.input(AppMsg::BookActivated(position)));
         }
         root.set_views(&grid.view, &table.view, &names.view);
         {
@@ -319,6 +337,7 @@ impl Component for App {
                 if let Some(section) = sections().nth(index) {
                     self.section = section;
                     self.shelf = None;
+                    root.pop_to_section();
                     self.show(root);
                     root.show_content();
                 }
@@ -329,7 +348,18 @@ impl Component for App {
                     self.show(root);
                 }
             }
+            AppMsg::BookActivated(position) => {
+                // Both views hold the same rows in the same order.
+                if let Some(book) = self.grid.get_visible(position) {
+                    let issue = book.borrow().0.issue;
+                    self.open_issue(issue, root, &sender);
+                }
+            }
+            AppMsg::OpenIssue(issue) => self.open_issue(issue, root, &sender),
             AppMsg::ShelfBack => {
+                if root.pop_page() {
+                    return;
+                }
                 if self.shelf.take().is_some() {
                     // The list kept its place while hidden; reloading it
                     // would scroll back to the top.
@@ -362,11 +392,26 @@ impl App {
         self.store.as_ref().map_err(Clone::clone)
     }
 
+    fn open_issue(&self, issue: IssueId, root: &MainWindow, sender: &ComponentSender<Self>) {
+        let Some((_, db)) = &self.open else {
+            return;
+        };
+        match db.issue_detail(issue) {
+            Ok(detail) => {
+                let sender = sender.clone();
+                let open: OpenIssue = Rc::new(move |issue| sender.input(AppMsg::OpenIssue(issue)));
+                root.push_page(&issue_page::page(&detail, open));
+            }
+            Err(why) => root.toast(&why.to_string()),
+        }
+    }
+
     fn open_collection(&mut self, name: &str, root: &MainWindow) {
         // Release the current collection's lock before taking another.
         self.open = None;
         // An entry names a row of the old collection.
         self.shelf = None;
+        root.pop_to_section();
         match self
             .store()
             .and_then(|s| s.open(name).map_err(|e| e.to_string()))

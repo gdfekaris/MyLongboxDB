@@ -4,6 +4,8 @@
 
 mod app;
 mod books;
+mod format;
+mod issue_page;
 mod window;
 
 const APP_ID: &str = "io.github.gdfekaris.MyLongboxDB";

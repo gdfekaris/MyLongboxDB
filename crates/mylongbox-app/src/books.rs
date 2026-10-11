@@ -2,10 +2,12 @@
 
 use adw::prelude::*;
 use gtk::pango::EllipsizeMode;
-use mylongbox_core::{Binding, BookCondition, Category, CopyRow, CoverDate, GradeType, ShelfEntry};
+use mylongbox_core::{Category, CopyRow, ShelfEntry};
 use relm4::typed_view::column::{RelmColumn, TypedColumnView};
 use relm4::typed_view::grid::RelmGridItem;
 use relm4::typed_view::list::RelmListItem;
+
+use crate::format;
 
 /// One physical book in the cover grid or the list.
 pub struct Book(pub CopyRow);
@@ -102,29 +104,10 @@ fn badge(row: &CopyRow) -> String {
     match row.category {
         Category::CollectedEdition => row
             .binding
-            .map(|b| {
-                match b {
-                    Binding::Hardcover => "HC",
-                    Binding::Softcover => "TPB",
-                    Binding::OversizedHardcover => "OHC",
-                }
-                .to_owned()
-            })
-            .unwrap_or_default(),
-        Category::Comic | Category::Magazine => grade(row),
-    }
-}
-
-/// e.g. `CGC 9.8`, or `9.4` for the owner's own estimate.
-fn grade(row: &CopyRow) -> String {
-    let Some(grade) = row.grade else {
-        return String::new();
-    };
-    match row.grade_type {
-        Some(GradeType::Cgc) => format!("CGC {grade}"),
-        Some(GradeType::Cbcs) => format!("CBCS {grade}"),
-        Some(GradeType::Pgx) => format!("PGX {grade}"),
-        Some(GradeType::Raw) | None => grade.to_string(),
+            .map(format::binding_badge)
+            .unwrap_or_default()
+            .to_owned(),
+        Category::Comic | Category::Magazine => format::grade(row.grade, row.grade_type),
     }
 }
 
@@ -132,20 +115,10 @@ fn condition(row: &CopyRow) -> String {
     match row.category {
         Category::CollectedEdition => row
             .book_condition
-            .map(|c| {
-                match c {
-                    BookCondition::Sealed => "Sealed",
-                    BookCondition::New => "New",
-                    BookCondition::LikeNew => "Like New",
-                    BookCondition::VeryGood => "Very Good",
-                    BookCondition::Good => "Good",
-                    BookCondition::Fair => "Fair",
-                    BookCondition::Poor => "Poor",
-                }
-                .to_owned()
-            })
-            .unwrap_or_default(),
-        Category::Comic | Category::Magazine => grade(row),
+            .map(format::condition)
+            .unwrap_or_default()
+            .to_owned(),
+        Category::Comic | Category::Magazine => format::grade(row.grade, row.grade_type),
     }
 }
 
@@ -157,23 +130,9 @@ fn number(row: &CopyRow) -> String {
 }
 
 /// e.g. `Cover B · 2nd printing`. A first printing goes unsaid.
-fn version(row: &CopyRow) -> String {
-    let printing = row.printing.filter(|&p| p > 1).map(|p| {
-        let suffix = match (p % 10, p % 100) {
-            (_, 11..=13) => "th",
-            (1, _) => "st",
-            (2, _) => "nd",
-            (3, _) => "rd",
-            _ => "th",
-        };
-        format!("{p}{suffix} printing")
-    });
-    [Some(row.variant.clone()), printing]
-        .into_iter()
-        .flatten()
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join(" · ")
+pub fn version(variant: &str, printing: Option<u32>) -> String {
+    let printing = printing.filter(|&p| p > 1).map(format::printing);
+    format::joined([variant.to_owned(), printing.unwrap_or_default()])
 }
 
 /// The line under the cover: number and version, or a book's own title.
@@ -182,24 +141,7 @@ fn issue_line(row: &CopyRow) -> String {
         Some(_) => number(row),
         None => row.title.clone(),
     };
-    [first, version(row)]
-        .into_iter()
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join(" · ")
-}
-
-fn cover_date(date: Option<CoverDate>) -> String {
-    const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
-    match date {
-        None => String::new(),
-        Some(d) => match d.month() {
-            Some(m) => format!("{} {}", MONTHS[usize::from(m - 1)], d.year()),
-            None => d.year().to_string(),
-        },
-    }
+    format::joined([first, version(&row.variant, row.printing)])
 }
 
 fn location(row: &CopyRow) -> String {
@@ -243,9 +185,11 @@ macro_rules! text_column {
 text_column!(SeriesColumn, "Series", expand: true, xalign: 0.0, |r| r.series.clone());
 text_column!(NumberColumn, "No.", expand: false, xalign: 0.0, number);
 text_column!(TitleColumn, "Title", expand: true, xalign: 0.0, |r| r.title.clone());
-text_column!(VersionColumn, "Variant", expand: false, xalign: 0.0, version);
+text_column!(VersionColumn, "Variant", expand: false, xalign: 0.0, |r| {
+    version(&r.variant, r.printing)
+});
 text_column!(DateColumn, "Cover Date", expand: false, xalign: 0.0, |r| {
-    cover_date(r.cover_date)
+    format::cover_date(r.cover_date)
 });
 text_column!(GradeColumn, "Grade", expand: false, xalign: 0.0, condition);
 text_column!(LocationColumn, "Location", expand: false, xalign: 0.0, location);
@@ -347,7 +291,8 @@ pub const CSS: &str = "
 mod tests {
     use super::*;
     use mylongbox_core::{
-        CopyFields, Database, EditionFields, Grade, IssueFields, IssueNumber, SeriesFields, Shelf,
+        Binding, CopyFields, Database, EditionFields, Grade, GradeType, IssueFields, IssueNumber,
+        SeriesFields, Shelf,
     };
 
     /// A plain copy of X-Men (1963) #1, as browsing finds it.
@@ -363,34 +308,6 @@ mod tests {
         let edition = db.create_edition(issue, &EditionFields::default()).unwrap();
         db.create_copy(edition, &CopyFields::default()).unwrap();
         db.browse(Shelf::Everything).unwrap().remove(0)
-    }
-
-    #[test]
-    fn printings_get_ordinals() {
-        let names: Vec<_> = [1, 2, 3, 4, 11, 12, 13, 21, 22, 101, 111]
-            .map(|p| {
-                version(&CopyRow {
-                    printing: Some(p),
-                    ..row()
-                })
-            })
-            .into();
-        assert_eq!(
-            names,
-            [
-                "",
-                "2nd printing",
-                "3rd printing",
-                "4th printing",
-                "11th printing",
-                "12th printing",
-                "13th printing",
-                "21st printing",
-                "22nd printing",
-                "101st printing",
-                "111th printing",
-            ]
-        );
     }
 
     #[test]
@@ -430,12 +347,5 @@ mod tests {
             ..row()
         };
         assert_eq!(badge(&book), "TPB");
-    }
-
-    #[test]
-    fn cover_dates_read_naturally() {
-        assert_eq!(cover_date(CoverDate::new(1975, Some(3))), "Mar 1975");
-        assert_eq!(cover_date(CoverDate::new(1975, None)), "1975");
-        assert_eq!(cover_date(None), "");
     }
 }

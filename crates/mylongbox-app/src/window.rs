@@ -25,6 +25,10 @@ mod imp {
         #[template_child]
         pub window_title: TemplateChild<adw::WindowTitle>,
         #[template_child]
+        pub content_nav: TemplateChild<adw::NavigationView>,
+        #[template_child]
+        pub section_page: TemplateChild<adw::NavigationPage>,
+        #[template_child]
         pub content_header: TemplateChild<adw::HeaderBar>,
         #[template_child]
         pub back_button: TemplateChild<gtk::Button>,
@@ -107,7 +111,31 @@ impl MainWindow {
         imp.window_title.set_title(title);
         imp.window_title.set_subtitle(subtitle);
         imp.content_page.set_title(title);
+        imp.section_page.set_title(title);
         self.set_title(Some(&format!("{collection} — MyLongboxDB")));
+    }
+
+    /// Opens a page, such as a book's details, over the section.
+    pub fn push_page(&self, page: &adw::NavigationPage) {
+        self.imp().content_nav.push(page);
+    }
+
+    /// Closes any pages opened over the section, returning whether
+    /// there were any.
+    pub fn pop_to_section(&self) -> bool {
+        let nav = &self.imp().content_nav;
+        let open = nav.navigation_stack().n_items() > 1;
+        if open {
+            nav.pop_to_tag("section");
+        }
+        open
+    }
+
+    /// Closes the topmost page opened over the section, returning
+    /// whether there was one.
+    pub fn pop_page(&self) -> bool {
+        let nav = &self.imp().content_nav;
+        nav.navigation_stack().n_items() > 1 && nav.pop()
     }
 
     /// Shows the back button that leaves a shelf for its list of names.
