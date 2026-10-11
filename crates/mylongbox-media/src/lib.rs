@@ -4,6 +4,10 @@
 #![forbid(unsafe_code)]
 
 mod decode;
+#[cfg(test)]
+mod fixtures;
+#[cfg(feature = "heic")]
+mod heic;
 
 pub use decode::{
     DecodeError, Decoded, Format, MAX_FILE_BYTES, MAX_PIXELS, MAX_SIDE, decode_bytes, decode_file,

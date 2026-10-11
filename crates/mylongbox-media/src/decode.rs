@@ -25,6 +25,7 @@ pub enum Format {
     Jpeg,
     Png,
     WebP,
+    Heic,
 }
 
 /// A decoded photo.
@@ -68,7 +69,7 @@ impl fmt::Display for DecodeError {
                  megapixels and {MAX_SIDE} pixels on a side",
                 MAX_PIXELS / 1_000_000
             ),
-            Self::Unsupported => f.write_str("this is not a JPEG, PNG, or WebP photo"),
+            Self::Unsupported => f.write_str("this is not a JPEG, PNG, WebP, or HEIC photo"),
             Self::Damaged(why) => write!(f, "the photo is damaged and cannot be read ({why})"),
         }
     }
@@ -101,6 +102,12 @@ pub fn decode_bytes(data: &[u8]) -> Result<Decoded, DecodeError> {
     if bytes > MAX_FILE_BYTES {
         return Err(DecodeError::TooLarge { bytes });
     }
+    if is_heic(data) {
+        return decode_heic(data).map(|image| Decoded {
+            image,
+            format: Format::Heic,
+        });
+    }
     let reader = ImageReader::new(Cursor::new(data))
         .with_guessed_format()
         .map_err(DecodeError::Io)?;
@@ -121,7 +128,43 @@ pub fn decode_bytes(data: &[u8]) -> Result<Decoded, DecodeError> {
     Ok(Decoded { image, format })
 }
 
-fn check_size(width: u32, height: u32) -> Result<(), DecodeError> {
+#[cfg(feature = "heic")]
+fn decode_heic(data: &[u8]) -> Result<DynamicImage, DecodeError> {
+    crate::heic::decode(data)
+}
+
+#[cfg(not(feature = "heic"))]
+fn decode_heic(_: &[u8]) -> Result<DynamicImage, DecodeError> {
+    Err(DecodeError::Unsupported)
+}
+
+/// Whether the file is a HEIF container holding HEVC pictures, judged by
+/// the brands in its opening `ftyp` box. Other HEIF kinds, such as AVIF,
+/// are left for the other readers to turn away.
+fn is_heic(data: &[u8]) -> bool {
+    const BRANDS: [&[u8; 4]; 8] = [
+        b"heic", b"heix", b"heim", b"heis", b"hevc", b"hevx", b"hevm", b"hevs",
+    ];
+    let Some(size) = data
+        .get(..4)
+        .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+    else {
+        return false;
+    };
+    let Ok(size) = usize::try_from(size) else {
+        return false;
+    };
+    if data.get(4..8) != Some(b"ftyp") || size < 16 || size > data.len() {
+        return false;
+    }
+    // The major brand, then after the minor version the compatible ones.
+    let (compatible, _) = data[16..size].as_chunks::<4>();
+    std::iter::once(&[data[8], data[9], data[10], data[11]])
+        .chain(compatible)
+        .any(|brand| BRANDS.contains(&brand))
+}
+
+pub(crate) fn check_size(width: u32, height: u32) -> Result<(), DecodeError> {
     if u64::from(width) * u64::from(height) > MAX_PIXELS || width > MAX_SIDE || height > MAX_SIDE {
         return Err(DecodeError::TooManyPixels { width, height });
     }
@@ -141,14 +184,19 @@ fn decode_limited(data: &[u8], width: u32, height: u32) -> Result<DynamicImage, 
     })
 }
 
-/// Caps on what decoding may allocate, matching the pixel limit: 100
-/// megapixels of 16-bit RGBA, plus room for the decoder's own buffers.
+/// Caps on what decoding may allocate, matching the pixel limit.
 fn limits() -> Limits {
     let mut limits = Limits::default();
     limits.max_image_width = Some(MAX_SIDE);
     limits.max_image_height = Some(MAX_SIDE);
-    limits.max_alloc = Some(MAX_PIXELS * 8 + 64 * 1024 * 1024);
+    limits.max_alloc = Some(max_alloc());
     limits
+}
+
+/// The most decoding may allocate: 100 megapixels of 16-bit RGBA, plus
+/// room for the decoder's own buffers.
+pub(crate) fn max_alloc() -> u64 {
+    MAX_PIXELS * 8 + 64 * 1024 * 1024
 }
 
 #[cfg(test)]
@@ -297,6 +345,125 @@ mod tests {
         let mut png = encoded(ImageFormat::Png);
         png.truncate(60);
         assert!(matches!(decode_bytes(&png), Err(DecodeError::Damaged(_))));
+    }
+
+    use crate::fixtures::GRADIENT_HEIC as HEIC;
+
+    /// The HEIC fixture with its stated size changed, as a hostile file
+    /// might.
+    fn heic_claiming(width: u32, height: u32) -> Vec<u8> {
+        let mut data = HEIC.to_vec();
+        let at = data.windows(4).position(|w| w == b"ispe").unwrap() + 8;
+        data[at..at + 4].copy_from_slice(&width.to_be_bytes());
+        data[at + 4..at + 8].copy_from_slice(&height.to_be_bytes());
+        data
+    }
+
+    #[test]
+    fn heic_is_known_by_its_brands() {
+        assert!(is_heic(HEIC));
+        let ftyp = |brands: &[&[u8; 4]]| {
+            let mut data = (16 + 4 * u32::try_from(brands.len() - 1).unwrap())
+                .to_be_bytes()
+                .to_vec();
+            data.extend(b"ftyp");
+            data.extend(brands[0]);
+            data.extend([0; 4]);
+            for b in &brands[1..] {
+                data.extend(*b);
+            }
+            data
+        };
+        assert!(is_heic(&ftyp(&[b"mif1", b"miaf", b"heic"])));
+        assert!(is_heic(&ftyp(&[b"heix"])));
+        // AVIF shares the container but not the codec.
+        assert!(!is_heic(&ftyp(&[b"avif", b"mif1", b"miaf"])));
+        assert!(!is_heic(&encoded(ImageFormat::Png)));
+        // A box claiming more than the file holds, or too little.
+        let mut long = ftyp(&[b"heic"]);
+        long[3] = 200;
+        assert!(!is_heic(&long));
+        let mut short = ftyp(&[b"heic"]);
+        short[3] = 8;
+        assert!(!is_heic(&short));
+        assert!(!is_heic(&HEIC[..10]));
+    }
+
+    #[cfg(not(feature = "heic"))]
+    #[test]
+    fn heic_needs_the_heic_feature() {
+        assert!(matches!(decode_bytes(HEIC), Err(DecodeError::Unsupported)));
+    }
+
+    #[cfg(feature = "heic")]
+    #[test]
+    #[ignore = "needs libheif with an HEVC decoder, as built into the Flatpak"]
+    fn heic_decodes() {
+        let decoded = decode_bytes(HEIC).unwrap();
+        assert_eq!(decoded.format, Format::Heic);
+        let DynamicImage::ImageRgb8(image) = decoded.image else {
+            panic!(
+                "an 8-bit photo should stay 8-bit: {:?}",
+                decoded.image.color()
+            );
+        };
+        assert_eq!(image.dimensions(), (48, 32));
+        // Lossy, so each sample need only be close to the original.
+        for (x, y, pixel) in image.enumerate_pixels() {
+            let expected = [(x * 5) % 256, (y * 8) % 256, 128];
+            for (got, want) in pixel.0.iter().zip(expected) {
+                let diff = i64::from(*got) - i64::from(want);
+                assert!(diff.abs() <= 12, "({x}, {y}): {pixel:?} vs {expected:?}");
+            }
+        }
+    }
+
+    #[cfg(feature = "heic")]
+    #[test]
+    #[ignore = "needs libheif with an HEVC decoder, as built into the Flatpak"]
+    fn deep_heic_keeps_its_precision() {
+        let decoded = decode_bytes(crate::fixtures::DEEP_HEIC).unwrap();
+        let DynamicImage::ImageRgb16(image) = decoded.image else {
+            panic!(
+                "a 10-bit photo should be 16-bit: {:?}",
+                decoded.image.color()
+            );
+        };
+        assert_eq!(image.dimensions(), (16, 16));
+        // Ten-bit values stretched to sixteen: 1023 would be 65535.
+        let stretch = |v: u32| (v * 65535 + 511) / 1023;
+        for (x, y, pixel) in image.enumerate_pixels() {
+            let expected = [stretch(x * 64), stretch(y * 64), stretch(512)];
+            for (got, want) in pixel.0.iter().zip(expected) {
+                let diff = i64::from(*got) - i64::from(want);
+                assert!(diff.abs() <= 2000, "({x}, {y}): {pixel:?} vs {expected:?}");
+            }
+        }
+    }
+
+    #[cfg(feature = "heic")]
+    #[test]
+    fn huge_heic_is_refused_before_decoding() {
+        for (width, height) in [(20_000, 20_000), (40_001, 1)] {
+            match decode_bytes(&heic_claiming(width, height)) {
+                Err(DecodeError::TooManyPixels {
+                    width: w,
+                    height: h,
+                }) => assert_eq!((w, h), (width, height)),
+                other => panic!("{width}x{height}: {other:?}"),
+            }
+        }
+    }
+
+    #[cfg(feature = "heic")]
+    #[test]
+    fn broken_heic_is_damaged() {
+        for len in [40, 200, HEIC.len() / 2] {
+            match decode_bytes(&HEIC[..len]) {
+                Err(DecodeError::Damaged(_)) => {}
+                other => panic!("{len} bytes: {other:?}"),
+            }
+        }
     }
 
     #[test]
