@@ -176,7 +176,7 @@ fn count(conn: &Connection, table: &str) -> i64 {
         "value_entry", "cover_photo", "creator", "creator_alias", "credit",
         "edition_cover_artist", "character", "character_alias", "issue_character", "team",
         "team_alias", "issue_team", "story_arc", "story_arc_alias", "issue_story_arc", "tag",
-        "copy_tag", "collects", "exchange_rate", "signature",
+        "copy_tag", "collects", "exchange_rate", "signature", "search_source",
     );
     conn.query_row(sql, [], |row| row.get(0)).unwrap()
 }

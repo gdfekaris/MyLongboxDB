@@ -341,3 +341,294 @@ CREATE TABLE exchange_rate (
     usd_cents_per_ounce INTEGER NOT NULL CHECK (usd_cents_per_ounce > 0),
     usd_cents_per_bitcoin INTEGER NOT NULL CHECK (usd_cents_per_bitcoin > 0)
 ) STRICT;
+
+
+
+-- Quick search. `search_source` holds one row per searchable name or
+-- text, kept in step with its source by the triggers below. Its id is the
+-- source row's id times 16 plus its kind, so each source row has exactly
+-- one; `owner` is the entry it finds books through (for an alternate
+-- name, the entry it belongs to).
+CREATE TABLE search_source (
+    id INTEGER PRIMARY KEY,
+    text TEXT NOT NULL,
+    kind INTEGER NOT NULL CHECK (kind BETWEEN 1 AND 14),
+    owner INTEGER NOT NULL
+) STRICT;
+
+-- The index over it. Trigrams make every part of a word findable,
+-- ignoring case and accents. Keeping the text in `search_source` lets the
+-- index be emptied and rebuilt without reading what was in it. The
+-- triggers below change both together.
+CREATE VIRTUAL TABLE search_text USING fts5 (
+    text,
+    content = 'search_source',
+    content_rowid = 'id',
+    tokenize = 'trigram remove_diacritics 1'
+);
+
+CREATE TRIGGER search_series_insert AFTER INSERT ON series BEGIN
+    INSERT INTO search_source (id, text, kind, owner)
+    VALUES (new.id * 16 + 1, new.name, 1, new.id);
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 1, new.name);
+END;
+
+CREATE TRIGGER search_series_update AFTER UPDATE OF name ON series BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 1, old.name);
+    UPDATE search_source SET text = new.name WHERE id = old.id * 16 + 1;
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 1, new.name);
+END;
+
+CREATE TRIGGER search_series_delete AFTER DELETE ON series BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 1, old.name);
+    DELETE FROM search_source WHERE id = old.id * 16 + 1;
+END;
+
+CREATE TRIGGER search_issue_insert AFTER INSERT ON issue BEGIN
+    INSERT INTO search_source (id, text, kind, owner)
+    VALUES (new.id * 16 + 2, new.title, 2, new.id);
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 2, new.title);
+END;
+
+CREATE TRIGGER search_issue_update AFTER UPDATE OF title ON issue BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 2, old.title);
+    UPDATE search_source SET text = new.title WHERE id = old.id * 16 + 2;
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 2, new.title);
+END;
+
+CREATE TRIGGER search_issue_delete AFTER DELETE ON issue BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 2, old.title);
+    DELETE FROM search_source WHERE id = old.id * 16 + 2;
+END;
+
+CREATE TRIGGER search_publisher_insert AFTER INSERT ON publisher BEGIN
+    INSERT INTO search_source (id, text, kind, owner)
+    VALUES (new.id * 16 + 3, new.name, 3, new.id);
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 3, new.name);
+END;
+
+CREATE TRIGGER search_publisher_update AFTER UPDATE OF name ON publisher BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 3, old.name);
+    UPDATE search_source SET text = new.name WHERE id = old.id * 16 + 3;
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 3, new.name);
+END;
+
+CREATE TRIGGER search_publisher_delete AFTER DELETE ON publisher BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 3, old.name);
+    DELETE FROM search_source WHERE id = old.id * 16 + 3;
+END;
+
+CREATE TRIGGER search_creator_insert AFTER INSERT ON creator BEGIN
+    INSERT INTO search_source (id, text, kind, owner)
+    VALUES (new.id * 16 + 4, new.name, 4, new.id);
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 4, new.name);
+END;
+
+CREATE TRIGGER search_creator_update AFTER UPDATE OF name ON creator BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 4, old.name);
+    UPDATE search_source SET text = new.name WHERE id = old.id * 16 + 4;
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 4, new.name);
+END;
+
+CREATE TRIGGER search_creator_delete AFTER DELETE ON creator BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 4, old.name);
+    DELETE FROM search_source WHERE id = old.id * 16 + 4;
+END;
+
+CREATE TRIGGER search_creator_alias_insert AFTER INSERT ON creator_alias BEGIN
+    INSERT INTO search_source (id, text, kind, owner)
+    VALUES (new.rowid * 16 + 5, new.alias, 5, new.creator_id);
+    INSERT INTO search_text (rowid, text) VALUES (new.rowid * 16 + 5, new.alias);
+END;
+
+CREATE TRIGGER search_creator_alias_update AFTER UPDATE OF alias, creator_id ON creator_alias BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.rowid * 16 + 5, old.alias);
+    UPDATE search_source SET text = new.alias, owner = new.creator_id WHERE id = old.rowid * 16 + 5;
+    INSERT INTO search_text (rowid, text) VALUES (new.rowid * 16 + 5, new.alias);
+END;
+
+CREATE TRIGGER search_creator_alias_delete AFTER DELETE ON creator_alias BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.rowid * 16 + 5, old.alias);
+    DELETE FROM search_source WHERE id = old.rowid * 16 + 5;
+END;
+
+CREATE TRIGGER search_character_insert AFTER INSERT ON character BEGIN
+    INSERT INTO search_source (id, text, kind, owner)
+    VALUES (new.id * 16 + 6, new.name, 6, new.id);
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 6, new.name);
+END;
+
+CREATE TRIGGER search_character_update AFTER UPDATE OF name ON character BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 6, old.name);
+    UPDATE search_source SET text = new.name WHERE id = old.id * 16 + 6;
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 6, new.name);
+END;
+
+CREATE TRIGGER search_character_delete AFTER DELETE ON character BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 6, old.name);
+    DELETE FROM search_source WHERE id = old.id * 16 + 6;
+END;
+
+CREATE TRIGGER search_character_alias_insert AFTER INSERT ON character_alias BEGIN
+    INSERT INTO search_source (id, text, kind, owner)
+    VALUES (new.rowid * 16 + 7, new.alias, 7, new.character_id);
+    INSERT INTO search_text (rowid, text) VALUES (new.rowid * 16 + 7, new.alias);
+END;
+
+CREATE TRIGGER search_character_alias_update AFTER UPDATE OF alias, character_id ON character_alias BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.rowid * 16 + 7, old.alias);
+    UPDATE search_source SET text = new.alias, owner = new.character_id WHERE id = old.rowid * 16 + 7;
+    INSERT INTO search_text (rowid, text) VALUES (new.rowid * 16 + 7, new.alias);
+END;
+
+CREATE TRIGGER search_character_alias_delete AFTER DELETE ON character_alias BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.rowid * 16 + 7, old.alias);
+    DELETE FROM search_source WHERE id = old.rowid * 16 + 7;
+END;
+
+CREATE TRIGGER search_team_insert AFTER INSERT ON team BEGIN
+    INSERT INTO search_source (id, text, kind, owner)
+    VALUES (new.id * 16 + 8, new.name, 8, new.id);
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 8, new.name);
+END;
+
+CREATE TRIGGER search_team_update AFTER UPDATE OF name ON team BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 8, old.name);
+    UPDATE search_source SET text = new.name WHERE id = old.id * 16 + 8;
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 8, new.name);
+END;
+
+CREATE TRIGGER search_team_delete AFTER DELETE ON team BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 8, old.name);
+    DELETE FROM search_source WHERE id = old.id * 16 + 8;
+END;
+
+CREATE TRIGGER search_team_alias_insert AFTER INSERT ON team_alias BEGIN
+    INSERT INTO search_source (id, text, kind, owner)
+    VALUES (new.rowid * 16 + 9, new.alias, 9, new.team_id);
+    INSERT INTO search_text (rowid, text) VALUES (new.rowid * 16 + 9, new.alias);
+END;
+
+CREATE TRIGGER search_team_alias_update AFTER UPDATE OF alias, team_id ON team_alias BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.rowid * 16 + 9, old.alias);
+    UPDATE search_source SET text = new.alias, owner = new.team_id WHERE id = old.rowid * 16 + 9;
+    INSERT INTO search_text (rowid, text) VALUES (new.rowid * 16 + 9, new.alias);
+END;
+
+CREATE TRIGGER search_team_alias_delete AFTER DELETE ON team_alias BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.rowid * 16 + 9, old.alias);
+    DELETE FROM search_source WHERE id = old.rowid * 16 + 9;
+END;
+
+CREATE TRIGGER search_story_arc_insert AFTER INSERT ON story_arc BEGIN
+    INSERT INTO search_source (id, text, kind, owner)
+    VALUES (new.id * 16 + 10, new.name, 10, new.id);
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 10, new.name);
+END;
+
+CREATE TRIGGER search_story_arc_update AFTER UPDATE OF name ON story_arc BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 10, old.name);
+    UPDATE search_source SET text = new.name WHERE id = old.id * 16 + 10;
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 10, new.name);
+END;
+
+CREATE TRIGGER search_story_arc_delete AFTER DELETE ON story_arc BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 10, old.name);
+    DELETE FROM search_source WHERE id = old.id * 16 + 10;
+END;
+
+CREATE TRIGGER search_story_arc_alias_insert AFTER INSERT ON story_arc_alias BEGIN
+    INSERT INTO search_source (id, text, kind, owner)
+    VALUES (new.rowid * 16 + 11, new.alias, 11, new.story_arc_id);
+    INSERT INTO search_text (rowid, text) VALUES (new.rowid * 16 + 11, new.alias);
+END;
+
+CREATE TRIGGER search_story_arc_alias_update AFTER UPDATE OF alias, story_arc_id ON story_arc_alias BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.rowid * 16 + 11, old.alias);
+    UPDATE search_source SET text = new.alias, owner = new.story_arc_id WHERE id = old.rowid * 16 + 11;
+    INSERT INTO search_text (rowid, text) VALUES (new.rowid * 16 + 11, new.alias);
+END;
+
+CREATE TRIGGER search_story_arc_alias_delete AFTER DELETE ON story_arc_alias BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.rowid * 16 + 11, old.alias);
+    DELETE FROM search_source WHERE id = old.rowid * 16 + 11;
+END;
+
+CREATE TRIGGER search_tag_insert AFTER INSERT ON tag BEGIN
+    INSERT INTO search_source (id, text, kind, owner)
+    VALUES (new.id * 16 + 12, new.name, 12, new.id);
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 12, new.name);
+END;
+
+CREATE TRIGGER search_tag_update AFTER UPDATE OF name ON tag BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 12, old.name);
+    UPDATE search_source SET text = new.name WHERE id = old.id * 16 + 12;
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 12, new.name);
+END;
+
+CREATE TRIGGER search_tag_delete AFTER DELETE ON tag BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 12, old.name);
+    DELETE FROM search_source WHERE id = old.id * 16 + 12;
+END;
+
+CREATE TRIGGER search_storage_box_insert AFTER INSERT ON storage_box BEGIN
+    INSERT INTO search_source (id, text, kind, owner)
+    VALUES (new.id * 16 + 13, new.name, 13, new.id);
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 13, new.name);
+END;
+
+CREATE TRIGGER search_storage_box_update AFTER UPDATE OF name ON storage_box BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 13, old.name);
+    UPDATE search_source SET text = new.name WHERE id = old.id * 16 + 13;
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 13, new.name);
+END;
+
+CREATE TRIGGER search_storage_box_delete AFTER DELETE ON storage_box BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 13, old.name);
+    DELETE FROM search_source WHERE id = old.id * 16 + 13;
+END;
+
+CREATE TRIGGER search_copy_insert AFTER INSERT ON copy BEGIN
+    INSERT INTO search_source (id, text, kind, owner)
+    VALUES (new.id * 16 + 14, new.notes, 14, new.id);
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 14, new.notes);
+END;
+
+CREATE TRIGGER search_copy_update AFTER UPDATE OF notes ON copy BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 14, old.notes);
+    UPDATE search_source SET text = new.notes WHERE id = old.id * 16 + 14;
+    INSERT INTO search_text (rowid, text) VALUES (new.id * 16 + 14, new.notes);
+END;
+
+CREATE TRIGGER search_copy_delete AFTER DELETE ON copy BEGIN
+    INSERT INTO search_text (search_text, rowid, text)
+    VALUES ('delete', old.id * 16 + 14, old.notes);
+    DELETE FROM search_source WHERE id = old.id * 16 + 14;
+END;
