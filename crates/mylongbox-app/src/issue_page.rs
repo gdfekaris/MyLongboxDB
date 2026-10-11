@@ -392,19 +392,16 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
         &format!("Copy {number} · {condition}"),
         &format::joined([location.as_str(), value.as_str()]),
     );
-    // The form holds comic fields only.
-    if category == Category::Comic {
-        let edit = gtk::Button::builder()
-            .icon_name("document-edit-symbolic")
-            .valign(gtk::Align::Center)
-            .tooltip_text("Edit This Copy")
-            .css_classes(["flat"])
-            .build();
-        let hook = links.edit.clone();
-        let copy = c.copy.id;
-        edit.connect_clicked(move |_| hook(copy));
-        row.add_suffix(&edit);
-    }
+    let edit = gtk::Button::builder()
+        .icon_name("document-edit-symbolic")
+        .valign(gtk::Align::Center)
+        .tooltip_text("Edit This Copy")
+        .css_classes(["flat"])
+        .build();
+    let hook = links.edit.clone();
+    let copy = c.copy.id;
+    edit.connect_clicked(move |_| hook(copy));
+    row.add_suffix(&edit);
     let add = |label: &str, value: String| {
         if !value.is_empty() {
             row.add_row(&property(label, &value));

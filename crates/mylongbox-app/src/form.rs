@@ -7,9 +7,9 @@ use std::rc::{Rc, Weak};
 use adw::prelude::*;
 use gtk::glib;
 use mylongbox_core::{
-    Amount, BookEntry, BoxId, Category, CharacterId, CopyId, CreatorId, Currency, Database,
-    Distribution, Grade, GradeType, IssueNumber, LookupId, PublisherId, Role, SeriesChoice,
-    SeriesId, StoryArcId, TagId, TeamId,
+    Amount, Binding, BookCondition, BookEntry, BoxId, Category, CharacterId, CopyId, CreatorId,
+    Currency, Database, Distribution, Grade, GradeType, Isbn, IssueNumber, LookupId,
+    MagazineFormat, PublisherId, Role, SeriesChoice, SeriesId, StoryArcId, TagId, TeamId,
 };
 
 use crate::{autocomplete, format};
@@ -65,6 +65,9 @@ pub struct Form {
     start_year: adw::EntryRow,
     volume: adw::EntryRow,
     publisher: adw::EntryRow,
+    /// New magazine series only.
+    magazine_format: adw::ComboRow,
+    color: adw::ComboRow,
     number: adw::EntryRow,
     title: adw::EntryRow,
     cover_date: adw::EntryRow,
@@ -85,6 +88,11 @@ pub struct Form {
     cover_price: MoneyRow,
     barcode: adw::EntryRow,
     cover_artists: NameList,
+    isbn: adw::EntryRow,
+    binding: adw::ComboRow,
+    dust_jacket: adw::SwitchRow,
+    slipcase: adw::SwitchRow,
+    collects: adw::EntryRow,
 
     grade: adw::EntryRow,
     grade_type: adw::ComboRow,
@@ -98,6 +106,8 @@ pub struct Form {
     box_position: adw::EntryRow,
     tags: NameList,
     notes: gtk::TextView,
+    book_condition: adw::ComboRow,
+    jacket_condition: adw::ComboRow,
 }
 
 /// Names to offer for what has been typed so far.
@@ -113,6 +123,38 @@ const DISTRIBUTIONS: [(&str, Option<Distribution>); 3] = [
     ("Not noted", None),
     ("Direct edition", Some(Distribution::Direct)),
     ("Newsstand edition", Some(Distribution::Newsstand)),
+];
+
+const FORMATS: [(&str, Option<MagazineFormat>); 4] = [
+    ("Not noted", None),
+    ("Standard size", Some(MagazineFormat::Standard)),
+    ("Treasury size", Some(MagazineFormat::Treasury)),
+    ("Digest size", Some(MagazineFormat::Digest)),
+];
+
+/// Whether a magazine is black and white.
+const COLORS: [(&str, Option<bool>); 3] = [
+    ("Not noted", None),
+    ("Color", Some(false)),
+    ("Black and white", Some(true)),
+];
+
+const BINDINGS: [(&str, Option<Binding>); 4] = [
+    ("Not noted", None),
+    ("Softcover", Some(Binding::Softcover)),
+    ("Hardcover", Some(Binding::Hardcover)),
+    ("Oversized hardcover", Some(Binding::OversizedHardcover)),
+];
+
+const CONDITIONS: [(&str, Option<BookCondition>); 8] = [
+    ("Not noted", None),
+    ("Sealed", Some(BookCondition::Sealed)),
+    ("New", Some(BookCondition::New)),
+    ("Like new", Some(BookCondition::LikeNew)),
+    ("Very good", Some(BookCondition::VeryGood)),
+    ("Good", Some(BookCondition::Good)),
+    ("Fair", Some(BookCondition::Fair)),
+    ("Poor", Some(BookCondition::Poor)),
 ];
 
 const GRADE_TYPES: [(&str, Option<GradeType>); 5] = [
@@ -133,10 +175,15 @@ impl Form {
         hooks: Hooks,
     ) -> Self {
         let db = Rc::downgrade(db);
+        let noun = match category {
+            Category::Comic => "Comic",
+            Category::Magazine => "Magazine",
+            Category::CollectedEdition => "Collected Edition",
+        };
         let window_title = adw::WindowTitle::new(
-            match target {
-                None => "Add Comic",
-                Some(_) => "Edit Comic",
+            &match target {
+                None => format!("Add {noun}"),
+                Some(_) => format!("Edit {noun}"),
             },
             "",
         );
@@ -153,7 +200,12 @@ impl Form {
         let start_year = entry_row("Start Year of New Series");
         let volume = entry_row("Volume of New Series");
         let publisher = entry_row("Publisher of New Series");
-        let number = entry_row("Issue Number");
+        let magazine_format = combo_row("Format of New Series", FORMATS.map(|(name, _)| name));
+        let color = combo_row("Color", COLORS.map(|(name, _)| name));
+        let number = entry_row(match category {
+            Category::CollectedEdition => "Volume Number (blank for a standalone book)",
+            Category::Comic | Category::Magazine => "Issue Number",
+        });
         let joins = adw::ActionRow::builder()
             .title("Already in your collection")
             .subtitle("This adds another copy, and fills in any details typed here.")
@@ -162,7 +214,10 @@ impl Form {
         joins.add_prefix(&gtk::Image::from_icon_name("dialog-information-symbolic"));
         joins.add_css_class("property");
         let title = entry_row("Story Title");
-        let cover_date = entry_row("Cover Date (e.g. Mar 1975)");
+        let cover_date = entry_row(match category {
+            Category::CollectedEdition => "Publication Date (e.g. Mar 2014)",
+            Category::Comic | Category::Magazine => "Cover Date (e.g. Mar 1975)",
+        });
         let release_date = entry_row("Release Date (YYYY-MM-DD)");
         let pages = entry_row("Page Count");
         let key = adw::SwitchRow::builder().title("Key Issue").build();
@@ -171,9 +226,12 @@ impl Form {
             .sync_create()
             .build();
         let synopsis = text_view();
-        for row in [&series, &start_year, &volume, &publisher, &number] {
+        for row in [&series, &start_year, &volume, &publisher] {
             issue.append(row);
         }
+        issue.append(&magazine_format);
+        issue.append(&color);
+        issue.append(&number);
         issue.append(&joins);
         for row in [&title, &cover_date, &release_date, &pages] {
             issue.append(row);
@@ -184,13 +242,22 @@ impl Form {
         for row in [&start_year, &volume, &publisher] {
             row.set_visible(false);
         }
+        magazine_format.set_visible(false);
+        color.set_visible(false);
 
         {
             // The rows for a new series show only when the typed name is
             // not one already listed.
             let db = db.clone();
             let picked = picked_series.clone();
-            let new_rows = [start_year.clone(), volume.clone(), publisher.clone()];
+            // A book line numbers its volumes itself, so a series-level
+            // volume would only confuse.
+            let new_rows: Vec<adw::EntryRow> = if category == Category::CollectedEdition {
+                vec![start_year.clone(), publisher.clone()]
+            } else {
+                vec![start_year.clone(), volume.clone(), publisher.clone()]
+            };
+            let magazine_rows = [magazine_format.clone(), color.clone()];
             let labels = Rc::new(move || series_labels(&db, category));
             let update = {
                 let labels = labels.clone();
@@ -202,6 +269,9 @@ impl Form {
                     let new = found.is_none() && !text.trim().is_empty();
                     for row in &new_rows {
                         row.set_visible(new);
+                    }
+                    for row in &magazine_rows {
+                        row.set_visible(new && category == Category::Magazine);
                     }
                 }
             };
@@ -225,6 +295,21 @@ impl Form {
         }
         lookup_completion::<PublisherId>(&publisher, &db);
 
+        let collects = entry_row("Issues Reprinted");
+        if category == Category::CollectedEdition {
+            let list = section(
+                &prefs,
+                "Collects",
+                Some(
+                    "For example: Amazing Spider-Man (1963) 1\u{2013}10, Annual 1; \
+                     Amazing Fantasy (1962) 15",
+                ),
+                true,
+            );
+            list.append(&collects);
+            contents_preview(&collects, &list, &db);
+        }
+
         let credits = NameList::new(
             &section(
                 &prefs,
@@ -233,7 +318,7 @@ impl Form {
                 true,
             ),
             "Add Credit",
-            Extra::Role,
+            Extra::Role(roles(category)),
             completion::<CreatorId>(&db),
             &dirty,
         );
@@ -277,9 +362,21 @@ impl Form {
         let distribution = combo_row("Distribution", DISTRIBUTIONS.map(|(name, _)| name));
         let cover_price = MoneyRow::new("Cover Price");
         let barcode = entry_row("Barcode");
+        let isbn = entry_row("ISBN");
+        let binding = combo_row("Binding", BINDINGS.map(|(name, _)| name));
+        let dust_jacket = adw::SwitchRow::builder().title("Dust Jacket").build();
+        let slipcase = adw::SwitchRow::builder().title("Slipcase").build();
         edition.append(&variant);
         edition.append(&printing);
-        edition.append(&distribution);
+        if category == Category::CollectedEdition {
+            edition.append(&isbn);
+            edition.append(&binding);
+            edition.append(&dust_jacket);
+            edition.append(&slipcase);
+        } else {
+            // Books are not sold on newsstands.
+            edition.append(&distribution);
+        }
         edition.append(&cover_price.row);
         edition.append(&barcode);
         let cover_artists = NameList::new(
@@ -303,11 +400,18 @@ impl Form {
         let storage_box = entry_row("Storage Box");
         let box_position = entry_row("Position in Box");
         lookup_completion::<BoxId>(&storage_box, &db);
-        copy.append(&grade);
-        copy.append(&grade_type);
-        for row in [&cert_number, &label_type, &signed_by] {
-            copy.append(row);
+        let book_condition = combo_row("Condition", CONDITIONS.map(|(name, _)| name));
+        let jacket_condition = combo_row("Dust Jacket Condition", CONDITIONS.map(|(name, _)| name));
+        if category == Category::CollectedEdition {
+            copy.append(&book_condition);
+            copy.append(&jacket_condition);
+        } else {
+            copy.append(&grade);
+            copy.append(&grade_type);
+            copy.append(&cert_number);
+            copy.append(&label_type);
         }
+        copy.append(&signed_by);
         copy.append(&purchase_price.row);
         for row in [&purchase_date, &seller, &storage_box, &box_position] {
             copy.append(row);
@@ -412,6 +516,8 @@ impl Form {
             start_year,
             volume,
             publisher,
+            magazine_format,
+            color,
             number,
             title,
             cover_date,
@@ -430,6 +536,11 @@ impl Form {
             cover_price,
             barcode,
             cover_artists,
+            isbn,
+            binding,
+            dust_jacket,
+            slipcase,
+            collects,
             grade,
             grade_type,
             cert_number,
@@ -442,6 +553,8 @@ impl Form {
             box_position,
             tags,
             notes,
+            book_condition,
+            jacket_condition,
         };
         if let Some(entry) = entry {
             form.fill(entry, &db);
@@ -491,6 +604,8 @@ impl Form {
             &self.box_position,
             &self.cover_price.row,
             &self.purchase_price.row,
+            &self.isbn,
+            &self.collects,
         ] {
             d.watch(row);
         }
@@ -498,7 +613,15 @@ impl Form {
             let d = d.clone();
             view.buffer().connect_changed(move |_| d.mark());
         }
-        for combo in [&self.distribution, &self.grade_type] {
+        for combo in [
+            &self.distribution,
+            &self.grade_type,
+            &self.magazine_format,
+            &self.color,
+            &self.binding,
+            &self.book_condition,
+            &self.jacket_condition,
+        ] {
             let d = d.clone();
             combo.connect_selected_notify(move |_| d.mark());
         }
@@ -506,8 +629,10 @@ impl Form {
             let d = d.clone();
             money.currency.connect_selected_notify(move |_| d.mark());
         }
-        let k = d.clone();
-        self.key.connect_active_notify(move |_| k.mark());
+        for switch in [&self.key, &self.dust_jacket, &self.slipcase] {
+            let d = d.clone();
+            switch.connect_active_notify(move |_| d.mark());
+        }
     }
 
     fn fill(&self, e: &BookEntry, db: &Weak<Database>) {
@@ -550,6 +675,13 @@ impl Form {
         select(&self.distribution, &DISTRIBUTIONS, ed.distribution);
         self.cover_price.set(ed.cover_price);
         self.barcode.set_text(ed.barcode.as_deref().unwrap_or(""));
+        self.isbn
+            .set_text(ed.isbn.as_ref().map_or("", |i| i.as_str()));
+        select(&self.binding, &BINDINGS, ed.binding);
+        self.dust_jacket
+            .set_active(ed.has_dust_jacket == Some(true));
+        self.slipcase.set_active(ed.has_slipcase == Some(true));
+        self.collects.set_text(&e.collects);
         for name in &e.cover_artists {
             self.cover_artists.add(name, None, false, None);
         }
@@ -558,6 +690,8 @@ impl Form {
         self.grade
             .set_text(&c.grade.map(|g| g.to_string()).unwrap_or_default());
         select(&self.grade_type, &GRADE_TYPES, c.grade_type);
+        select(&self.book_condition, &CONDITIONS, c.book_condition);
+        select(&self.jacket_condition, &CONDITIONS, c.dust_jacket_condition);
         self.cert_number
             .set_text(c.cert_number.as_deref().unwrap_or(""));
         self.label_type
@@ -594,16 +728,25 @@ impl Form {
                     volume: optional(&self.volume, "Enter the volume as a number")?,
                     publisher: Some(self.publisher.text().trim().to_owned())
                         .filter(|p| !p.is_empty()),
-                    magazine_format: None,
-                    black_and_white: None,
+                    magazine_format: FORMATS[selected(&self.magazine_format)]
+                        .1
+                        .filter(|_| self.category == Category::Magazine),
+                    black_and_white: COLORS[selected(&self.color)]
+                        .1
+                        .filter(|_| self.category == Category::Magazine),
                 }
             }
         };
-        let number = match IssueNumber::new(self.number.text().trim()) {
-            Ok(number) => number,
-            Err(why) => return invalid(&self.number, &capitalized(&why.to_string())),
+        let number_text = self.number.text();
+        let number = match number_text.trim() {
+            // A standalone book has no volume number.
+            "" if self.category == Category::CollectedEdition => None,
+            text => match IssueNumber::new(text) {
+                Ok(number) => Some(number),
+                Err(why) => return invalid(&self.number, &capitalized(&why.to_string())),
+            },
         };
-        let mut e = BookEntry::new(self.category, series, Some(number));
+        let mut e = BookEntry::new(self.category, series, number);
 
         let i = &mut e.issue;
         i.title = self.title.text().trim().to_owned();
@@ -654,7 +797,25 @@ impl Form {
         let ed = &mut e.edition;
         ed.variant = self.variant.text().trim().to_owned();
         ed.printing = optional(&self.printing, "Enter the printing as a number, such as 2")?;
-        ed.distribution = DISTRIBUTIONS[selected(&self.distribution)].1;
+        let book = self.category == Category::CollectedEdition;
+        ed.distribution = DISTRIBUTIONS[selected(&self.distribution)]
+            .1
+            .filter(|_| !book);
+        if book {
+            let isbn_text = self.isbn.text();
+            ed.isbn = match isbn_text.trim() {
+                "" => None,
+                text => match Isbn::parse(text) {
+                    Some(isbn) => Some(isbn),
+                    None => {
+                        return invalid(&self.isbn, "That ISBN is not valid; check its 13 digits");
+                    }
+                },
+            };
+            ed.binding = BINDINGS[selected(&self.binding)].1;
+            ed.has_dust_jacket = self.dust_jacket.is_active().then_some(true);
+            ed.has_slipcase = self.slipcase.is_active().then_some(true);
+        }
         ed.cover_price = self.cover_price.amount()?;
         ed.barcode = Some(self.barcode.text().trim().to_owned()).filter(|b| !b.is_empty());
         e.cover_artists = self
@@ -664,8 +825,19 @@ impl Form {
             .map(|v| v.name)
             .collect();
 
+        if book {
+            e.collects = self.collects.text().trim().to_owned();
+        }
         let c = &mut e.copy;
-        let grade_text = self.grade.text();
+        if book {
+            c.book_condition = CONDITIONS[selected(&self.book_condition)].1;
+            c.dust_jacket_condition = CONDITIONS[selected(&self.jacket_condition)].1;
+        }
+        let grade_text = if book {
+            glib::GString::from("")
+        } else {
+            self.grade.text()
+        };
         c.grade = match grade_text.trim() {
             "" => None,
             text => match Grade::parse(text) {
@@ -678,9 +850,12 @@ impl Form {
                 }
             },
         };
-        c.grade_type = GRADE_TYPES[selected(&self.grade_type)].1;
-        c.cert_number = Some(self.cert_number.text().trim().to_owned()).filter(|t| !t.is_empty());
-        c.label_type = Some(self.label_type.text().trim().to_owned()).filter(|t| !t.is_empty());
+        if !book {
+            c.grade_type = GRADE_TYPES[selected(&self.grade_type)].1;
+            c.cert_number =
+                Some(self.cert_number.text().trim().to_owned()).filter(|t| !t.is_empty());
+            c.label_type = Some(self.label_type.text().trim().to_owned()).filter(|t| !t.is_empty());
+        }
         c.signed_by = self.signed_by.text().trim().to_owned();
         c.purchase_price = self.purchase_price.amount()?;
         c.purchase_date = date(&self.purchase_date)?;
@@ -738,6 +913,144 @@ fn series_labels(db: &Weak<Database>, category: Category) -> Vec<(String, Series
         .into_iter()
         .filter(|s| s.fields.category == category)
         .map(|s| (series_label(&s.fields.name, s.fields.start_year), s.id))
+        .collect()
+}
+
+/// Most issues listed in the contents preview; the rest are counted.
+const PREVIEW_MAX: usize = 40;
+
+/// Completes the series being typed at the end of a contents list, and
+/// lists under it the issues the text names, marking those not yet in
+/// the catalog, which saving will add.
+fn contents_preview(row: &adw::EntryRow, list: &gtk::ListBox, db: &Weak<Database>) {
+    {
+        let db = db.clone();
+        autocomplete::attach_with(
+            row,
+            move |text| {
+                let (head, tail) = match text.rfind(';') {
+                    Some(at) => (&text[..=at], &text[at + 1..]),
+                    None => ("", text),
+                };
+                let typed = tail.trim_start().to_lowercase();
+                // Once a year is typed the series is chosen.
+                if typed.is_empty() || typed.contains(')') {
+                    return Vec::new();
+                }
+                let space = if head.is_empty() { "" } else { " " };
+                reprintable_series(&db)
+                    .into_iter()
+                    .filter(|label| label.to_lowercase().contains(&typed))
+                    .map(|label| {
+                        let text = format!("{head}{space}{label} ");
+                        (label, text)
+                    })
+                    .collect()
+            },
+            |_| {},
+        );
+    }
+
+    let shown: Rc<RefCell<Vec<gtk::Widget>>> = Rc::default();
+    // Each change bumps this; a preview runs only if nothing newer came
+    // in during the pause.
+    let latest = Rc::new(Cell::new(0u64));
+    let db = db.clone();
+    let list = list.clone();
+    row.connect_changed(move |row| {
+        let ticket = latest.get() + 1;
+        latest.set(ticket);
+        let (row, list, db, shown, latest) = (
+            row.clone(),
+            list.clone(),
+            db.clone(),
+            shown.clone(),
+            latest.clone(),
+        );
+        glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || {
+            if latest.get() != ticket {
+                return;
+            }
+            for old in shown.borrow_mut().drain(..) {
+                list.remove(&old);
+            }
+            let text = row.text();
+            let Some(db) = db.upgrade() else {
+                return;
+            };
+            if text.trim().is_empty() {
+                return;
+            }
+            let mut rows: Vec<adw::ActionRow> = Vec::new();
+            match db.preview_collects(&text) {
+                Ok(entries) => {
+                    let new = entries.iter().filter(|e| e.issue.is_none()).count();
+                    let count = match entries.len() {
+                        1 => "1 issue".to_owned(),
+                        n => format!("{n} issues"),
+                    };
+                    let detail = match new {
+                        0 => "All are in the catalog already".to_owned(),
+                        1 => "1 is not in the catalog yet; saving adds it".to_owned(),
+                        n => format!("{n} are not in the catalog yet; saving adds them"),
+                    };
+                    let summary = plain_row(&count, &detail);
+                    summary.add_css_class("property");
+                    rows.push(summary);
+                    for e in entries.iter().take(PREVIEW_MAX) {
+                        let title = format!(
+                            "{} #{}",
+                            series_label(&e.entry.series.name, e.entry.series.start_year),
+                            e.entry.number
+                        );
+                        let item = plain_row(&title, "");
+                        if e.issue.is_none() {
+                            let tag = gtk::Label::builder()
+                                .label("New")
+                                .css_classes(["accent", "caption-heading"])
+                                .build();
+                            item.add_suffix(&tag);
+                        }
+                        rows.push(item);
+                    }
+                    if entries.len() > PREVIEW_MAX {
+                        let more = entries.len() - PREVIEW_MAX;
+                        rows.push(plain_row(&format!("and {more} more"), ""));
+                    }
+                }
+                Err(why) => {
+                    let error =
+                        plain_row("This list cannot be read", &capitalized(&why.to_string()));
+                    error.add_css_class("error");
+                    rows.push(error);
+                }
+            }
+            for item in rows {
+                list.append(&item);
+                shown.borrow_mut().push(item.upcast());
+            }
+        });
+    });
+}
+
+fn plain_row(title: &str, subtitle: &str) -> adw::ActionRow {
+    let row = adw::ActionRow::new();
+    row.set_use_markup(false);
+    row.set_title(title);
+    row.set_subtitle(subtitle);
+    row
+}
+
+/// Labels of every series a collected edition can reprint from.
+fn reprintable_series(db: &Weak<Database>) -> Vec<String> {
+    let Some(db) = db.upgrade() else {
+        return Vec::new();
+    };
+    db.list_series()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|s| s.fields.category != Category::CollectedEdition)
+        .map(|s| series_label(&s.fields.name, s.fields.start_year))
         .collect()
 }
 
@@ -951,7 +1264,8 @@ impl MoneyRow {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Extra {
     None,
-    Role,
+    /// The roles offered.
+    Role(&'static [(&'static str, Role)]),
     First,
     Part,
 }
@@ -970,7 +1284,9 @@ struct NameRow {
     part: Option<gtk::SpinButton>,
 }
 
-const ROLES: [(&str, Role); 7] = [
+/// Roles in the order offered. Only magazines credit articles and
+/// interviews.
+const ROLES: [(&str, Role); 9] = [
     ("Writer", Role::Writer),
     ("Penciller", Role::Penciller),
     ("Inker", Role::Inker),
@@ -978,7 +1294,16 @@ const ROLES: [(&str, Role); 7] = [
     ("Letterer", Role::Letterer),
     ("Cover Artist", Role::CoverArtist),
     ("Editor", Role::Editor),
+    ("Article", Role::Article),
+    ("Interview", Role::Interview),
 ];
+
+fn roles(category: Category) -> &'static [(&'static str, Role)] {
+    match category {
+        Category::Magazine => &ROLES,
+        Category::Comic | Category::CollectedEdition => &ROLES[..7],
+    }
+}
 
 /// Rows of names that can be added and removed, each with autocomplete.
 #[derive(Clone)]
@@ -1007,7 +1332,7 @@ impl NameList {
             .build();
         list.append(&add_button);
         let placeholder = match extra {
-            Extra::Role => "Creator",
+            Extra::Role(_) => "Creator",
             Extra::First => {
                 if add_label.contains("Team") {
                     "Team"
@@ -1058,11 +1383,12 @@ impl NameList {
             part: None,
         };
         match self.extra {
-            Extra::Role => {
-                let roles = gtk::DropDown::from_strings(&ROLES.map(|(name, _)| name));
+            Extra::Role(offered) => {
+                let names: Vec<&str> = offered.iter().map(|(name, _)| *name).collect();
+                let roles = gtk::DropDown::from_strings(&names);
                 roles.set_valign(gtk::Align::Center);
                 roles.set_tooltip_text(Some("Role"));
-                let index = ROLES
+                let index = offered
                     .iter()
                     .position(|(_, r)| Some(*r) == role)
                     .unwrap_or(0);
@@ -1121,6 +1447,10 @@ impl NameList {
     }
 
     fn values(&self) -> Vec<NameValue> {
+        let offered = match self.extra {
+            Extra::Role(offered) => offered,
+            Extra::None | Extra::First | Extra::Part => &[],
+        };
         self.rows
             .borrow()
             .iter()
@@ -1130,7 +1460,7 @@ impl NameList {
                 role: r
                     .role
                     .as_ref()
-                    .and_then(|d| ROLES.get(usize::try_from(d.selected()).ok()?))
+                    .and_then(|d| offered.get(usize::try_from(d.selected()).ok()?))
                     .map(|(_, role)| *role),
                 first: r.first.as_ref().is_some_and(|t| t.is_active()),
                 part: r

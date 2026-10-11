@@ -28,6 +28,26 @@ pub fn attach(
     suggest: impl Fn(&str) -> Vec<String> + 'static,
     picked: impl Fn(&str) + 'static,
 ) {
+    attach_with(
+        row,
+        move |text| {
+            suggest(text.trim())
+                .into_iter()
+                .map(|s| (s.clone(), s))
+                .collect()
+        },
+        picked,
+    );
+}
+
+/// Like [`attach`], but each suggestion is shown as its first part and
+/// replaces the row's text with its second, so a suggestion can complete
+/// just the end of a longer text.
+pub fn attach_with(
+    row: &adw::EntryRow,
+    suggest: impl Fn(&str) -> Vec<(String, String)> + 'static,
+    picked: impl Fn(&str) + 'static,
+) {
     let list = gtk::ListBox::builder()
         .selection_mode(gtk::SelectionMode::Browse)
         .activate_on_single_click(true)
@@ -65,7 +85,7 @@ pub fn attach(
         row.connect_destroy(move |_| popover.unparent());
     }
 
-    let choices: Rc<RefCell<Vec<String>>> = Rc::default();
+    let choices: Rc<RefCell<Vec<(String, String)>>> = Rc::default();
     // Set while the row's text is changed here, so that does not reopen
     // the suggestions.
     let quiet = Rc::new(Cell::new(false));
@@ -78,7 +98,7 @@ pub fn attach(
         let quiet = quiet.clone();
         let picked = picked.clone();
         Rc::new(move |index: usize| {
-            let Some(choice) = choices.borrow().get(index).cloned() else {
+            let Some((_, choice)) = choices.borrow().get(index).cloned() else {
                 return;
             };
             popover.popdown();
@@ -110,19 +130,19 @@ pub fn attach(
                 return;
             }
             let text = row.text();
-            let found: Vec<String> = if text.trim().is_empty() {
+            let found: Vec<(String, String)> = if text.trim().is_empty() {
                 Vec::new()
             } else {
-                suggest(text.trim())
+                suggest(&text)
                     .into_iter()
-                    .filter(|s| !s.eq_ignore_ascii_case(text.trim()))
+                    .filter(|(_, s)| !s.trim().eq_ignore_ascii_case(text.trim()))
                     .take(LIMIT)
                     .collect()
             };
             list.remove_all();
-            for choice in &found {
+            for (shown, _) in &found {
                 let label = gtk::Label::builder()
-                    .label(choice)
+                    .label(shown)
                     .xalign(0.0)
                     .ellipsize(gtk::pango::EllipsizeMode::End)
                     .build();

@@ -119,10 +119,10 @@ template $MainWindow: Adw.ApplicationWindow {
                     }
 
                     [end]
-                    Button {
+                    MenuButton {
                       icon-name: "list-add-symbolic";
-                      tooltip-text: _("Add Comic");
-                      action-name: "win.add-comic";
+                      tooltip-text: _("Add");
+                      menu-model: add_menu;
                     }
 
                     [end]
@@ -186,6 +186,25 @@ template $MainWindow: Adw.ApplicationWindow {
       }
     };
   };
+}
+
+menu add_menu {
+  section {
+    item {
+      label: _("Add _Comic");
+      action: "win.add-comic";
+    }
+
+    item {
+      label: _("Add _Magazine");
+      action: "win.add-magazine";
+    }
+
+    item {
+      label: _("Add Co_llected Edition");
+      action: "win.add-collected";
+    }
+  }
 }
 
 menu main_menu {

@@ -183,7 +183,7 @@ pub enum AppMsg {
     /// A book in the grid or list, by position.
     BookActivated(u32),
     OpenIssue(IssueId),
-    AddComic,
+    Add(Category),
     EditCopy(CopyId),
     FormSave,
     /// Leave the form, asking first if it has unsaved changes.
@@ -225,7 +225,13 @@ impl Component for App {
             AppMsg::ExportCollection
         });
         add_action(&root, "shelf-back", &sender, || AppMsg::ShelfBack);
-        add_action(&root, "add-comic", &sender, || AppMsg::AddComic);
+        add_action(&root, "add-comic", &sender, || AppMsg::Add(Category::Comic));
+        add_action(&root, "add-magazine", &sender, || {
+            AppMsg::Add(Category::Magazine)
+        });
+        add_action(&root, "add-collected", &sender, || {
+            AppMsg::Add(Category::CollectedEdition)
+        });
         relm4::main_application().set_accels_for_action("win.add-comic", &["<Control>n"]);
         relm4::main_application().set_accels_for_action("win.shelf-back", &["<Alt>Left"]);
         fill_sidebar(&root, &sender);
@@ -370,8 +376,9 @@ impl Component for App {
                 }
             }
             AppMsg::OpenIssue(issue) => self.open_issue(issue, root, &sender),
-            AppMsg::AddComic => self.open_form(None, root, &sender),
-            AppMsg::EditCopy(copy) => self.open_form(Some(copy), root, &sender),
+            AppMsg::Add(category) => self.open_form(category, None, root, &sender),
+            // The form takes the book's own category from what it loads.
+            AppMsg::EditCopy(copy) => self.open_form(Category::Comic, Some(copy), root, &sender),
             AppMsg::FormSave => self.save_form(root, &sender),
             AppMsg::FormCancel => match &self.form {
                 Some(form) if form.is_dirty() => confirm_discard(root, &sender),
@@ -445,6 +452,7 @@ impl App {
 
     fn open_form(
         &mut self,
+        category: Category,
         copy: Option<CopyId>,
         root: &MainWindow,
         sender: &ComponentSender<Self>,
@@ -468,7 +476,8 @@ impl App {
             save: Rc::new(move || save.input(AppMsg::FormSave)),
             cancel: Rc::new(move || cancel.input(AppMsg::FormCancel)),
         };
-        let form = Form::new(db, Category::Comic, copy, entry.as_ref(), hooks);
+        let category = entry.as_ref().map_or(category, |e| e.category);
+        let form = Form::new(db, category, copy, entry.as_ref(), hooks);
         root.push_page(&form.page);
         form.focus_first();
         self.form = Some(form);
@@ -529,7 +538,12 @@ impl App {
     /// collection, reading it afresh.
     fn show(&mut self, root: &MainWindow) {
         root.show_welcome(self.open.is_none());
-        for name in ["export-collection", "add-comic"] {
+        for name in [
+            "export-collection",
+            "add-comic",
+            "add-magazine",
+            "add-collected",
+        ] {
             if let Some(action) = root.lookup_action(name)
                 && let Ok(action) = action.downcast::<gio::SimpleAction>()
             {
