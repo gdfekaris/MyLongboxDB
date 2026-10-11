@@ -2,6 +2,9 @@
 
 #![forbid(unsafe_code)]
 
+mod browse;
+#[cfg(test)]
+mod browse_tests;
 mod catalog;
 #[cfg(test)]
 mod catalog_tests;
@@ -29,6 +32,7 @@ mod money;
 mod schema_tests;
 mod store;
 
+pub use browse::{CopyRow, Shelf, ShelfEntry, ShelfList};
 pub use collects::{CollectedIn, CollectedIssue, Ownership, PreviewEntry};
 pub use collects_text::{
     CollectsEntry, MAX_ENTRIES, MAX_RANGE, SeriesRef, format_collects, parse_collects,

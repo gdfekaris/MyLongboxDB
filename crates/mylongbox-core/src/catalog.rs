@@ -646,9 +646,15 @@ fn new_trash_group(conn: &Connection, label: &str) -> Result<TrashId> {
 }
 
 fn series_label(series: &Series) -> String {
-    match series.fields.start_year {
-        Some(year) => format!("{} ({year})", series.fields.name),
-        None => series.fields.name.clone(),
+    series_title(&series.fields.name, series.fields.start_year)
+}
+
+/// A series' name with its start year, e.g. `Amazing Spider-Man (1963)`,
+/// which tells apart relaunches that share a name.
+pub(crate) fn series_title(name: &str, start_year: Option<u16>) -> String {
+    match start_year {
+        Some(year) => format!("{name} ({year})"),
+        None => name.to_owned(),
     }
 }
 
@@ -675,7 +681,7 @@ where
         .ok_or(Error::NotFound)
 }
 
-fn query_all<P, T>(
+pub(crate) fn query_all<P, T>(
     conn: &Connection,
     sql: &str,
     params: P,
@@ -862,7 +868,11 @@ fn bad(column: usize, what: &str) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(column, Type::Integer, Box::new(invalid(what, "")))
 }
 
-fn amount_at(row: &Row<'_>, units: usize, currency: usize) -> rusqlite::Result<Option<Amount>> {
+pub(crate) fn amount_at(
+    row: &Row<'_>,
+    units: usize,
+    currency: usize,
+) -> rusqlite::Result<Option<Amount>> {
     let u: Option<i64> = row.get(units)?;
     let c: Option<Currency> = row.get(currency)?;
     match (u, c) {
@@ -891,14 +901,24 @@ fn series_from_row(row: &Row<'_>) -> rusqlite::Result<Series> {
     })
 }
 
+pub(crate) fn cover_date_at(
+    row: &Row<'_>,
+    year: usize,
+    month: usize,
+) -> rusqlite::Result<Option<CoverDate>> {
+    let y: Option<u16> = row.get(year)?;
+    let m: Option<u8> = row.get(month)?;
+    match (y, m) {
+        (None, None) => Ok(None),
+        (Some(y), m) => Ok(Some(
+            CoverDate::new(y, m).ok_or_else(|| bad(year, "cover date"))?,
+        )),
+        (None, Some(_)) => Err(bad(month, "cover date")),
+    }
+}
+
 fn issue_from_row(row: &Row<'_>) -> rusqlite::Result<Issue> {
-    let year: Option<u16> = row.get(6)?;
-    let month: Option<u8> = row.get(7)?;
-    let cover_date = match (year, month) {
-        (None, None) => None,
-        (Some(y), m) => Some(CoverDate::new(y, m).ok_or_else(|| bad(6, "cover date"))?),
-        (None, Some(_)) => return Err(bad(7, "cover date")),
-    };
+    let cover_date = cover_date_at(row, 6, 7)?;
     Ok(Issue {
         id: row.get(0)?,
         uuid: row.get(1)?,
