@@ -422,6 +422,18 @@ menu main_menu {
 
   section {
     item {
+      label: _("Export Collection as _CSV…");
+      action: "win.export-csv";
+    }
+
+    item {
+      label: _("Export _Shown Books as CSV…");
+      action: "win.export-shown-csv";
+    }
+  }
+
+  section {
+    item {
       label: _("_Preferences");
       action: "win.preferences";
     }

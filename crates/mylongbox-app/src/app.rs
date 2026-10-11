@@ -236,6 +236,10 @@ pub enum AppMsg {
     ImportPicked(PathBuf),
     ExportCollection,
     ExportPicked(PathBuf),
+    /// Ask where to save a CSV of the collection, or of the books shown.
+    ExportCsv(bool),
+    /// Write the CSV, of these copies or of every one.
+    CsvPicked(PathBuf, Option<Vec<CopyId>>),
     SectionSelected(usize),
     NameActivated(u32),
     /// A book in the grid or list, by position.
@@ -359,6 +363,10 @@ impl Component for App {
         add_action(&root, "new-collection", &sender, || AppMsg::NewCollection);
         add_action(&root, "import-collection", &sender, || {
             AppMsg::ImportCollection
+        });
+        add_action(&root, "export-csv", &sender, || AppMsg::ExportCsv(false));
+        add_action(&root, "export-shown-csv", &sender, || {
+            AppMsg::ExportCsv(true)
         });
         add_action(&root, "export-collection", &sender, || {
             AppMsg::ExportCollection
@@ -615,6 +623,42 @@ impl Component for App {
                 match result {
                     Ok(()) => root.toast("Copy saved"),
                     Err(why) => root.toast(&format!("Could not save a copy: {why}")),
+                }
+            }
+            AppMsg::ExportCsv(shown) => {
+                let Some((name, _)) = &self.open else {
+                    root.toast("Open a collection first");
+                    return;
+                };
+                let (copies, file) = if shown {
+                    let ids: Vec<CopyId> = (0..self.grid.len())
+                        .filter_map(|i| self.grid.get(i).map(|b| b.borrow().0.copy))
+                        .collect();
+                    if ids.is_empty() || !root.is_showing_books() {
+                        root.toast("No books are shown to export");
+                        return;
+                    }
+                    (
+                        Some(ids),
+                        format!("{name} \u{2013} {}.csv", self.shown_title()),
+                    )
+                } else {
+                    (None, format!("{name}.csv"))
+                };
+                pick_csv_file(root, &sender, &file, copies);
+            }
+            AppMsg::CsvPicked(path, copies) => {
+                let result = self.with_db(|db| {
+                    let file = std::fs::File::create(&path)?;
+                    let mut out = std::io::BufWriter::new(file);
+                    let count = db.export_csv(copies.as_deref(), &mut out, false)?;
+                    std::io::Write::flush(&mut out)?;
+                    Ok(count)
+                });
+                match result {
+                    Ok(1) => root.toast("Exported 1 book"),
+                    Ok(n) => root.toast(&format!("Exported {n} books")),
+                    Err(why) => root.toast(&format!("Could not export: {why}")),
                 }
             }
             AppMsg::SectionSelected(index) => {
@@ -1590,6 +1634,8 @@ impl App {
         root.show_welcome(self.open.is_none());
         for name in [
             "export-collection",
+            "export-csv",
+            "export-shown-csv",
             "add-comic",
             "add-magazine",
             "add-collected",
@@ -1608,6 +1654,18 @@ impl App {
         if let Err(why) = self.load(root) {
             root.toast(&why.to_string());
             root.show_empty("Could Not Read the Collection", &why.to_string());
+        }
+    }
+
+    /// What the books shown are, for naming an export of them.
+    fn shown_title(&self) -> String {
+        if self.searching() {
+            "Search Results".to_owned()
+        } else {
+            match &self.shelf {
+                Some(entry) => entry.name.clone(),
+                None => self.section.name.to_owned(),
+            }
         }
     }
 
@@ -1932,6 +1990,35 @@ fn pick_file_to_import(root: &MainWindow, sender: &ComponentSender<App>) {
             && let Some(path) = file.path()
         {
             sender.input(AppMsg::ImportPicked(path));
+        }
+    });
+}
+
+/// Asks where to save a CSV export, through the file chooser.
+fn pick_csv_file(
+    root: &MainWindow,
+    sender: &ComponentSender<App>,
+    name: &str,
+    copies: Option<Vec<CopyId>>,
+) {
+    let csv = gtk::FileFilter::new();
+    csv.set_name(Some("CSV files"));
+    csv.add_suffix("csv");
+    csv.add_mime_type("text/csv");
+    let filters = gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&csv);
+    let dialog = gtk::FileDialog::builder()
+        .title("Export as CSV")
+        .modal(true)
+        .initial_name(name)
+        .filters(&filters)
+        .build();
+    let sender = sender.clone();
+    dialog.save(Some(root), None::<&gio::Cancellable>, move |result| {
+        if let Ok(file) = result
+            && let Some(path) = file.path()
+        {
+            sender.input(AppMsg::CsvPicked(path, copies.clone()));
         }
     });
 }
