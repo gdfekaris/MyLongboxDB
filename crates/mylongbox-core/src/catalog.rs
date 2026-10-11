@@ -798,7 +798,7 @@ fn number_sort(f: &IssueFields) -> &str {
     f.number.as_ref().map_or("", |n| n.sort_key())
 }
 
-fn check_number_free(
+pub(crate) fn check_number_free(
     conn: &Connection,
     series: SeriesId,
     f: &IssueFields,

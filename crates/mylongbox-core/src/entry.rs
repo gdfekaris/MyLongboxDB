@@ -1,0 +1,467 @@
+//! Saving a book from the add and edit forms: one physical copy together
+//! with its series, issue, edition, and the names it mentions, as one
+//! unit of work.
+
+use std::collections::HashMap;
+
+use rusqlite::OptionalExtension;
+
+use crate::catalog::{check_number_free, live};
+use crate::db::Database;
+use crate::error::{Error, Result};
+use crate::issue_number::IssueNumber;
+use crate::lookup::LookupId;
+use crate::model::{
+    BoxId, Category, CharacterId, CopyFields, CopyId, CreatorId, EditionFields, EditionId,
+    IssueFields, IssueId, PublisherId, Role, SeriesFields, SeriesId, StoryArcId, TagId, TeamId,
+};
+
+/// The series a book belongs to: one picked from the list, or one typed
+/// in, which is created unless a series of that name, year, and volume
+/// already exists.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SeriesChoice {
+    Existing(SeriesId),
+    New {
+        name: String,
+        start_year: Option<u16>,
+        volume: Option<u32>,
+        publisher: Option<String>,
+    },
+}
+
+/// Everything the form holds about one physical book. Names (creators,
+/// characters, boxes, tags...) are text as typed: a name or alternate name
+/// that is already listed is reused, and any other is added.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BookEntry {
+    pub category: Category,
+    pub series: SeriesChoice,
+    pub issue: IssueFields,
+    pub credits: Vec<(String, Role)>,
+    /// Name and whether this is the first appearance.
+    pub characters: Vec<(String, bool)>,
+    pub teams: Vec<(String, bool)>,
+    /// Name and part number.
+    pub story_arcs: Vec<(String, Option<u32>)>,
+    pub edition: EditionFields,
+    pub cover_artists: Vec<String>,
+    /// `storage_box` is ignored; the box is named in `storage_box` below.
+    pub copy: CopyFields,
+    pub storage_box: Option<String>,
+    pub tags: Vec<String>,
+}
+
+impl BookEntry {
+    pub fn new(category: Category, series: SeriesChoice, number: Option<IssueNumber>) -> Self {
+        Self {
+            category,
+            series,
+            issue: IssueFields::new(number),
+            credits: Vec::new(),
+            characters: Vec::new(),
+            teams: Vec::new(),
+            story_arcs: Vec::new(),
+            edition: EditionFields::default(),
+            cover_artists: Vec::new(),
+            copy: CopyFields::default(),
+            storage_box: None,
+            tags: Vec::new(),
+        }
+    }
+}
+
+/// Where a saved book ended up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SavedBook {
+    pub series: SeriesId,
+    pub issue: IssueId,
+    pub edition: EditionId,
+    pub copy: CopyId,
+}
+
+impl Database {
+    /// Adds a new copy. If its issue is already in the catalog, the copy
+    /// joins it, and so does its edition when the variant, printing, and
+    /// distribution match one already there. Details typed for an
+    /// existing issue or edition fill in or replace what it has, but a
+    /// blank field never erases anything, and names are added to its lists
+    /// rather than replacing them.
+    pub fn add_book(&self, entry: &BookEntry) -> Result<SavedBook> {
+        let tx = self.tx()?;
+        let series = self.resolve_series(entry)?;
+        let issue = match self.find_issue(series, entry.issue.number.as_ref())? {
+            Some(issue) => {
+                let current = self.issue(issue)?.fields;
+                self.update_issue(issue, &merge_issue(&current, &entry.issue))?;
+                self.add_issue_links(issue, entry)?;
+                issue
+            }
+            None => {
+                let issue = self.create_issue(series, &entry.issue)?;
+                self.add_issue_links(issue, entry)?;
+                issue
+            }
+        };
+        let edition = match self.find_edition(issue, &entry.edition)? {
+            Some(edition) => {
+                let current = self.edition(edition)?.fields;
+                self.update_edition(edition, &merge_edition(&current, &entry.edition))?;
+                let mut artists: Vec<_> = self
+                    .cover_artists(edition)?
+                    .into_iter()
+                    .map(|a| a.id)
+                    .collect();
+                artists.extend(self.names::<CreatorId>(&entry.cover_artists)?);
+                self.set_cover_artists(edition, &artists)?;
+                edition
+            }
+            None => {
+                let edition = self.create_edition(issue, &entry.edition)?;
+                let artists = self.names::<CreatorId>(&entry.cover_artists)?;
+                self.set_cover_artists(edition, &artists)?;
+                edition
+            }
+        };
+        let copy = self.create_copy(edition, &self.copy_fields(entry)?)?;
+        self.set_tags(copy, &self.names::<TagId>(&entry.tags)?)?;
+        tx.commit()?;
+        Ok(SavedBook {
+            series,
+            issue,
+            edition,
+            copy,
+        })
+    }
+
+    /// Saves the edit form of `copy`. Its issue and edition are shared
+    /// with any other copies of them, so changes to those show on every
+    /// copy. Picking another series moves the whole issue there.
+    pub fn update_book(&self, copy: CopyId, entry: &BookEntry) -> Result<SavedBook> {
+        let tx = self.tx()?;
+        let current = self.copy(copy)?;
+        live(current.trash)?;
+        let edition = current.edition;
+        let issue = self.edition(edition)?.issue;
+        let mut series = self.issue(issue)?.series;
+        let target = self.resolve_series(entry)?;
+        if target != series {
+            self.move_issue(issue, target, &entry.issue)?;
+            series = target;
+        }
+        self.update_issue(issue, &entry.issue)?;
+        self.set_credits(issue, &self.credits_of(entry)?)?;
+        self.set_characters(issue, &self.appearances::<CharacterId>(&entry.characters)?)?;
+        self.set_teams(issue, &self.appearances::<TeamId>(&entry.teams)?)?;
+        self.set_story_arcs(issue, &self.arcs_of(entry)?)?;
+        self.update_edition(edition, &entry.edition)?;
+        self.set_cover_artists(edition, &self.names::<CreatorId>(&entry.cover_artists)?)?;
+        self.update_copy(copy, &self.copy_fields(entry)?)?;
+        self.set_tags(copy, &self.names::<TagId>(&entry.tags)?)?;
+        tx.commit()?;
+        Ok(SavedBook {
+            series,
+            issue,
+            edition,
+            copy,
+        })
+    }
+
+    /// The edit form's contents for a copy outside Trash.
+    pub fn book_entry(&self, copy: CopyId) -> Result<BookEntry> {
+        let tx = self.tx()?;
+        let c = self.copy(copy)?;
+        live(c.trash)?;
+        let edition = self.edition(c.edition)?;
+        let issue = self.issue(edition.issue)?;
+        let series = self.series(issue.series)?;
+        let entry = BookEntry {
+            category: series.fields.category,
+            series: SeriesChoice::Existing(series.id),
+            credits: self
+                .credits(issue.id)?
+                .into_iter()
+                .map(|c| (c.name, c.role))
+                .collect(),
+            characters: self
+                .characters(issue.id)?
+                .into_iter()
+                .map(|a| (a.name, a.first_appearance))
+                .collect(),
+            teams: self
+                .teams(issue.id)?
+                .into_iter()
+                .map(|a| (a.name, a.first_appearance))
+                .collect(),
+            story_arcs: self
+                .story_arcs(issue.id)?
+                .into_iter()
+                .map(|a| (a.name, a.part))
+                .collect(),
+            cover_artists: self
+                .cover_artists(edition.id)?
+                .into_iter()
+                .map(|a| a.name)
+                .collect(),
+            storage_box: c
+                .fields
+                .storage_box
+                .map(|b| self.lookup::<BoxId>(b).map(|l| l.name))
+                .transpose()?,
+            tags: self.tags(copy)?.into_iter().map(|t| t.name).collect(),
+            issue: issue.fields,
+            edition: edition.fields,
+            copy: c.fields,
+        };
+        tx.commit()?;
+        Ok(entry)
+    }
+
+    /// The live issue numbered `number` in a series, if there is one: the
+    /// form uses it to say a book will join an issue already listed.
+    pub fn find_issue(
+        &self,
+        series: SeriesId,
+        number: Option<&IssueNumber>,
+    ) -> Result<Option<IssueId>> {
+        let Some(number) = number else {
+            return Ok(None);
+        };
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT id FROM issue
+                 WHERE series_id = ?1 AND number_sort = ?2 AND trash_id IS NULL",
+                rusqlite::params![series, number.sort_key()],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
+    fn resolve_series(&self, entry: &BookEntry) -> Result<SeriesId> {
+        let id = match &entry.series {
+            SeriesChoice::Existing(id) => *id,
+            SeriesChoice::New {
+                name,
+                start_year,
+                volume,
+                publisher,
+            } => {
+                let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+                let found: Option<SeriesId> = self
+                    .conn
+                    .query_row(
+                        "SELECT id FROM series
+                         WHERE name = ?1 COLLATE NOCASE AND start_year IS ?2
+                             AND volume IS ?3 AND trash_id IS NULL
+                         ORDER BY id LIMIT 1",
+                        rusqlite::params![name, start_year, volume],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                match found {
+                    Some(id) => id,
+                    None => {
+                        let mut fields = SeriesFields::new(name, entry.category);
+                        fields.start_year = *start_year;
+                        fields.volume = *volume;
+                        fields.publisher = publisher
+                            .as_deref()
+                            .filter(|p| !p.trim().is_empty())
+                            .map(|p| self.name::<PublisherId>(p))
+                            .transpose()?;
+                        return self.create_series(&fields);
+                    }
+                }
+            }
+        };
+        let series = self.series(id)?;
+        live(series.trash)?;
+        if series.fields.category != entry.category {
+            let kind = match series.fields.category {
+                Category::Comic => "comic",
+                Category::Magazine => "magazine",
+                Category::CollectedEdition => "collected edition",
+            };
+            return Err(Error::Invalid(format!(
+                "\u{201c}{}\u{201d} is a {kind} series",
+                series.fields.name
+            )));
+        }
+        Ok(id)
+    }
+
+    /// Moves an issue to another series under its new number, in one
+    /// statement so its old number never collides with one there.
+    fn move_issue(&self, issue: IssueId, series: SeriesId, fields: &IssueFields) -> Result<()> {
+        check_number_free(&self.conn, series, fields, Some(issue))?;
+        let number = fields.number.as_ref();
+        self.conn.execute(
+            "UPDATE issue SET series_id = ?2, number = ?3, number_sort = ?4 WHERE id = ?1",
+            rusqlite::params![
+                issue,
+                series,
+                number.map(IssueNumber::as_str),
+                number.map_or("", |n| n.sort_key())
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// The live edition of `issue` with the same variant, printing, and
+    /// distribution, if there is one.
+    fn find_edition(&self, issue: IssueId, f: &EditionFields) -> Result<Option<EditionId>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT id FROM edition
+                 WHERE issue_id = ?1 AND variant = ?2 COLLATE NOCASE AND printing IS ?3
+                     AND distribution IS ?4 AND trash_id IS NULL
+                 ORDER BY id LIMIT 1",
+                rusqlite::params![issue, f.variant.trim(), f.printing, f.distribution],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Adds the entry's names to an issue's lists, keeping what is there.
+    fn add_issue_links(&self, issue: IssueId, entry: &BookEntry) -> Result<()> {
+        let mut credits: Vec<_> = self
+            .credits(issue)?
+            .into_iter()
+            .map(|c| (c.creator, c.role))
+            .collect();
+        credits.extend(self.credits_of(entry)?);
+        self.set_credits(issue, &credits)?;
+
+        let characters = merge_flags(
+            self.characters(issue)?
+                .into_iter()
+                .map(|a| (a.id, a.first_appearance)),
+            self.appearances::<CharacterId>(&entry.characters)?,
+        );
+        self.set_characters(issue, &characters)?;
+        let teams = merge_flags(
+            self.teams(issue)?
+                .into_iter()
+                .map(|a| (a.id, a.first_appearance)),
+            self.appearances::<TeamId>(&entry.teams)?,
+        );
+        self.set_teams(issue, &teams)?;
+
+        let mut arcs: Vec<(StoryArcId, Option<u32>)> = self
+            .story_arcs(issue)?
+            .into_iter()
+            .map(|a| (a.arc, a.part))
+            .collect();
+        for (arc, part) in self.arcs_of(entry)? {
+            match arcs.iter_mut().find(|(a, _)| *a == arc) {
+                Some((_, existing)) => *existing = part.or(*existing),
+                None => arcs.push((arc, part)),
+            }
+        }
+        self.set_story_arcs(issue, &arcs)
+    }
+
+    fn copy_fields(&self, entry: &BookEntry) -> Result<CopyFields> {
+        let mut fields = entry.copy.clone();
+        fields.storage_box = entry
+            .storage_box
+            .as_deref()
+            .filter(|b| !b.trim().is_empty())
+            .map(|b| self.name::<BoxId>(b))
+            .transpose()?;
+        Ok(fields)
+    }
+
+    fn credits_of(&self, entry: &BookEntry) -> Result<Vec<(CreatorId, Role)>> {
+        entry
+            .credits
+            .iter()
+            .filter(|(name, _)| !name.trim().is_empty())
+            .map(|(name, role)| Ok((self.name::<CreatorId>(name)?, *role)))
+            .collect()
+    }
+
+    fn arcs_of(&self, entry: &BookEntry) -> Result<Vec<(StoryArcId, Option<u32>)>> {
+        entry
+            .story_arcs
+            .iter()
+            .filter(|(name, _)| !name.trim().is_empty())
+            .map(|(name, part)| Ok((self.name::<StoryArcId>(name)?, *part)))
+            .collect()
+    }
+
+    fn appearances<I: LookupId>(&self, names: &[(String, bool)]) -> Result<Vec<(I, bool)>> {
+        names
+            .iter()
+            .filter(|(name, _)| !name.trim().is_empty())
+            .map(|(name, first)| Ok((self.name::<I>(name)?, *first)))
+            .collect()
+    }
+
+    fn names<I: LookupId>(&self, names: &[String]) -> Result<Vec<I>> {
+        names
+            .iter()
+            .filter(|name| !name.trim().is_empty())
+            .map(|name| self.name::<I>(name))
+            .collect()
+    }
+
+    /// The entry with this name or alternate name, added if there is none.
+    fn name<I: LookupId>(&self, name: &str) -> Result<I> {
+        match self.find_lookup::<I>(name)? {
+            Some(id) => Ok(id),
+            None => self.create_lookup::<I>(name),
+        }
+    }
+}
+
+/// Keeps every name from both lists once; a first appearance marked in
+/// either stays marked.
+fn merge_flags<I: Copy + Eq + std::hash::Hash>(
+    current: impl Iterator<Item = (I, bool)>,
+    added: Vec<(I, bool)>,
+) -> Vec<(I, bool)> {
+    let mut order = Vec::new();
+    let mut flags = HashMap::new();
+    for (id, first) in current.chain(added) {
+        let flag = flags.entry(id).or_insert_with(|| {
+            order.push(id);
+            false
+        });
+        *flag |= first;
+    }
+    order.into_iter().map(|id| (id, flags[&id])).collect()
+}
+
+fn text_or(new: &str, old: &str) -> String {
+    if new.trim().is_empty() { old } else { new }.to_owned()
+}
+
+fn merge_issue(old: &IssueFields, new: &IssueFields) -> IssueFields {
+    IssueFields {
+        number: old.number.clone(),
+        title: text_or(&new.title, &old.title),
+        cover_date: new.cover_date.or(old.cover_date),
+        release_date: new.release_date.or(old.release_date),
+        page_count: new.page_count.or(old.page_count),
+        synopsis: text_or(&new.synopsis, &old.synopsis),
+        is_key: old.is_key || new.is_key,
+        key_reason: text_or(&new.key_reason, &old.key_reason),
+    }
+}
+
+fn merge_edition(old: &EditionFields, new: &EditionFields) -> EditionFields {
+    EditionFields {
+        variant: old.variant.clone(),
+        printing: old.printing,
+        distribution: old.distribution,
+        cover_price: new.cover_price.or(old.cover_price),
+        barcode: new.barcode.clone().or_else(|| old.barcode.clone()),
+        isbn: new.isbn.clone().or_else(|| old.isbn.clone()),
+        binding: new.binding.or(old.binding),
+        has_dust_jacket: new.has_dust_jacket.or(old.has_dust_jacket),
+        has_slipcase: new.has_slipcase.or(old.has_slipcase),
+    }
+}
