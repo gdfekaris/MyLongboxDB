@@ -74,7 +74,9 @@ its authors:
   and extension loading off, and size limits on every value; a file that
   belongs to another application is refused rather than modified, and so
   is a collection whose tables, indexes, or triggers differ in any way
-  from what the app creates. All SQL uses bound parameters. Verify with `cargo test -p mylongbox-core`, whose
+  from what the app creates. An imported collection's search index is
+  rebuilt from its own tables rather than trusted. All SQL uses bound
+  parameters. Verify with `cargo test -p mylongbox-core`, whose
   tests check each of these settings.
 - **No `unsafe` code** outside the small `mylongbox-sandbox` crate.
   Every other crate declares `#![forbid(unsafe_code)]`.
