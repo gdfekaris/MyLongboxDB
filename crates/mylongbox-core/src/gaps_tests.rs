@@ -5,7 +5,9 @@ use std::collections::BTreeSet;
 
 use crate::gaps::{missing_ranges, whole_number};
 use crate::model::*;
-use crate::{Amount, BookEntry, CoverPhoto, Currency, Database, IssueNumber, SeriesChoice, Shelf};
+use crate::{
+    Amount, BookEntry, CoverPhoto, Currency, Database, IssueNumber, Need, SeriesChoice, Shelf,
+};
 
 fn db() -> Database {
     Database::open_in_memory().unwrap()
@@ -213,18 +215,20 @@ fn books_missing_a_photo_grade_box_or_value_need_attention() {
             "",
         )
         .unwrap();
-        db.set_photo(
-            copy,
-            Side::Front,
-            &CoverPhoto {
-                full_jpeg: vec![0xFF, 0xD8, 0xFF],
-                thumb_jpeg: vec![0xFF, 0xD8, 0xFF],
-                width: 1,
-                height: 1,
-                sha256: [0; 32],
-            },
-        )
-        .unwrap();
+        for side in [Side::Front, Side::Back] {
+            db.set_photo(
+                copy,
+                side,
+                &CoverPhoto {
+                    full_jpeg: vec![0xFF, 0xD8, 0xFF],
+                    thumb_jpeg: vec![0xFF, 0xD8, 0xFF],
+                    width: 1,
+                    height: 1,
+                    sha256: [0; 32],
+                },
+            )
+            .unwrap();
+        }
         copy
     };
     let complete = |db: &Database, number| complete_in(db, Category::Comic, "Daredevil", number);
@@ -243,12 +247,98 @@ fn books_missing_a_photo_grade_box_or_value_need_attention() {
     let value = db.values(no_value).unwrap().remove(0);
     db.delete_value(value.id).unwrap();
     let bare = add(&db, "Daredevil", "6");
-    // A back photo is optional.
+    let no_back = complete(&db, "8");
+    db.remove_photo(no_back, Side::Back).unwrap();
     let book = complete_in(&db, Category::CollectedEdition, "Omnibus", "1");
     assert_eq!(
         shelf(&db, Shelf::NeedsAttention),
-        [no_photo, no_grade, no_box, no_value, bare].into()
+        [no_photo, no_grade, no_box, no_value, bare, no_back].into()
     );
+    // Each book says what it needs, and the shelf holds exactly those
+    // that need something.
+    let rows = db.browse(Shelf::Everything).unwrap();
+    let needs = |copy| rows.iter().find(|r| r.copy == copy).unwrap().needs();
+    assert_eq!(needs(no_photo), [Need::FrontPhoto]);
+    assert_eq!(needs(no_back), [Need::BackPhoto]);
+    assert_eq!(needs(no_grade), [Need::Grade]);
+    assert_eq!(needs(no_box), [Need::StorageBox]);
+    assert_eq!(needs(no_value), [Need::Value]);
+    assert_eq!(
+        needs(bare),
+        [
+            Need::FrontPhoto,
+            Need::BackPhoto,
+            Need::Grade,
+            Need::StorageBox,
+            Need::Value
+        ]
+    );
+    assert!(needs(done).is_empty() && needs(book).is_empty());
+    let needing: BTreeSet<CopyId> = rows
+        .iter()
+        .filter(|r| !r.needs().is_empty())
+        .map(|r| r.copy)
+        .collect();
+    assert_eq!(needing, shelf(&db, Shelf::NeedsAttention));
     let attention = shelf(&db, Shelf::NeedsAttention);
     assert!(!attention.contains(&done) && !attention.contains(&book));
+}
+
+/// Every shelf, name list, and report at 10,000 copies, each under the
+/// 100 ms search target. Run with `cargo test --release -- --ignored`.
+#[test]
+#[ignore = "slow in debug builds; run in release"]
+fn browsing_ten_thousand_copies_is_quick() {
+    use crate::ShelfList;
+    use crate::fixtures::{FixtureSpec, generate};
+    let db = db();
+    generate(
+        &db,
+        FixtureSpec {
+            copies: 10_000,
+            seed: 42,
+        },
+    )
+    .unwrap();
+    let timed = |what: &str, run: &dyn Fn() -> usize| {
+        let start = std::time::Instant::now();
+        let found = run();
+        let took = start.elapsed();
+        assert!(took.as_millis() < 100, "{what} took {took:?} for {found}");
+    };
+    let lists = [
+        ShelfList::Series,
+        ShelfList::Publishers,
+        ShelfList::Creators,
+        ShelfList::Characters,
+        ShelfList::Teams,
+        ShelfList::StoryArcs,
+        ShelfList::StorageBoxes,
+    ];
+    let mut shelves = vec![
+        Shelf::Everything,
+        Shelf::Category(Category::Comic),
+        Shelf::KeyIssues,
+        Shelf::Duplicates,
+        Shelf::NeedsAttention,
+    ];
+    for list in lists {
+        timed(&format!("{list:?}"), &|| db.shelf_list(list).unwrap().len());
+        // The biggest entry's shelf.
+        let biggest = db
+            .shelf_list(list)
+            .unwrap()
+            .into_iter()
+            .max_by_key(|e| e.copies)
+            .unwrap();
+        shelves.push(biggest.shelf);
+    }
+    for shelf in shelves {
+        timed(&format!("{shelf:?}"), &|| db.browse(shelf).unwrap().len());
+    }
+    for collected in [false, true] {
+        timed(&format!("gaps {collected}"), &|| {
+            db.gaps(collected).unwrap().len()
+        });
+    }
 }

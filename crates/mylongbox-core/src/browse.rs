@@ -4,6 +4,7 @@
 use rusqlite::{Row, ToSql};
 
 use crate::catalog::{amount_at, cover_date_at, query_all, series_title};
+use crate::date::Date;
 use crate::db::Database;
 use crate::error::Result;
 use crate::model::{
@@ -33,8 +34,9 @@ pub enum Shelf {
     StorageBox(BoxId),
     /// Copies of every edition owned more than once.
     Duplicates,
-    /// Copies missing a front cover photo, a grade (or a book condition),
-    /// a storage box, or a value.
+    /// Copies missing a cover photo, front or back, a grade (or a book
+    /// condition), a storage box, or a value: those whose
+    /// [`CopyRow::needs`] is not empty.
     NeedsAttention,
 }
 
@@ -86,9 +88,52 @@ pub struct CopyRow {
     pub value: Option<Amount>,
     pub is_key: bool,
     pub signed: bool,
+    /// The date of the newest value entry.
+    pub value_date: Option<Date>,
+    pub purchase_price: Option<Amount>,
+    pub purchase_date: Option<Date>,
+    /// When the copy was added, as a UTC timestamp.
+    pub added_at: String,
+    pub has_front_photo: bool,
+    pub has_back_photo: bool,
+}
+
+/// Something a copy is missing that a complete record has: what puts it
+/// on the Needs Attention shelf.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Need {
+    FrontPhoto,
+    BackPhoto,
+    /// A grade, or for a collected edition a book condition.
+    Grade,
+    StorageBox,
+    Value,
 }
 
 impl CopyRow {
+    /// What the copy is missing, in the order a reader would fill it in.
+    /// The Needs Attention shelf holds exactly the copies that miss
+    /// something.
+    pub fn needs(&self) -> Vec<Need> {
+        let mut needs = Vec::new();
+        if !self.has_front_photo {
+            needs.push(Need::FrontPhoto);
+        }
+        if !self.has_back_photo {
+            needs.push(Need::BackPhoto);
+        }
+        if self.grade.is_none() && self.book_condition.is_none() {
+            needs.push(Need::Grade);
+        }
+        if self.storage_box.is_none() {
+            needs.push(Need::StorageBox);
+        }
+        if self.value.is_none() {
+            needs.push(Need::Value);
+        }
+        needs
+    }
+
     /// e.g. `Amazing Spider-Man (1963) #121`, or the book's own title for a
     /// standalone collected edition.
     pub fn label(&self) -> String {
@@ -256,7 +301,13 @@ macro_rules! copy_rows {
                  (SELECT value_currency FROM value_entry v WHERE v.copy_id = c.id
                   ORDER BY v.date DESC, v.id DESC LIMIT 1),
                  i.is_key,
-                 EXISTS (SELECT 1 FROM signature g WHERE g.copy_id = c.id)
+                 EXISTS (SELECT 1 FROM signature g WHERE g.copy_id = c.id),
+                 (SELECT date FROM value_entry v WHERE v.copy_id = c.id
+                  ORDER BY v.date DESC, v.id DESC LIMIT 1),
+                 c.purchase_price_units, c.purchase_price_currency, c.purchase_date,
+                 c.added_at,
+                 EXISTS (SELECT 1 FROM cover_photo p WHERE p.copy_id = c.id AND p.side = 'front'),
+                 EXISTS (SELECT 1 FROM cover_photo p WHERE p.copy_id = c.id AND p.side = 'back')
              FROM ",
             live_copies!(),
             " AND ",
@@ -303,6 +354,8 @@ impl Database {
                 copy_rows!(
                     "(NOT EXISTS (SELECT 1 FROM cover_photo p
                                   WHERE p.copy_id = c.id AND p.side = 'front')
+                      OR NOT EXISTS (SELECT 1 FROM cover_photo p
+                                     WHERE p.copy_id = c.id AND p.side = 'back')
                       OR (c.grade IS NULL AND c.book_condition IS NULL)
                       OR c.box_id IS NULL
                       OR NOT EXISTS (SELECT 1 FROM value_entry v WHERE v.copy_id = c.id))"
@@ -400,5 +453,11 @@ pub(crate) fn copy_row(row: &Row<'_>) -> rusqlite::Result<CopyRow> {
         value: amount_at(row, 17, 18)?,
         is_key: row.get(19)?,
         signed: row.get(20)?,
+        value_date: row.get(21)?,
+        purchase_price: amount_at(row, 22, 23)?,
+        purchase_date: row.get(24)?,
+        added_at: row.get(25)?,
+        has_front_photo: row.get(26)?,
+        has_back_photo: row.get(27)?,
     })
 }

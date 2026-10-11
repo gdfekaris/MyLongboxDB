@@ -60,7 +60,7 @@ mod shelf_ops_tests;
 mod store;
 mod values;
 
-pub use browse::{CopyRow, Shelf, ShelfEntry, ShelfList};
+pub use browse::{CopyRow, Need, Shelf, ShelfEntry, ShelfList};
 pub use bulk::BulkChange;
 pub use collects::{CollectedIn, CollectedIssue, Ownership, PreviewEntry};
 pub use collects_text::{
