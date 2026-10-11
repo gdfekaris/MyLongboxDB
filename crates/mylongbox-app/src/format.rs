@@ -397,6 +397,7 @@ mod tests {
             settings: Settings {
                 currency: Some(Currency::Usd),
                 grade_names: true,
+                ..Settings::default()
             },
             rates: RateTable::new([rate]),
         });

@@ -5,8 +5,10 @@ use std::path::{Path, PathBuf};
 
 use gtk::glib;
 use mylongbox_core::Currency;
+use mylongbox_media::{LONG_EDGES, Output, QUALITIES};
 
 const GROUP: &str = "display";
+const IMAGES: &str = "images";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Settings {
@@ -14,6 +16,8 @@ pub struct Settings {
     pub currency: Option<Currency>,
     /// Whether grades show their letters, as in `9.4 NM`.
     pub grade_names: bool,
+    /// How cover photos are saved.
+    pub photos: Output,
 }
 
 pub fn path() -> PathBuf {
@@ -34,6 +38,20 @@ impl Settings {
                 .ok()
                 .and_then(|code| Currency::from_code(&code)),
             grade_names: file.boolean(GROUP, "grade-names").unwrap_or(false),
+            photos: Output {
+                long_edge: file
+                    .integer(IMAGES, "long-edge")
+                    .ok()
+                    .and_then(|n| u32::try_from(n).ok())
+                    .filter(|n| LONG_EDGES.contains(n))
+                    .unwrap_or(Output::default().long_edge),
+                quality: file
+                    .integer(IMAGES, "quality")
+                    .ok()
+                    .and_then(|n| u8::try_from(n).ok())
+                    .filter(|n| QUALITIES.contains(n))
+                    .unwrap_or(Output::default().quality),
+            },
         }
     }
 
@@ -41,6 +59,12 @@ impl Settings {
         let file = glib::KeyFile::new();
         file.set_string(GROUP, "currency", self.currency.map_or("", |c| c.code()));
         file.set_boolean(GROUP, "grade-names", self.grade_names);
+        file.set_integer(
+            IMAGES,
+            "long-edge",
+            i32::try_from(self.photos.long_edge).unwrap_or(i32::MAX),
+        );
+        file.set_integer(IMAGES, "quality", i32::from(self.photos.quality));
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
@@ -64,6 +88,10 @@ mod tests {
         let wanted = Settings {
             currency: Some(Currency::Gold),
             grade_names: true,
+            photos: Output {
+                long_edge: 2000,
+                quality: 90,
+            },
         };
         wanted.save(&path).unwrap();
         assert_eq!(Settings::load(&path), wanted);
@@ -75,7 +103,14 @@ mod tests {
         let path = scratch("damaged");
         assert_eq!(Settings::load(&path), Settings::default());
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, "[display]\ncurrency=PESOS\ngrade-names=maybe\n").unwrap();
+        std::fs::write(
+            &path,
+            "[display]\ncurrency=PESOS\ngrade-names=maybe\n\
+             [images]\nlong-edge=99999\nquality=7\n",
+        )
+        .unwrap();
+        assert_eq!(Settings::load(&path), Settings::default());
+        std::fs::write(&path, "[images]\nlong-edge=-5\nquality=many\n").unwrap();
         assert_eq!(Settings::load(&path), Settings::default());
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }

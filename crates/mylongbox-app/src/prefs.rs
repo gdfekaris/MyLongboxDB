@@ -1,11 +1,13 @@
 //! The Preferences window: how amounts and grades are shown, the
 //! collections kept by the app, and the exchange-rate table.
 
+use std::cell::Cell;
 use std::rc::{Rc, Weak};
 
 use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{Amount, CollectionInfo, Currency, Database, ExchangeRate};
+use mylongbox_media::{LONG_EDGES, QUALITIES};
 
 use crate::format;
 use crate::settings::Settings;
@@ -45,7 +47,11 @@ pub fn dialog(state: &State<'_>, hooks: Hooks) -> adw::PreferencesDialog {
         .title("General")
         .icon_name("preferences-system-symbolic")
         .build();
-    general.add(&display_group(state.settings, &hooks));
+    // Each group changes its own part of the settings and reports them
+    // whole.
+    let settings = Rc::new(Cell::new(state.settings));
+    general.add(&display_group(&settings, &hooks));
+    general.add(&images_group(&settings, &hooks));
     general.add(&collections_group(state, &hooks, &dialog));
     dialog.add(&general);
 
@@ -61,7 +67,8 @@ pub fn dialog(state: &State<'_>, hooks: Hooks) -> adw::PreferencesDialog {
     dialog
 }
 
-fn display_group(settings: Settings, hooks: &Rc<Hooks>) -> adw::PreferencesGroup {
+fn display_group(current: &Rc<Cell<Settings>>, hooks: &Rc<Hooks>) -> adw::PreferencesGroup {
+    let settings = current.get();
     let group = adw::PreferencesGroup::builder().title("Display").build();
     let currency = adw::ComboRow::builder()
         .title("Show Amounts In")
@@ -80,12 +87,16 @@ fn display_group(settings: Settings, hooks: &Rc<Hooks>) -> adw::PreferencesGroup
         .build();
     let changed = {
         let (currency, names, hooks) = (currency.clone(), names.clone(), hooks.clone());
+        let current = current.clone();
         Rc::new(move || {
             let index = usize::try_from(currency.selected()).unwrap_or(0);
-            (hooks.settings_changed)(Settings {
+            let settings = Settings {
                 currency: CURRENCIES.get(index).and_then(|c| c.1),
                 grade_names: names.is_active(),
-            });
+                ..current.get()
+            };
+            current.set(settings);
+            (hooks.settings_changed)(settings);
         })
     };
     let c = changed.clone();
@@ -93,6 +104,57 @@ fn display_group(settings: Settings, hooks: &Rc<Hooks>) -> adw::PreferencesGroup
     names.connect_active_notify(move |_| changed());
     group.add(&currency);
     group.add(&names);
+    group
+}
+
+/// How cover photos are saved. Photos already in a collection keep the
+/// size and quality they were saved with.
+fn images_group(current: &Rc<Cell<Settings>>, hooks: &Rc<Hooks>) -> adw::PreferencesGroup {
+    let photos = current.get().photos;
+    let group = adw::PreferencesGroup::builder()
+        .title("Cover Photos")
+        .description("Applies to photos added from now on.")
+        .build();
+    let spin = |title: &str, subtitle: &str, range: (f64, f64), step: f64, value: f64| {
+        adw::SpinRow::builder()
+            .title(title)
+            .subtitle(subtitle)
+            .adjustment(&gtk::Adjustment::new(
+                value, range.0, range.1, step, step, 0.0,
+            ))
+            .build()
+    };
+    let edge = spin(
+        "Longest Edge",
+        "In pixels; larger photos show more detail but make the collection bigger",
+        (f64::from(*LONG_EDGES.start()), f64::from(*LONG_EDGES.end())),
+        100.0,
+        f64::from(photos.long_edge),
+    );
+    let quality = spin(
+        "JPEG Quality",
+        "Higher keeps more detail in larger files",
+        (f64::from(*QUALITIES.start()), f64::from(*QUALITIES.end())),
+        5.0,
+        f64::from(photos.quality),
+    );
+    let changed = {
+        let (edge, quality, hooks) = (edge.clone(), quality.clone(), hooks.clone());
+        let current = current.clone();
+        Rc::new(move || {
+            let mut settings = current.get();
+            // The rows keep their values within the ranges given above.
+            settings.photos.long_edge = edge.value().round() as u32;
+            settings.photos.quality = quality.value().round() as u8;
+            current.set(settings);
+            (hooks.settings_changed)(settings);
+        })
+    };
+    let c = changed.clone();
+    edge.connect_value_notify(move |_| c());
+    quality.connect_value_notify(move |_| changed());
+    group.add(&edge);
+    group.add(&quality);
     group
 }
 

@@ -827,6 +827,7 @@ dependencies = [
  "gtk4",
  "libadwaita",
  "mylongbox-core",
+ "mylongbox-media",
  "relm4",
 ]
 
