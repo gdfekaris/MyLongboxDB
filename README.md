@@ -92,6 +92,14 @@ its authors:
   file from elsewhere cannot feed them hostile images. Verify with
   `sdk cargo test -p mylongbox-media --features heic` and the `libheif`
   module in the Flatpak manifest.
+- **Imported spreadsheets and archives are treated as untrusted.** A
+  CSV file over 100 MB is refused without being read whole. A full
+  export is never unpacked to disk: only the files its CSV names are
+  read, each up to 50 MB, so names inside the archive cannot reach
+  outside it, and its photos go through the same limited decoder and
+  re-encoding as any other. Every row is added through the same checks
+  as the add form, in one transaction that is undone if the import is
+  cancelled. Verify with `cargo test -p mylongbox-core import`.
 
 - **No network or file access from the sandbox.** The Flatpak manifest
   grants exactly `--socket=wayland`, `--socket=fallback-x11`,
