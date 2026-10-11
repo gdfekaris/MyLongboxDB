@@ -11,6 +11,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+# CSV export and import.
+csv = "1.4.0"
 # Edit distance, for finding what a mistyped search word meant.
 strsim = "0.11.1"
 rusqlite = { version = "0.40.2", features = ["backup", "bundled", "limits"] }

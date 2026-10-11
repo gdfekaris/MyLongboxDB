@@ -26,6 +26,9 @@ mod entry;
 #[cfg(test)]
 mod entry_tests;
 mod error;
+mod export;
+#[cfg(test)]
+mod export_tests;
 mod filter;
 #[cfg(test)]
 mod filter_tests;
@@ -71,6 +74,7 @@ pub use db::{APPLICATION_ID, Database};
 pub use detail::{CopyDetail, EditionDetail, IssueDetail};
 pub use entry::{BookEntry, Prefill, SavedBook, SeriesChoice};
 pub use error::{Error, Result};
+pub use export::COLUMNS as CSV_COLUMNS;
 pub use filter::{
     Choice, Compare, DateCondition, DateField, Filter, FilterSet, Flag, ListCondition, ListField,
     MoneyField, NumberField, OwnedAs, Presence, TextCondition, TextField,

@@ -1,0 +1,333 @@
+//! CSV export: one row per copy with every field, in a format the
+//! importer reads back without loss.
+//!
+//! Lists in a cell are joined with `; `. Signatures and values have parts,
+//! joined with ` | `. A backslash keeps either separator, or itself, as
+//! part of a name: `\;`, `\|`, `\\`.
+
+use std::io::Write;
+
+use crate::db::Database;
+use crate::error::{Error, Result};
+use crate::model::{Category, CopyId, CoverDate, PublisherId, Role, Side};
+use crate::money::Amount;
+
+/// The columns, in order. The importer recognizes them by these names.
+pub const COLUMNS: &[&str] = &[
+    "Copy ID",
+    "Edition ID",
+    "Issue ID",
+    "Series ID",
+    "Category",
+    "Series",
+    "Start Year",
+    "Volume",
+    "Publisher",
+    "Known Issue Count",
+    "Magazine Format",
+    "Black and White",
+    "Series Notes",
+    "Issue Number",
+    "Story Title",
+    "Cover Date",
+    "Release Date",
+    "Page Count",
+    "Key Issue",
+    "Key Reason",
+    "Synopsis",
+    "Writers",
+    "Pencillers",
+    "Inkers",
+    "Colorists",
+    "Letterers",
+    "Cover Artists",
+    "Editors",
+    "Article Writers",
+    "Interviews",
+    "Characters",
+    "First Appearances of Characters",
+    "Teams",
+    "First Appearances of Teams",
+    "Story Arcs",
+    "Collects",
+    "Variant",
+    "Printing",
+    "Distribution",
+    "Cover Price",
+    "Cover Price Currency",
+    "Barcode",
+    "ISBN",
+    "Binding",
+    "Dust Jacket",
+    "Slipcase",
+    "Variant Cover Artists",
+    "Grade",
+    "Grade Type",
+    "Certificate Number",
+    "Label",
+    "Book Condition",
+    "Dust Jacket Condition",
+    "Purchase Price",
+    "Purchase Currency",
+    "Purchase Date",
+    "Seller",
+    "Storage Box",
+    "Box Position",
+    "Tags",
+    "Signatures",
+    "Notes",
+    "Current Value",
+    "Current Value Currency",
+    "Value History",
+    "Date Added",
+    "Front Photo",
+    "Back Photo",
+];
+
+/// The credit roles in the order of their columns.
+pub(crate) const ROLE_COLUMNS: [Role; 9] = [
+    Role::Writer,
+    Role::Penciller,
+    Role::Inker,
+    Role::Colorist,
+    Role::Letterer,
+    Role::CoverArtist,
+    Role::Editor,
+    Role::Article,
+    Role::Interview,
+];
+
+/// One item of a list, with the separators in it kept literal.
+pub(crate) fn escape(item: &str) -> String {
+    let mut out = String::with_capacity(item.len());
+    for c in item.chars() {
+        if matches!(c, '\\' | ';' | '|') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Items joined as a list cell.
+pub(crate) fn join<S: AsRef<str>>(items: impl IntoIterator<Item = S>) -> String {
+    items
+        .into_iter()
+        .map(|i| escape(i.as_ref()))
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// Items already escaped, as [`join_parts`] makes them, joined as a list
+/// cell.
+fn join_escaped(items: impl IntoIterator<Item = String>) -> String {
+    items.into_iter().collect::<Vec<_>>().join("; ")
+}
+
+/// Parts joined as one item, e.g. a signature.
+pub(crate) fn join_parts<S: AsRef<str>>(parts: impl IntoIterator<Item = S>) -> String {
+    parts
+        .into_iter()
+        .map(|p| escape(p.as_ref()))
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
+fn yes_no(flag: Option<bool>) -> String {
+    match flag {
+        Some(true) => "yes".into(),
+        Some(false) => "no".into(),
+        None => String::new(),
+    }
+}
+
+/// An amount as its number and its currency's code.
+fn amount(a: Option<Amount>) -> (String, String) {
+    a.map_or((String::new(), String::new()), |a| {
+        (a.to_decimal_string(), a.currency().code().to_owned())
+    })
+}
+
+fn text<T: ToString>(value: Option<T>) -> String {
+    value.map(|v| v.to_string()).unwrap_or_default()
+}
+
+/// A cover date as `YYYY-MM`, or `YYYY` when only the year is known.
+pub(crate) fn cover_date(date: CoverDate) -> String {
+    match date.month() {
+        Some(month) => format!("{:04}-{month:02}", date.year()),
+        None => format!("{:04}", date.year()),
+    }
+}
+
+fn csv_error(e: csv::Error) -> Error {
+    Error::Io(std::io::Error::other(e))
+}
+
+impl Database {
+    /// Writes the copies (or every live copy, in natural order) as CSV
+    /// to `out`, returning how many rows were written. With
+    /// `photo_paths`, each row names its photos' files as a full export
+    /// stores them: `images/<copy id>_front.jpg`.
+    pub fn export_csv(
+        &self,
+        copies: Option<&[CopyId]>,
+        out: impl Write,
+        photo_paths: bool,
+    ) -> Result<usize> {
+        let tx = self.tx()?;
+        let ids: Vec<CopyId> = match copies {
+            Some(ids) => ids.to_vec(),
+            None => self
+                .browse(crate::Shelf::Everything)?
+                .into_iter()
+                .map(|r| r.copy)
+                .collect(),
+        };
+        let mut writer = csv::WriterBuilder::new()
+            .terminator(csv::Terminator::CRLF)
+            .from_writer(out);
+        writer.write_record(COLUMNS).map_err(csv_error)?;
+        for id in &ids {
+            writer
+                .write_record(self.csv_row(*id, photo_paths)?)
+                .map_err(csv_error)?;
+        }
+        writer.flush()?;
+        tx.commit()?;
+        Ok(ids.len())
+    }
+
+    fn csv_row(&self, id: CopyId, photo_paths: bool) -> Result<Vec<String>> {
+        let entry = self.book_entry(id)?;
+        let copy = self.copy(id)?;
+        let edition = self.edition(copy.edition)?;
+        let issue = self.issue(edition.issue)?;
+        let series = self.series(issue.series)?;
+        let (s, i, e, c) = (&series.fields, &issue.fields, &edition.fields, &copy.fields);
+        let publisher = s
+            .publisher
+            .map(|p| self.lookup::<PublisherId>(p).map(|l| l.name))
+            .transpose()?;
+        let credits = |role: Role| {
+            join(
+                entry
+                    .credits
+                    .iter()
+                    .filter(|(_, r)| *r == role)
+                    .map(|(name, _)| name),
+            )
+        };
+        let names = |list: &[(String, bool)], first_only: bool| {
+            join(
+                list.iter()
+                    .filter(|(_, first)| !first_only || *first)
+                    .map(|(name, _)| name),
+            )
+        };
+        let arcs = join(entry.story_arcs.iter().map(|(name, part)| match part {
+            Some(n) => format!("{name} (part {n})"),
+            None => name.clone(),
+        }));
+        let signatures = join_escaped(entry.signatures.iter().map(|(name, f)| {
+            join_parts([
+                name.as_str(),
+                f.verification.code(),
+                f.cert_number.as_deref().unwrap_or(""),
+                &text(f.signed_on),
+                &f.place,
+                if f.sketch { "sketch" } else { "" },
+            ])
+        }));
+        let values = self.values(id)?;
+        let history = join_escaped(values.iter().map(|v| {
+            join_parts([
+                v.date.to_string(),
+                v.value.to_decimal_string(),
+                v.value.currency().code().to_owned(),
+                v.source.clone(),
+            ])
+        }));
+        let (cover_price, cover_currency) = amount(e.cover_price);
+        let (paid, paid_currency) = amount(c.purchase_price);
+        let (worth, worth_currency) = amount(values.last().map(|v| v.value));
+        let photo = |side: Side| -> Result<String> {
+            let has = photo_paths && self.photo_sides(id)?.contains(&side);
+            Ok(if has {
+                format!("images/{}_{}.jpg", copy.uuid, side.code())
+            } else {
+                String::new()
+            })
+        };
+        let mut row = vec![
+            copy.uuid.to_string(),
+            edition.uuid.to_string(),
+            issue.uuid.to_string(),
+            series.uuid.to_string(),
+            s.category.code().to_owned(),
+            s.name.clone(),
+            text(s.start_year),
+            text(s.volume),
+            publisher.unwrap_or_default(),
+            text(s.known_issue_count),
+            text(s.magazine_format.map(|f| f.code())),
+            yes_no(s.black_and_white),
+            s.notes.clone(),
+            text(i.number.as_ref().map(|n| n.as_str().to_owned())),
+            i.title.clone(),
+            i.cover_date.map(cover_date).unwrap_or_default(),
+            text(i.release_date),
+            text(i.page_count),
+            yes_no(Some(i.is_key)),
+            i.key_reason.clone(),
+            i.synopsis.clone(),
+        ];
+        row.extend(ROLE_COLUMNS.map(credits));
+        row.extend([
+            names(&entry.characters, false),
+            names(&entry.characters, true),
+            names(&entry.teams, false),
+            names(&entry.teams, true),
+            arcs,
+            if s.category == Category::CollectedEdition {
+                entry.collects.clone()
+            } else {
+                String::new()
+            },
+            e.variant.clone(),
+            text(e.printing),
+            text(e.distribution.map(|d| d.code())),
+            cover_price,
+            cover_currency,
+            e.barcode.clone().unwrap_or_default(),
+            text(e.isbn.as_ref().map(|i| i.as_str().to_owned())),
+            text(e.binding.map(|b| b.code())),
+            yes_no(e.has_dust_jacket),
+            yes_no(e.has_slipcase),
+            join(&entry.cover_artists),
+            text(c.grade),
+            text(c.grade_type.map(|g| g.code())),
+            c.cert_number.clone().unwrap_or_default(),
+            c.label_type.clone().unwrap_or_default(),
+            text(c.book_condition.map(|b| b.code())),
+            text(c.dust_jacket_condition.map(|b| b.code())),
+            paid,
+            paid_currency,
+            text(c.purchase_date),
+            c.seller.clone(),
+            entry.storage_box.clone().unwrap_or_default(),
+            text(c.box_position),
+            join(&entry.tags),
+            signatures,
+            c.notes.clone(),
+            worth,
+            worth_currency,
+            history,
+            copy.added_at.clone(),
+            photo(Side::Front)?,
+            photo(Side::Back)?,
+        ]);
+        debug_assert_eq!(row.len(), COLUMNS.len());
+        Ok(row)
+    }
+}
