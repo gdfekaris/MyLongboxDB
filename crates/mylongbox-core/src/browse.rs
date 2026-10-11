@@ -111,9 +111,11 @@ macro_rules! live_copies {
 
 /// The live copies of every issue linked through `$table`, and of the
 /// collected editions that reprint those issues, so a character's shelf
-/// also holds the books they appear in.
+/// also holds the books they appear in. The arms are joined by `$union`,
+/// and `$owners` is a condition on the linked entry's id, as in
+/// [`shelf_pairs`].
 macro_rules! linked_copies {
-    ($table:literal, $column:literal) => {
+    ($table:literal, $column:literal, $union:literal, $owners:literal) => {
         concat!(
             "SELECT l.",
             $column,
@@ -122,8 +124,13 @@ macro_rules! linked_copies {
             " l
              JOIN edition e ON e.issue_id = l.issue_id
              JOIN copy c ON c.edition_id = e.id
-             WHERE +c.trash_id IS NULL
-             UNION SELECT l.",
+             WHERE +c.trash_id IS NULL AND l.",
+            $column,
+            " ",
+            $owners,
+            " ",
+            $union,
+            " SELECT l.",
             $column,
             ", c.id FROM ",
             $table,
@@ -131,7 +138,10 @@ macro_rules! linked_copies {
              JOIN collects k ON k.collected_issue_id = l.issue_id
              JOIN edition e ON e.issue_id = k.collection_issue_id
              JOIN copy c ON c.edition_id = e.id
-             WHERE +c.trash_id IS NULL"
+             WHERE +c.trash_id IS NULL AND l.",
+            $column,
+            " ",
+            $owners
         )
     };
 }
@@ -140,44 +150,69 @@ macro_rules! linked_copies {
 /// (`copy`), once per book. Both a shelf and its count in the list read
 /// these pairs, so an entry never promises more books than its shelf shows.
 ///
+/// Search passes two more arguments: `UNION ALL`, since it keeps only
+/// the best score for each book and need not pay to remove repeats, and a
+/// condition picking the entries it found, which then applies inside
+/// every arm rather than after them all.
+///
 /// The `+` before `trash_id` keeps SQLite from starting at the index of
 /// trashed copies, which matches nearly every copy, and makes it start
 /// from the entry's links instead.
 macro_rules! shelf_pairs {
-    (series) => {
-        "SELECT i.series_id AS who, c.id AS copy FROM copy c
-         JOIN edition e ON e.id = c.edition_id
-         JOIN issue i ON i.id = e.issue_id
-         WHERE +c.trash_id IS NULL"
+    ($kind:ident) => {
+        shelf_pairs!($kind, "UNION", "IS NOT NULL")
     };
-    (publisher) => {
-        "SELECT s.publisher_id AS who, c.id AS copy FROM copy c
-         JOIN edition e ON e.id = c.edition_id
-         JOIN issue i ON i.id = e.issue_id
-         JOIN series s ON s.id = i.series_id
-         WHERE +c.trash_id IS NULL"
-    };
-    (creator) => {
+    (series, $union:literal, $owners:literal) => {
         concat!(
-            linked_copies!("credit", "creator_id"),
-            " UNION SELECT a.creator_id, c.id FROM edition_cover_artist a
-             JOIN copy c ON c.edition_id = a.edition_id WHERE +c.trash_id IS NULL
-             UNION SELECT s.creator_id, c.id FROM signature s
-             JOIN copy c ON c.id = s.copy_id WHERE +c.trash_id IS NULL"
+            "SELECT i.series_id AS who, c.id AS copy FROM copy c
+             JOIN edition e ON e.id = c.edition_id
+             JOIN issue i ON i.id = e.issue_id
+             WHERE +c.trash_id IS NULL AND i.series_id ",
+            $owners
         )
     };
-    (character) => {
-        linked_copies!("issue_character", "character_id")
+    (publisher, $union:literal, $owners:literal) => {
+        concat!(
+            "SELECT s.publisher_id AS who, c.id AS copy FROM copy c
+             JOIN edition e ON e.id = c.edition_id
+             JOIN issue i ON i.id = e.issue_id
+             JOIN series s ON s.id = i.series_id
+             WHERE +c.trash_id IS NULL AND s.publisher_id ",
+            $owners
+        )
     };
-    (team) => {
-        linked_copies!("issue_team", "team_id")
+    (creator, $union:literal, $owners:literal) => {
+        concat!(
+            linked_copies!("credit", "creator_id", $union, $owners),
+            " ",
+            $union,
+            " SELECT a.creator_id, c.id FROM edition_cover_artist a
+             JOIN copy c ON c.edition_id = a.edition_id
+             WHERE +c.trash_id IS NULL AND a.creator_id ",
+            $owners,
+            " ",
+            $union,
+            " SELECT s.creator_id, c.id FROM signature s
+             JOIN copy c ON c.id = s.copy_id
+             WHERE +c.trash_id IS NULL AND s.creator_id ",
+            $owners
+        )
     };
-    (story_arc) => {
-        linked_copies!("issue_story_arc", "story_arc_id")
+    (character, $union:literal, $owners:literal) => {
+        linked_copies!("issue_character", "character_id", $union, $owners)
     };
-    (storage_box) => {
-        "SELECT box_id AS who, id AS copy FROM copy
-         WHERE +trash_id IS NULL AND box_id IS NOT NULL"
+    (team, $union:literal, $owners:literal) => {
+        linked_copies!("issue_team", "team_id", $union, $owners)
+    };
+    (story_arc, $union:literal, $owners:literal) => {
+        linked_copies!("issue_story_arc", "story_arc_id", $union, $owners)
+    };
+    (storage_box, $union:literal, $owners:literal) => {
+        concat!(
+            "SELECT box_id AS who, id AS copy FROM copy
+             WHERE +trash_id IS NULL AND box_id ",
+            $owners
+        )
     };
 }
 
