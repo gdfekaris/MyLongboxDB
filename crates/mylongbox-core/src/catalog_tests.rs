@@ -102,7 +102,6 @@ fn every_field_round_trips() {
         grade_type: Some(GradeType::Cgc),
         cert_number: Some("1234567001".into()),
         label_type: Some("Universal".into()),
-        signed_by: "Roy Thomas".into(),
         purchase_price: Some(Amount::parse(Currency::Btc, "0.0015").unwrap()),
         purchase_date: Some("2021-03-01".parse().unwrap()),
         seller: "Local shop".into(),

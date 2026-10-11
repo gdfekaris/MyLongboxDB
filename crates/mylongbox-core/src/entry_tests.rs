@@ -3,6 +3,7 @@
 use crate::model::*;
 use crate::{
     Amount, BookEntry, Currency, Database, Error, IssueNumber, Prefill, SeriesChoice, Shelf,
+    SignatureFields, Verification,
 };
 
 fn db() -> Database {
@@ -552,4 +553,94 @@ fn prefilling_from_a_trashed_copy_is_refused() {
         db.prefilled_entry(saved.copy, Prefill::NextIssue),
         Err(Error::InTrash)
     ));
+}
+
+fn signed(verification: Verification) -> SignatureFields {
+    SignatureFields::new(verification)
+}
+
+#[test]
+fn copies_keep_every_signature_in_order() {
+    let db = db();
+    let kirby = db.create_lookup::<CreatorId>("Jack Kirby").unwrap();
+    db.add_alias(kirby, "J. Kirby").unwrap();
+    let mut e = comic("Fantastic Four", "1");
+    let mut witnessed = signed(Verification::Witnessed);
+    witnessed.place = " NYCC 2015 ".into();
+    witnessed.signed_on = Some(crate::Date::new(2015, 10, 9).unwrap());
+    witnessed.sketch = true;
+    let mut jsa = signed(Verification::Jsa);
+    jsa.cert_number = Some("  ".into());
+    e.signatures = vec![
+        ("Stan Lee".into(), witnessed),
+        ("j. kirby".into(), jsa),
+        ("Stan Lee".into(), signed(Verification::Unverified)),
+        ("".into(), signed(Verification::Unverified)),
+    ];
+    let saved = db.add_book(&e).unwrap();
+
+    let got = db.signatures(saved.copy).unwrap();
+    let names: Vec<_> = got.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["Stan Lee", "Jack Kirby", "Stan Lee"],
+        "blank skipped"
+    );
+    assert_eq!(got[0].fields.place, "NYCC 2015");
+    assert!(got[0].fields.sketch);
+    assert_eq!(got[1].fields.verification, Verification::Jsa);
+    assert_eq!(got[1].fields.cert_number, None, "blank number dropped");
+
+    let mut edit = db.book_entry(saved.copy).unwrap();
+    assert_eq!(edit.signatures.len(), 3);
+    edit.signatures.remove(0);
+    db.update_book(saved.copy, &edit).unwrap();
+    assert_eq!(db.signatures(saved.copy).unwrap().len(), 2);
+
+    let next = db
+        .prefilled_entry(saved.copy, Prefill::AnotherCopy)
+        .unwrap();
+    assert!(
+        next.signatures.is_empty(),
+        "a signature is on one copy only"
+    );
+    let d = db.issue_detail(saved.issue).unwrap();
+    assert_eq!(d.editions[0].copies[0].signatures.len(), 2);
+}
+
+#[test]
+fn a_signers_shelf_holds_what_they_signed() {
+    let db = db();
+    let mut e = comic("Fantastic Four", "1");
+    e.signatures = vec![("Stan Lee".into(), signed(Verification::CgcSignatureSeries))];
+    let saved = db.add_book(&e).unwrap();
+    db.add_book(&comic("Fantastic Four", "2")).unwrap();
+    let stan = db.find_lookup::<CreatorId>("Stan Lee").unwrap().unwrap();
+    let shelf: Vec<_> = db
+        .browse(Shelf::Creator(stan))
+        .unwrap()
+        .into_iter()
+        .map(|r| (r.copy, r.signed))
+        .collect();
+    assert_eq!(shelf, [(saved.copy, true)]);
+    let entry = db
+        .shelf_list(crate::ShelfList::Creators)
+        .unwrap()
+        .into_iter()
+        .find(|e| e.name == "Stan Lee")
+        .unwrap();
+    assert_eq!(entry.copies, 1);
+}
+
+#[test]
+fn signers_merge_and_cannot_be_deleted_while_used() {
+    let db = db();
+    let mut e = comic("Fantastic Four", "1");
+    e.signatures = vec![("S. Lee".into(), signed(Verification::Unverified))];
+    let saved = db.add_book(&e).unwrap();
+    let alias = db.find_lookup::<CreatorId>("S. Lee").unwrap().unwrap();
+    assert!(matches!(db.delete_lookup(alias), Err(Error::InUse { .. })));
+    let stan = db.create_lookup::<CreatorId>("Stan Lee").unwrap();
+    db.merge_lookups(alias, stan).unwrap();
+    assert_eq!(db.signatures(saved.copy).unwrap()[0].name, "Stan Lee");
 }

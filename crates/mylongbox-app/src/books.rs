@@ -14,6 +14,7 @@ pub struct Book(pub CopyRow);
 
 pub struct BookWidgets {
     badge: gtk::Label,
+    signed: gtk::Label,
     series: gtk::Label,
     issue: gtk::Label,
 }
@@ -47,8 +48,17 @@ impl RelmGridItem for Book {
             .margin_end(6)
             .css_classes(["cover-badge"])
             .build();
+        let signed = gtk::Label::builder()
+            .label("Signed")
+            .halign(gtk::Align::Start)
+            .valign(gtk::Align::End)
+            .margin_bottom(6)
+            .margin_start(6)
+            .css_classes(["cover-badge"])
+            .build();
         let overlay = gtk::Overlay::builder().child(&cover).build();
         overlay.add_overlay(&badge);
+        overlay.add_overlay(&signed);
 
         let label = |classes: &[&str]| {
             gtk::Label::builder()
@@ -82,6 +92,7 @@ impl RelmGridItem for Book {
             root,
             BookWidgets {
                 badge,
+                signed,
                 series,
                 issue,
             },
@@ -93,6 +104,7 @@ impl RelmGridItem for Book {
         let badge = badge(row);
         widgets.badge.set_visible(!badge.is_empty());
         widgets.badge.set_label(&badge);
+        widgets.signed.set_visible(row.signed);
         widgets.series.set_label(&row.series);
         widgets.issue.set_label(&issue_line(row));
         root.set_tooltip_text(Some(&row.label()));
@@ -111,15 +123,24 @@ fn badge(row: &CopyRow) -> String {
     }
 }
 
+/// The grade or book condition, and whether the copy is signed.
 fn condition(row: &CopyRow) -> String {
-    match row.category {
+    let condition = match row.category {
         Category::CollectedEdition => row
             .book_condition
             .map(format::condition)
             .unwrap_or_default()
             .to_owned(),
         Category::Comic | Category::Magazine => format::grade(row.grade, row.grade_type),
-    }
+    };
+    format::joined([
+        condition,
+        if row.signed {
+            "Signed".to_owned()
+        } else {
+            String::new()
+        },
+    ])
 }
 
 fn number(row: &CopyRow) -> String {

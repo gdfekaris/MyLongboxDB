@@ -9,7 +9,8 @@ use rusqlite::params;
 use crate::db::Database;
 use crate::error::Result;
 use crate::model::{
-    CharacterId, CopyId, CreatorId, EditionId, IssueId, Role, StoryArcId, TagId, TeamId,
+    CharacterId, CopyId, CreatorId, EditionId, IssueId, Role, SignatureFields, StoryArcId, TagId,
+    TeamId,
 };
 
 /// A creator's credit on an issue.
@@ -34,6 +35,14 @@ pub struct ArcPart {
     pub arc: StoryArcId,
     pub name: String,
     pub part: Option<u32>,
+}
+
+/// A signature on a copy and who signed it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Signature {
+    pub signer: CreatorId,
+    pub name: String,
+    pub fields: SignatureFields,
 }
 
 /// A named entry linked without further detail: a tag or cover artist.
@@ -208,6 +217,68 @@ impl Database {
             tx.execute(
                 "INSERT INTO edition_cover_artist (edition_id, creator_id) VALUES (?1, ?2)",
                 params![edition, artist],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// A copy's signatures in the order signed.
+    pub fn signatures(&self, copy: CopyId) -> Result<Vec<Signature>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT s.creator_id, creator.name, s.verification, s.cert_number, s.signed_on,
+                 s.place, s.sketch
+             FROM signature s JOIN creator ON creator.id = s.creator_id
+             WHERE s.copy_id = ?1
+             ORDER BY s.position",
+        )?;
+        let rows = stmt.query_map([copy], |row| {
+            Ok(Signature {
+                signer: row.get(0)?,
+                name: row.get(1)?,
+                fields: SignatureFields {
+                    verification: row.get(2)?,
+                    cert_number: row.get(3)?,
+                    signed_on: row.get(4)?,
+                    place: row.get(5)?,
+                    sketch: row.get(6)?,
+                },
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Replaces a copy's signatures. The same person may sign more than
+    /// once, so repeats are kept, in the order given.
+    pub fn set_signatures(
+        &self,
+        copy: CopyId,
+        signatures: &[(CreatorId, SignatureFields)],
+    ) -> Result<()> {
+        let current = self.copy(copy)?;
+        crate::catalog::live(current.trash)?;
+        let tx = self.tx()?;
+        tx.execute("DELETE FROM signature WHERE copy_id = ?1", [copy])?;
+        for (position, (signer, f)) in (1u32..).zip(signatures) {
+            let cert = f
+                .cert_number
+                .as_deref()
+                .map(str::trim)
+                .filter(|c| !c.is_empty());
+            tx.execute(
+                "INSERT INTO signature (copy_id, position, creator_id, verification,
+                     cert_number, signed_on, place, sketch)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    copy,
+                    position,
+                    signer,
+                    f.verification,
+                    cert,
+                    f.signed_on,
+                    f.place.trim(),
+                    f.sketch
+                ],
             )?;
         }
         tx.commit()?;

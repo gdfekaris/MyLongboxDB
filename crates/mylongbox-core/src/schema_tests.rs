@@ -80,6 +80,11 @@ fn sample(conn: &Connection) -> Sample {
         "INSERT INTO edition_cover_artist (edition_id, creator_id) VALUES (?1, ?2)",
         &[&edition, &creator],
     );
+    exec(
+        "INSERT INTO signature (copy_id, position, creator_id, verification, place, sketch)
+         VALUES (?1, 1, ?2, 'cgc_ss', 'NYCC 2015', 1)",
+        &[&copy, &creator],
+    );
     let character = exec(
         "INSERT INTO character (uuid, name) VALUES (?1, 'Gwen Stacy')",
         &[&uuid(10)],
@@ -171,7 +176,7 @@ fn count(conn: &Connection, table: &str) -> i64 {
         "value_entry", "cover_photo", "creator", "creator_alias", "credit",
         "edition_cover_artist", "character", "character_alias", "issue_character", "team",
         "team_alias", "issue_team", "story_arc", "story_arc_alias", "issue_story_arc", "tag",
-        "copy_tag", "collects", "exchange_rate",
+        "copy_tag", "collects", "exchange_rate", "signature",
     );
     conn.query_row(sql, [], |row| row.get(0)).unwrap()
 }
@@ -449,6 +454,7 @@ fn emptying_trash_deletes_the_group_and_everything_beneath() {
         ("issue_team", 0),
         ("issue_story_arc", 0),
         ("copy_tag", 0),
+        ("signature", 0),
     ] {
         assert_eq!(count(conn, table), expected, "{table}");
     }

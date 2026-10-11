@@ -54,7 +54,7 @@ macro_rules! select_copy {
     ($rest:literal) => {
         concat!(
             "SELECT id, uuid, edition_id, trash_id, added_at, grade, grade_type,
-    cert_number, label_type, book_condition, dust_jacket_condition, signed_by,
+    cert_number, label_type, book_condition, dust_jacket_condition,
     purchase_price_units, purchase_price_currency, purchase_date, seller, box_id,
     box_position, notes FROM copy",
             " ",
@@ -305,9 +305,9 @@ impl Database {
         let f = clean_copy(fields, self.category_of_issue(parent.issue)?)?;
         self.conn.execute(
             "INSERT INTO copy (uuid, edition_id, grade, grade_type, cert_number, label_type,
-                 book_condition, dust_jacket_condition, signed_by, purchase_price_units,
+                 book_condition, dust_jacket_condition, purchase_price_units,
                  purchase_price_currency, purchase_date, seller, box_id, box_position, notes)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 RowUuid::new_random(),
                 edition,
@@ -317,7 +317,6 @@ impl Database {
                 f.label_type,
                 f.book_condition,
                 f.dust_jacket_condition,
-                f.signed_by,
                 f.purchase_price.map(Amount::units),
                 f.purchase_price.map(Amount::currency),
                 f.purchase_date,
@@ -347,9 +346,9 @@ impl Database {
         let f = clean_copy(fields, self.category_of_issue(issue)?)?;
         self.conn.execute(
             "UPDATE copy SET grade = ?2, grade_type = ?3, cert_number = ?4, label_type = ?5,
-                 book_condition = ?6, dust_jacket_condition = ?7, signed_by = ?8,
-                 purchase_price_units = ?9, purchase_price_currency = ?10, purchase_date = ?11,
-                 seller = ?12, box_id = ?13, box_position = ?14, notes = ?15
+                 book_condition = ?6, dust_jacket_condition = ?7,
+                 purchase_price_units = ?8, purchase_price_currency = ?9, purchase_date = ?10,
+                 seller = ?11, box_id = ?12, box_position = ?13, notes = ?14
              WHERE id = ?1",
             params![
                 id,
@@ -359,7 +358,6 @@ impl Database {
                 f.label_type,
                 f.book_condition,
                 f.dust_jacket_condition,
-                f.signed_by,
                 f.purchase_price.map(Amount::units),
                 f.purchase_price.map(Amount::currency),
                 f.purchase_date,
@@ -771,7 +769,6 @@ fn clean_copy(fields: &CopyFields, category: Category) -> Result<CopyFields> {
     let mut f = fields.clone();
     f.cert_number = optional_text(&f.cert_number);
     f.label_type = optional_text(&f.label_type);
-    f.signed_by = trimmed(&f.signed_by);
     f.seller = trimmed(&f.seller);
     let graded = f.grade.is_some()
         || f.grade_type.is_some()
@@ -971,13 +968,12 @@ fn copy_from_row(row: &Row<'_>) -> rusqlite::Result<Copy> {
             label_type: row.get(8)?,
             book_condition: row.get(9)?,
             dust_jacket_condition: row.get(10)?,
-            signed_by: row.get(11)?,
-            purchase_price: amount_at(row, 12, 13)?,
-            purchase_date: row.get(14)?,
-            seller: row.get(15)?,
-            storage_box: row.get(16)?,
-            box_position: row.get(17)?,
-            notes: row.get(18)?,
+            purchase_price: amount_at(row, 11, 12)?,
+            purchase_date: row.get(13)?,
+            seller: row.get(14)?,
+            storage_box: row.get(15)?,
+            box_position: row.get(16)?,
+            notes: row.get(17)?,
         },
     })
 }

@@ -21,8 +21,8 @@ pub enum Shelf {
     KeyIssues,
     Series(SeriesId),
     Publisher(PublisherId),
-    /// Credited on the issue, cover artist of the edition, or credited on
-    /// an issue the book reprints.
+    /// Credited on the issue, cover artist of the edition, signer of the
+    /// copy, or credited on an issue the book reprints.
     Creator(CreatorId),
     /// In the issue, or in an issue the book reprints; likewise for teams
     /// and story arcs.
@@ -80,6 +80,7 @@ pub struct CopyRow {
     /// The newest value entry, if any.
     pub value: Option<Amount>,
     pub is_key: bool,
+    pub signed: bool,
 }
 
 impl CopyRow {
@@ -160,7 +161,9 @@ macro_rules! shelf_pairs {
         concat!(
             linked_copies!("credit", "creator_id"),
             " UNION SELECT a.creator_id, c.id FROM edition_cover_artist a
-             JOIN copy c ON c.edition_id = a.edition_id WHERE +c.trash_id IS NULL"
+             JOIN copy c ON c.edition_id = a.edition_id WHERE +c.trash_id IS NULL
+             UNION SELECT s.creator_id, c.id FROM signature s
+             JOIN copy c ON c.id = s.copy_id WHERE +c.trash_id IS NULL"
         )
     };
     (character) => {
@@ -212,7 +215,8 @@ macro_rules! copy_rows {
                   ORDER BY v.date DESC, v.id DESC LIMIT 1),
                  (SELECT value_currency FROM value_entry v WHERE v.copy_id = c.id
                   ORDER BY v.date DESC, v.id DESC LIMIT 1),
-                 i.is_key
+                 i.is_key,
+                 EXISTS (SELECT 1 FROM signature g WHERE g.copy_id = c.id)
              FROM ",
             live_copies!(),
             " AND ",
@@ -334,5 +338,6 @@ fn copy_row(row: &Row<'_>) -> rusqlite::Result<CopyRow> {
         box_position: row.get(16)?,
         value: amount_at(row, 17, 18)?,
         is_key: row.get(19)?,
+        signed: row.get(20)?,
     })
 }

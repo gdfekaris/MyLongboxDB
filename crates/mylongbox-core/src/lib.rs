@@ -49,14 +49,14 @@ pub use detail::{CopyDetail, EditionDetail, IssueDetail, ValueEntry};
 pub use entry::{BookEntry, Prefill, SavedBook, SeriesChoice};
 pub use error::{Error, Result};
 pub use issue_number::{IssueNumber, IssueNumberError};
-pub use links::{Appearance, ArcPart, Credit, Named};
+pub use links::{Appearance, ArcPart, Credit, Named, Signature};
 pub use lookup::{Lookup, LookupId};
 pub use merge_series::SeriesMerge;
 pub use model::{
     Binding, BookCondition, BoxId, Category, CharacterId, Copy, CopyFields, CopyId, CoverDate,
     CreatorId, Distribution, Edition, EditionFields, EditionId, Grade, GradeType, Isbn, Issue,
     IssueFields, IssueId, MagazineFormat, PublisherId, Role, RowUuid, Series, SeriesFields,
-    SeriesId, StoryArcId, TagId, TeamId, TrashGroup, TrashId,
+    SeriesId, SignatureFields, StoryArcId, TagId, TeamId, TrashGroup, TrashId, Verification,
 };
 pub use money::{
     Amount, ConversionError, Currency, ExchangeRate, ParseAmountError, RateError, RateTable,

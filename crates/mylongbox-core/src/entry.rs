@@ -13,8 +13,8 @@ use crate::issue_number::IssueNumber;
 use crate::lookup::LookupId;
 use crate::model::{
     BoxId, Category, CharacterId, CopyFields, CopyId, CreatorId, EditionFields, EditionId,
-    IssueFields, IssueId, MagazineFormat, PublisherId, Role, SeriesFields, SeriesId, StoryArcId,
-    TagId, TeamId,
+    IssueFields, IssueId, MagazineFormat, PublisherId, Role, SeriesFields, SeriesId,
+    SignatureFields, StoryArcId, TagId, TeamId,
 };
 
 /// The series a book belongs to: one picked from the list, or one typed
@@ -55,6 +55,8 @@ pub struct BookEntry {
     pub copy: CopyFields,
     pub storage_box: Option<String>,
     pub tags: Vec<String>,
+    /// Signer's name and the signature's details, in the order signed.
+    pub signatures: Vec<(String, SignatureFields)>,
     /// For a collected edition, the issues it reprints in the form
     /// `parse_collects` reads, such as `Amazing Spider-Man (1963) 1-10`.
     /// Empty for none.
@@ -76,6 +78,7 @@ impl BookEntry {
             copy: CopyFields::default(),
             storage_box: None,
             tags: Vec::new(),
+            signatures: Vec::new(),
             collects: String::new(),
         }
     }
@@ -147,6 +150,7 @@ impl Database {
         };
         let copy = self.create_copy(edition, &self.copy_fields(entry)?)?;
         self.set_tags(copy, &self.names::<TagId>(&entry.tags)?)?;
+        self.set_signatures(copy, &self.signatures_of(entry)?)?;
         if !entry.collects.trim().is_empty() {
             self.set_collects(issue, &entry.collects)?;
         }
@@ -186,6 +190,7 @@ impl Database {
         self.set_cover_artists(edition, &self.names::<CreatorId>(&entry.cover_artists)?)?;
         self.update_copy(copy, &self.copy_fields(entry)?)?;
         self.set_tags(copy, &self.names::<TagId>(&entry.tags)?)?;
+        self.set_signatures(copy, &self.signatures_of(entry)?)?;
         tx.commit()?;
         Ok(SavedBook {
             series,
@@ -237,6 +242,11 @@ impl Database {
                 .map(|b| self.lookup::<BoxId>(b).map(|l| l.name))
                 .transpose()?,
             tags: self.tags(copy)?.into_iter().map(|t| t.name).collect(),
+            signatures: self
+                .signatures(copy)?
+                .into_iter()
+                .map(|s| (s.name, s.fields))
+                .collect(),
             collects: if series.fields.category == Category::CollectedEdition {
                 self.collects_text(issue.id)?
             } else {
@@ -261,6 +271,8 @@ impl Database {
         let mut e = self.book_entry(copy)?;
         let next_position = e.copy.box_position.and_then(|p| p.checked_add(1));
         let blank_copy = CopyFields::default();
+        // Signatures belong to one physical copy.
+        e.signatures.clear();
         match kind {
             Prefill::NextIssue => {
                 let mut issue = IssueFields::new(e.issue.number.as_ref().and_then(|n| n.next()));
@@ -473,6 +485,15 @@ impl Database {
             .iter()
             .filter(|(name, _)| !name.trim().is_empty())
             .map(|(name, role)| Ok((self.name::<CreatorId>(name)?, *role)))
+            .collect()
+    }
+
+    fn signatures_of(&self, entry: &BookEntry) -> Result<Vec<(CreatorId, SignatureFields)>> {
+        entry
+            .signatures
+            .iter()
+            .filter(|(name, _)| !name.trim().is_empty())
+            .map(|(name, fields)| Ok((self.name::<CreatorId>(name)?, fields.clone())))
             .collect()
     }
 

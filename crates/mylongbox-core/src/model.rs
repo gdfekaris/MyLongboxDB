@@ -154,6 +154,51 @@ code_enum! {
 }
 
 code_enum! {
+    /// How a signature is known to be genuine.
+    pub enum Verification {
+        /// No proof beyond the signature itself.
+        Unverified = "unverified",
+        /// The owner saw it signed.
+        Witnessed = "witnessed",
+        /// A certificate of authenticity from an issuer other than JSA.
+        Certificate = "coa",
+        /// A JSA letter or sticker on a book that is not slabbed.
+        Jsa = "jsa",
+        /// CGC Signature Series: signed in front of a CGC witness.
+        CgcSignatureSeries = "cgc_ss",
+        /// CGC Signature Verified: authenticated through JSA and slabbed.
+        CgcJsa = "cgc_jsa",
+        CbcsVerified = "cbcs",
+        PgxVerified = "pgx",
+    }
+}
+
+/// One signature on a copy, apart from who signed it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SignatureFields {
+    pub verification: Verification,
+    /// The number of its certificate, when it has one.
+    pub cert_number: Option<String>,
+    pub signed_on: Option<Date>,
+    /// Where it was signed, e.g. `NYCC 2015`.
+    pub place: String,
+    /// A sketch (remark) drawn with the signature.
+    pub sketch: bool,
+}
+
+impl SignatureFields {
+    pub fn new(verification: Verification) -> Self {
+        Self {
+            verification,
+            cert_number: None,
+            signed_on: None,
+            place: String::new(),
+            sketch: false,
+        }
+    }
+}
+
+code_enum! {
     /// Condition of a collected edition, or of its dust jacket.
     pub enum BookCondition {
         Sealed = "sealed",
@@ -484,7 +529,6 @@ pub struct CopyFields {
     pub book_condition: Option<BookCondition>,
     /// Collected editions only.
     pub dust_jacket_condition: Option<BookCondition>,
-    pub signed_by: String,
     pub purchase_price: Option<Amount>,
     pub purchase_date: Option<Date>,
     pub seller: String,

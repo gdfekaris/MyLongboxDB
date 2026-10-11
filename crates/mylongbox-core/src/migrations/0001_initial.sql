@@ -126,7 +126,6 @@ CREATE TABLE copy (
         ('sealed', 'new', 'like_new', 'very_good', 'good', 'fair', 'poor')),
     dust_jacket_condition TEXT CHECK (dust_jacket_condition IN
         ('sealed', 'new', 'like_new', 'very_good', 'good', 'fair', 'poor')),
-    signed_by TEXT NOT NULL DEFAULT '',
     purchase_price_units INTEGER CHECK (purchase_price_units >= 0),
     purchase_price_currency TEXT CHECK (purchase_price_currency IN ('USD', 'XAU', 'BTC')),
     purchase_date TEXT CHECK (purchase_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
@@ -146,6 +145,32 @@ CREATE INDEX copy_trash ON copy (trash_id);
 CREATE INDEX copy_grade ON copy (grade);
 CREATE INDEX copy_purchase_date ON copy (purchase_date);
 CREATE INDEX copy_added_at ON copy (added_at);
+
+-- Each signature on a copy, in the order signed. A signer is a creator,
+-- so alternate names match and a creator's shelf includes what they
+-- signed; the same person may sign one copy more than once.
+CREATE TABLE signature (
+    copy_id INTEGER NOT NULL REFERENCES copy (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL CHECK (position >= 1),
+    creator_id INTEGER NOT NULL REFERENCES creator (id) ON DELETE RESTRICT,
+    -- How the signature is known to be genuine: 'unverified', 'witnessed'
+    -- (by the owner), 'coa' (another issuer's certificate), 'jsa' (a JSA
+    -- letter or sticker on a raw book), 'cgc_ss' (CGC Signature Series),
+    -- 'cgc_jsa' (CGC Signature Verified through JSA), 'cbcs' (CBCS
+    -- Verified Signature), 'pgx' (PGX Signature Verified).
+    verification TEXT NOT NULL CHECK (verification IN
+        ('unverified', 'witnessed', 'coa', 'jsa', 'cgc_ss', 'cgc_jsa', 'cbcs', 'pgx')),
+    -- A certificate's number, when it has one.
+    cert_number TEXT CHECK (cert_number <> ''),
+    signed_on TEXT CHECK (signed_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+    -- Where it was signed, e.g. "NYCC 2015".
+    place TEXT NOT NULL DEFAULT '',
+    -- A sketch (remark) drawn with the signature.
+    sketch INTEGER NOT NULL DEFAULT 0 CHECK (sketch IN (0, 1)),
+    PRIMARY KEY (copy_id, position)
+) STRICT;
+
+CREATE INDEX signature_creator ON signature (creator_id);
 
 CREATE TABLE value_entry (
     id INTEGER PRIMARY KEY,

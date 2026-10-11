@@ -8,7 +8,7 @@ use crate::collects::{CollectedIn, CollectedIssue, Ownership};
 use crate::date::Date;
 use crate::db::Database;
 use crate::error::Result;
-use crate::links::{Appearance, ArcPart, Credit, Named};
+use crate::links::{Appearance, ArcPart, Credit, Named, Signature};
 use crate::model::{
     BoxId, CharacterId, Copy, CopyId, CreatorId, Edition, Issue, IssueId, PublisherId, Series,
     TagId, TeamId,
@@ -29,6 +29,8 @@ pub struct CopyDetail {
     pub copy: Copy,
     pub storage_box: Option<String>,
     pub tags: Vec<Named<TagId>>,
+    /// In the order signed.
+    pub signatures: Vec<Signature>,
     /// The newest value entry, if any.
     pub value: Option<ValueEntry>,
 }
@@ -118,6 +120,7 @@ impl Database {
         Ok(CopyDetail {
             storage_box,
             tags: self.tags(copy.id)?,
+            signatures: self.signatures(copy.id)?,
             value: self.latest_value(copy.id)?,
             copy,
         })

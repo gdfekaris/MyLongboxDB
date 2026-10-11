@@ -296,6 +296,16 @@ pub(crate) fn generate(db: &Database, spec: FixtureSpec) -> Result<FixtureSummar
                     if rng.chance(10) {
                         db.set_tags(copy, &[*rng.pick(&tags)])?;
                     }
+                    if rng.chance(6) {
+                        let signatures: Vec<_> = (0..=rng.below(3))
+                            .map(|_| {
+                                let mut f = SignatureFields::new(*rng.pick(Verification::ALL));
+                                f.sketch = rng.chance(10);
+                                (*rng.pick(&creators), f)
+                            })
+                            .collect();
+                        db.set_signatures(copy, &signatures)?;
+                    }
                     if rng.chance(80) {
                         add_values(db, &mut rng, copy)?;
                     }
@@ -431,9 +441,6 @@ fn copy_fields(
         *fill += 1;
         f.storage_box = Some(storage_box);
         f.box_position = Some(*fill);
-    }
-    if rng.chance(5) {
-        f.signed_by = format!("{} {}", rng.pick(FIRST_NAMES), rng.pick(LAST_NAMES));
     }
     f
 }
@@ -597,6 +604,7 @@ mod tests {
                 "SELECT count(*) FROM issue_character WHERE first_appearance = 1",
             ),
             ("tags", "SELECT count(*) FROM copy_tag"),
+            ("signatures", "SELECT count(*) FROM signature"),
             (
                 "accented names",
                 "SELECT count(*) FROM creator WHERE name LIKE 'Zo%' OR name LIKE '%sa %'",

@@ -2,6 +2,7 @@
 
 use mylongbox_core::{
     Binding, BookCondition, CoverDate, Date, Distribution, Grade, GradeType, MagazineFormat, Role,
+    Verification,
 };
 
 const MONTHS: [&str; 12] = [
@@ -30,6 +31,19 @@ pub fn condition(condition: BookCondition) -> &'static str {
         BookCondition::Good => "Good",
         BookCondition::Fair => "Fair",
         BookCondition::Poor => "Poor",
+    }
+}
+
+pub fn verification(verification: Verification) -> &'static str {
+    match verification {
+        Verification::Unverified => "Unverified",
+        Verification::Witnessed => "Witnessed by me",
+        Verification::Certificate => "Certificate of authenticity",
+        Verification::Jsa => "JSA authenticated",
+        Verification::CgcSignatureSeries => "CGC Signature Series",
+        Verification::CgcJsa => "CGC Signature Verified (JSA)",
+        Verification::CbcsVerified => "CBCS Verified Signature",
+        Verification::PgxVerified => "PGX Signature Verified",
     }
 }
 

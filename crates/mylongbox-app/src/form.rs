@@ -9,7 +9,8 @@ use gtk::glib;
 use mylongbox_core::{
     Amount, Binding, BookCondition, BookEntry, BoxId, Category, CharacterId, CopyId, CreatorId,
     Currency, Database, Distribution, Grade, GradeType, Isbn, IssueNumber, LookupId,
-    MagazineFormat, PublisherId, Role, SeriesChoice, SeriesId, StoryArcId, TagId, TeamId,
+    MagazineFormat, PublisherId, Role, SeriesChoice, SeriesId, SignatureFields, StoryArcId, TagId,
+    TeamId, Verification,
 };
 
 use crate::{autocomplete, format};
@@ -99,7 +100,7 @@ pub struct Form {
     grade_type: adw::ComboRow,
     cert_number: adw::EntryRow,
     label_type: adw::EntryRow,
-    signed_by: adw::EntryRow,
+    signatures: SignatureList,
     purchase_price: MoneyRow,
     purchase_date: adw::EntryRow,
     seller: adw::EntryRow,
@@ -414,7 +415,6 @@ impl Form {
         let grade_type = combo_row("Graded By", GRADE_TYPES.map(|(name, _)| name));
         let cert_number = entry_row("Certificate Number");
         let label_type = entry_row("Label");
-        let signed_by = entry_row("Signed By");
         let purchase_price = MoneyRow::new("Purchase Price");
         let purchase_date = entry_row("Purchase Date (YYYY-MM-DD)");
         let seller = entry_row("Bought From");
@@ -432,7 +432,6 @@ impl Form {
             copy.append(&cert_number);
             copy.append(&label_type);
         }
-        copy.append(&signed_by);
         copy.append(&purchase_price.row);
         for row in [&purchase_date, &seller, &storage_box, &box_position] {
             copy.append(row);
@@ -446,6 +445,18 @@ impl Form {
         );
         let notes = text_view();
         copy.append(&text_row("Notes", &notes));
+
+        let signed = entry.is_some_and(|e| !e.signatures.is_empty());
+        let signatures = SignatureList::new(
+            &section(
+                &prefs,
+                "Signatures",
+                Some("Each signature on this copy, in the order signed"),
+                signed,
+            ),
+            completion::<CreatorId>(&db),
+            &dirty,
+        );
 
         // Joining an issue already listed --------------------------------
         if target.is_none() {
@@ -567,7 +578,7 @@ impl Form {
             grade_type,
             cert_number,
             label_type,
-            signed_by,
+            signatures,
             purchase_price,
             purchase_date,
             seller,
@@ -635,7 +646,6 @@ impl Form {
             &self.grade,
             &self.cert_number,
             &self.label_type,
-            &self.signed_by,
             &self.purchase_date,
             &self.seller,
             &self.storage_box,
@@ -734,7 +744,9 @@ impl Form {
             .set_text(c.cert_number.as_deref().unwrap_or(""));
         self.label_type
             .set_text(c.label_type.as_deref().unwrap_or(""));
-        self.signed_by.set_text(&c.signed_by);
+        for (name, fields) in &e.signatures {
+            self.signatures.add(name, fields);
+        }
         self.purchase_price.set(c.purchase_price);
         self.purchase_date
             .set_text(&c.purchase_date.map(|d| d.to_string()).unwrap_or_default());
@@ -894,7 +906,6 @@ impl Form {
                 Some(self.cert_number.text().trim().to_owned()).filter(|t| !t.is_empty());
             c.label_type = Some(self.label_type.text().trim().to_owned()).filter(|t| !t.is_empty());
         }
-        c.signed_by = self.signed_by.text().trim().to_owned();
         c.purchase_price = self.purchase_price.amount()?;
         c.purchase_date = date(&self.purchase_date)?;
         c.seller = self.seller.text().trim().to_owned();
@@ -905,6 +916,7 @@ impl Form {
         }
         c.notes = text(&self.notes);
         e.tags = self.tags.values().into_iter().map(|v| v.name).collect();
+        e.signatures = self.signatures.values()?;
         Ok(e)
     }
 
@@ -1295,6 +1307,179 @@ impl MoneyRow {
             Ok(amount) => Ok(Some(amount)),
             Err(why) => invalid(&self.row, &capitalized(&why.to_string())),
         }
+    }
+}
+
+/// The ways a signature can be verified, in the order offered.
+const VERIFICATIONS: [(&str, Verification); 8] = [
+    ("Unverified", Verification::Unverified),
+    ("Witnessed by me", Verification::Witnessed),
+    ("Certificate of authenticity", Verification::Certificate),
+    ("JSA authenticated", Verification::Jsa),
+    ("CGC Signature Series", Verification::CgcSignatureSeries),
+    ("CGC Signature Verified (JSA)", Verification::CgcJsa),
+    ("CBCS Verified Signature", Verification::CbcsVerified),
+    ("PGX Signature Verified", Verification::PgxVerified),
+];
+
+/// One signature in the form: who signed, how it is verified, and its
+/// details folded away beneath.
+struct SignatureRow {
+    name: adw::EntryRow,
+    verification: gtk::DropDown,
+    details: adw::ExpanderRow,
+    cert: adw::EntryRow,
+    date: adw::EntryRow,
+    place: adw::EntryRow,
+    sketch: adw::SwitchRow,
+}
+
+/// Signatures that can be added and removed.
+#[derive(Clone)]
+struct SignatureList {
+    list: gtk::ListBox,
+    /// Signatures go in above this row.
+    add_button: adw::ButtonRow,
+    rows: Rc<RefCell<Vec<SignatureRow>>>,
+    suggest: Suggest,
+    dirty: Dirty,
+}
+
+impl SignatureList {
+    fn new(list: &gtk::ListBox, suggest: Suggest, dirty: &Dirty) -> Self {
+        let add_button = adw::ButtonRow::builder()
+            .title("Add Signature")
+            .start_icon_name("list-add-symbolic")
+            .build();
+        list.append(&add_button);
+        let signatures = Self {
+            list: list.clone(),
+            add_button: add_button.clone(),
+            rows: Rc::default(),
+            suggest,
+            dirty: dirty.clone(),
+        };
+        {
+            let signatures = signatures.clone();
+            add_button.connect_activated(move |_| {
+                let row = signatures.add("", &SignatureFields::new(Verification::Unverified));
+                row.grab_focus();
+                signatures.dirty.mark();
+            });
+        }
+        signatures
+    }
+
+    fn add(&self, name: &str, f: &SignatureFields) -> adw::EntryRow {
+        let row = entry_row("Signed By");
+        row.set_text(name);
+        let suggest = self.suggest.clone();
+        autocomplete::attach(&row, move |text| suggest(text), |_| {});
+        self.dirty.watch(&row);
+
+        let names: Vec<&str> = VERIFICATIONS.iter().map(|(name, _)| *name).collect();
+        let verification = gtk::DropDown::from_strings(&names);
+        verification.set_valign(gtk::Align::Center);
+        verification.set_tooltip_text(Some("How It Is Verified"));
+        let index = VERIFICATIONS
+            .iter()
+            .position(|(_, v)| *v == f.verification)
+            .unwrap_or(0);
+        verification.set_selected(u32::try_from(index).unwrap_or(0));
+        {
+            let d = self.dirty.clone();
+            verification.connect_selected_notify(move |_| d.mark());
+        }
+        row.add_suffix(&verification);
+
+        let details = adw::ExpanderRow::builder()
+            .title("Details")
+            .subtitle("Certificate, date, place, sketch")
+            .build();
+        let cert = entry_row("Certificate Number");
+        cert.set_text(f.cert_number.as_deref().unwrap_or(""));
+        let date = entry_row("Date Signed (YYYY-MM-DD)");
+        date.set_text(&f.signed_on.map(|d| d.to_string()).unwrap_or_default());
+        let place = entry_row("Where (e.g. NYCC 2015)");
+        place.set_text(&f.place);
+        let sketch = adw::SwitchRow::builder()
+            .title("With a Sketch")
+            .active(f.sketch)
+            .build();
+        for field in [&cert, &date, &place] {
+            self.dirty.watch(field);
+            details.add_row(field);
+        }
+        {
+            let d = self.dirty.clone();
+            sketch.connect_active_notify(move |_| d.mark());
+        }
+        details.add_row(&sketch);
+
+        let remove = gtk::Button::builder()
+            .icon_name("user-trash-symbolic")
+            .valign(gtk::Align::Center)
+            .tooltip_text("Remove Signature")
+            .css_classes(["flat"])
+            .build();
+        {
+            let signatures = self.clone();
+            let row = row.clone();
+            let details = details.clone();
+            remove.connect_clicked(move |_| {
+                signatures.list.remove(&row);
+                signatures.list.remove(&details);
+                signatures.rows.borrow_mut().retain(|r| r.name != row);
+                signatures.dirty.mark();
+            });
+        }
+        row.add_suffix(&remove);
+
+        let at = self.add_button.index();
+        self.list.insert(&row, at);
+        self.list.insert(&details, at + 1);
+        self.rows.borrow_mut().push(SignatureRow {
+            name: row.clone(),
+            verification,
+            details,
+            cert,
+            date,
+            place,
+            sketch,
+        });
+        row
+    }
+
+    fn values(&self) -> Check<Vec<(String, SignatureFields)>> {
+        let mut values = Vec::new();
+        for r in self.rows.borrow().iter() {
+            let name = r.name.text().trim().to_owned();
+            if name.is_empty() {
+                continue;
+            }
+            let signed_on = match date(&r.date) {
+                Ok(date) => date,
+                Err(why) => {
+                    // The field is folded away; show it before pointing at it.
+                    r.details.set_expanded(true);
+                    return Err(why);
+                }
+            };
+            let index = usize::try_from(r.verification.selected()).unwrap_or(0);
+            values.push((
+                name,
+                SignatureFields {
+                    verification: VERIFICATIONS
+                        .get(index)
+                        .map_or(Verification::Unverified, |v| v.1),
+                    cert_number: Some(r.cert.text().trim().to_owned()).filter(|c| !c.is_empty()),
+                    signed_on,
+                    place: r.place.text().trim().to_owned(),
+                    sketch: r.sketch.is_active(),
+                },
+            ));
+        }
+        Ok(values)
     }
 }
 

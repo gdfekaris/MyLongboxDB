@@ -391,7 +391,15 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
         .unwrap_or_default();
 
     let row = expander(
-        &format!("Copy {number} · {condition}"),
+        &format::joined([
+            format!("Copy {number}"),
+            condition,
+            match c.signatures.len() {
+                0 => String::new(),
+                1 => "Signed".to_owned(),
+                n => format!("{n} signatures"),
+            },
+        ]),
         &format::joined([location.as_str(), value.as_str()]),
     );
     let edit = gtk::Button::builder()
@@ -427,7 +435,26 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
             .unwrap_or_default()
             .to_owned(),
     );
-    add("Signed By", f.signed_by.clone());
+    for s in &c.signatures {
+        let sf = &s.fields;
+        add(
+            format::verification(sf.verification),
+            format::joined([
+                format!("Signed by {}", s.name),
+                if sf.sketch {
+                    "with a sketch".to_owned()
+                } else {
+                    String::new()
+                },
+                sf.place.clone(),
+                sf.signed_on.map(format::date).unwrap_or_default(),
+                sf.cert_number
+                    .as_ref()
+                    .map(|n| format!("Certificate {n}"))
+                    .unwrap_or_default(),
+            ]),
+        );
+    }
     add("Location", location.clone());
     add(
         "Purchased",

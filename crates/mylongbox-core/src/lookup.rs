@@ -177,7 +177,8 @@ lookup_id!(
         noun: "creator",
         table: "creator",
         usage: "SELECT (SELECT count(*) FROM credit WHERE creator_id = ?1)
-                    + (SELECT count(*) FROM edition_cover_artist WHERE creator_id = ?1)",
+                    + (SELECT count(*) FROM edition_cover_artist WHERE creator_id = ?1)
+                    + (SELECT count(*) FROM signature WHERE creator_id = ?1)",
         aliases: ("creator_alias", "creator_id"),
         merge: [
             "INSERT INTO credit (issue_id, creator_id, role)
@@ -190,6 +191,7 @@ lookup_id!(
                  AND NOT EXISTS (SELECT 1 FROM edition_cover_artist
                      WHERE edition_id = old.edition_id AND creator_id = ?2)",
             "DELETE FROM edition_cover_artist WHERE creator_id = ?1",
+            "UPDATE signature SET creator_id = ?2 WHERE creator_id = ?1",
             "INSERT INTO creator_alias (creator_id, alias)
              SELECT ?2, moved FROM (
                  SELECT alias AS moved FROM creator_alias WHERE creator_id = ?1
