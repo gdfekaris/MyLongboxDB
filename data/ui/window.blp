@@ -171,6 +171,12 @@ template $MainWindow: Adw.ApplicationWindow {
                     }
 
                     StackPage {
+                      name: "custom";
+
+                      child: Adw.Bin custom_bin {};
+                    }
+
+                    StackPage {
                       name: "empty";
 
                       child: Adw.StatusPage empty_page {

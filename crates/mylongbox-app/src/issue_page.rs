@@ -6,7 +6,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
-    Category, CopyDetail, CopyId, Date, EditionDetail, IssueDetail, IssueId, MagazineFormat,
+    Category, CopyDetail, CopyId, EditionDetail, EditionId, IssueDetail, IssueId, MagazineFormat,
     Prefill, Role, format_collects,
 };
 
@@ -21,6 +21,9 @@ pub struct Links {
     pub edit: Rc<dyn Fn(CopyId)>,
     /// Starts a new book from a copy.
     pub prefill: Rc<dyn Fn(CopyId, Prefill)>,
+    pub trash_copy: Rc<dyn Fn(CopyId)>,
+    pub trash_edition: Rc<dyn Fn(EditionId)>,
+    pub trash_issue: Rc<dyn Fn(IssueId)>,
 }
 
 pub fn page(d: &IssueDetail, links: &Links) -> adw::NavigationPage {
@@ -74,8 +77,10 @@ pub fn page(d: &IssueDetail, links: &Links) -> adw::NavigationPage {
         prefs.add(&edition_group(edition, n, category, links));
     }
 
+    let header = adw::HeaderBar::new();
     let toolbar = adw::ToolbarView::new();
-    toolbar.add_top_bar(&adw::HeaderBar::new());
+    header.pack_end(&issue_menu(&toolbar, d.issue.id, links));
+    toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&prefs));
     adw::NavigationPage::builder()
         .title(&d.label)
@@ -345,6 +350,18 @@ fn edition_group(
     header.set_use_markup(true);
     header.set_title(&format!("<b>{}</b>", glib::markup_escape_text(&name)));
     header.set_subtitle(&glib::markup_escape_text(&facts));
+    let trash = gtk::Button::builder()
+        .icon_name("user-trash-symbolic")
+        .valign(gtk::Align::Center)
+        .tooltip_text("Move Edition to Trash")
+        .css_classes(["flat"])
+        .build();
+    {
+        let hook = links.trash_edition.clone();
+        let edition = e.edition.id;
+        trash.connect_clicked(move |_| hook(edition));
+    }
+    header.add_suffix(&trash);
     group.add(&header);
     if !artists.is_empty() {
         group.add(&property("Cover Art", &artists.join(", ")));
@@ -488,11 +505,32 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
     add("Notes", f.notes.clone());
     add(
         "Added",
-        local_date(&c.copy.added_at)
+        format::local_date(&c.copy.added_at)
             .map(format::date)
             .unwrap_or_default(),
     );
     row
+}
+
+/// The page's own menu, for the issue as a whole. Its actions belong to
+/// `page`, which holds both the header and the content, since a menu
+/// finds actions only on the widgets around it.
+fn issue_menu(page: &adw::ToolbarView, issue: IssueId, links: &Links) -> gtk::MenuButton {
+    let actions = gio::SimpleActionGroup::new();
+    let trash = gio::SimpleAction::new("trash", None);
+    {
+        let hook = links.trash_issue.clone();
+        trash.connect_activate(move |_, _| hook(issue));
+    }
+    actions.add_action(&trash);
+    page.insert_action_group("issue", Some(&actions));
+    let menu = gio::Menu::new();
+    menu.append(Some("Move Issue to _Trash"), Some("issue.trash"));
+    gtk::MenuButton::builder()
+        .icon_name("view-more-symbolic")
+        .tooltip_text("Issue Menu")
+        .menu_model(&menu)
+        .build()
 }
 
 /// The ways to start a new book from this copy, as a menu of actions
@@ -520,6 +558,15 @@ fn more_menu(
         actions.add_action(&action);
         menu.append(Some(label), Some(&format!("copy.{name}")));
     }
+    let trash = gio::SimpleAction::new("trash", None);
+    {
+        let hook = links.trash_copy.clone();
+        trash.connect_activate(move |_, _| hook(copy));
+    }
+    actions.add_action(&trash);
+    let last = gio::Menu::new();
+    last.append(Some("Move to _Trash"), Some("copy.trash"));
+    menu.append_section(None, &last);
     row.insert_action_group("copy", Some(&actions));
     gtk::MenuButton::builder()
         .icon_name("view-more-symbolic")
@@ -528,34 +575,4 @@ fn more_menu(
         .css_classes(["flat"])
         .menu_model(&menu)
         .build()
-}
-
-/// The local calendar date of a stored UTC timestamp, so a book added
-/// late in the evening is not shown as added tomorrow.
-fn local_date(timestamp: &str) -> Option<Date> {
-    let local = glib::DateTime::from_iso8601(timestamp, None)
-        .and_then(|t| t.to_local())
-        .ok()?;
-    Date::new(
-        u16::try_from(local.year()).ok()?,
-        u8::try_from(local.month()).ok()?,
-        u8::try_from(local.day_of_month()).ok()?,
-    )
-    .ok()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn timestamps_become_local_dates() {
-        // The exact day depends on the machine's time zone, but a stored
-        // timestamp always lands within a day of its UTC date.
-        let date = local_date("2026-10-11T03:00:00Z").unwrap();
-        let utc = Date::new(2026, 10, 11).unwrap();
-        assert!(date.days_until(utc).abs() <= 1, "{date}");
-        assert_eq!(local_date("yesterday"), None);
-        assert_eq!(local_date(""), None);
-    }
 }

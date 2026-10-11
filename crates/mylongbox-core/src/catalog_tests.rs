@@ -586,3 +586,37 @@ fn a_reprint_is_named_even_when_trashed_before_its_series() {
         Err(Error::StillReprinted { issue, .. }) if issue == "Amazing Spider-Man (1963) #1"
     ));
 }
+
+#[test]
+fn trash_names_copies_and_editions_apart_from_their_issue() {
+    let db = db();
+    let series = comic_series(&db, "X-Men");
+    let (issue, edition, copy) = comic(&db, series, "1");
+    let variant = db
+        .create_edition(
+            issue,
+            &EditionFields {
+                variant: "Cover B".into(),
+                ..EditionFields::default()
+            },
+        )
+        .unwrap();
+    db.trash_copy(copy).unwrap();
+    db.trash_edition(edition).unwrap();
+    db.trash_edition(variant).unwrap();
+    let mut labels: Vec<_> = db
+        .trash_groups()
+        .unwrap()
+        .into_iter()
+        .map(|g| g.label)
+        .collect();
+    labels.sort();
+    assert_eq!(
+        labels,
+        [
+            "Copy of X-Men (1963) #1",
+            "X-Men (1963) #1 (Cover B)",
+            "X-Men (1963) #1, standard edition",
+        ]
+    );
+}

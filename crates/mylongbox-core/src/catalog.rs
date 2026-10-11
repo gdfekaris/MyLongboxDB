@@ -459,7 +459,11 @@ impl Database {
         let tx = self.tx()?;
         let copy = self.copy(id)?;
         live(copy.trash)?;
-        let label = self.edition_label(&self.edition(copy.edition)?)?;
+        // Named apart from its issue and edition, which Trash may also hold.
+        let label = format!(
+            "Copy of {}",
+            self.issue_and_variant(&self.edition(copy.edition)?)?
+        );
         let trash = new_trash_group(&tx, &label)?;
         tx.execute(
             "UPDATE copy SET trash_id = ?1 WHERE id = ?2",
@@ -611,7 +615,20 @@ impl Database {
         Ok(self.series(self.issue(issue)?.series)?.fields.category)
     }
 
+    /// e.g. `X-Men (1963) #1, standard edition`, so Trash tells an
+    /// edition apart from its issue.
     fn edition_label(&self, edition: &Edition) -> Result<String> {
+        let label = self.issue_and_variant(edition)?;
+        Ok(if edition.fields.variant.is_empty() {
+            format!("{label}, standard edition")
+        } else {
+            label
+        })
+    }
+
+    /// e.g. `X-Men (1963) #1 (Cover B)`, or just the issue for the
+    /// standard cover.
+    fn issue_and_variant(&self, edition: &Edition) -> Result<String> {
         let issue = self.issue(edition.issue)?;
         let label = issue_label(&self.series(issue.series)?, &issue);
         Ok(if edition.fields.variant.is_empty() {

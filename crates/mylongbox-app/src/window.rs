@@ -44,6 +44,8 @@ mod imp {
         pub names_scroller: TemplateChild<gtk::ScrolledWindow>,
         #[template_child]
         pub empty_page: TemplateChild<adw::StatusPage>,
+        #[template_child]
+        pub custom_bin: TemplateChild<adw::Bin>,
     }
 
     #[glib::object_subclass]
@@ -94,6 +96,16 @@ impl MainWindow {
         let toast = adw::Toast::new("");
         toast.set_use_markup(false);
         toast.set_title(&message);
+        self.imp().toast_overlay.add_toast(toast);
+    }
+
+    /// A message with an Undo button that calls `undo`.
+    pub fn toast_undo(&self, message: &str, undo: impl Fn() + 'static) {
+        let toast = adw::Toast::new("");
+        toast.set_use_markup(false);
+        toast.set_title(message);
+        toast.set_button_label(Some("_Undo"));
+        toast.connect_button_clicked(move |_| undo());
         self.imp().toast_overlay.add_toast(toast);
     }
 
@@ -174,6 +186,14 @@ impl MainWindow {
             self.imp().content_stack.visible_child_name().as_deref(),
             Some("grid" | "list")
         )
+    }
+
+    /// Shows a view built for the section, such as Trash.
+    pub fn show_custom(&self, view: &impl IsA<gtk::Widget>) {
+        let imp = self.imp();
+        imp.view_toggle.set_visible(false);
+        imp.custom_bin.set_child(Some(view));
+        imp.content_stack.set_visible_child_name("custom");
     }
 
     pub fn show_names(&self) {

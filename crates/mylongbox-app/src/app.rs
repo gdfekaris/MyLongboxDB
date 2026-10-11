@@ -4,8 +4,8 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
-    Category, CollectionInfo, CollectionStore, CopyId, Database, IssueId, Prefill, Shelf,
-    ShelfEntry, ShelfList,
+    Category, CollectionInfo, CollectionStore, CopyId, Database, EditionId, IssueId, Prefill,
+    Shelf, ShelfEntry, ShelfList, TrashId,
 };
 use relm4::typed_view::column::TypedColumnView;
 use relm4::typed_view::grid::TypedGridView;
@@ -15,6 +15,7 @@ use relm4::{Component, ComponentParts, ComponentSender};
 use crate::books::{self, Book, Name};
 use crate::form::{Focus, Form, Hooks};
 use crate::issue_page::{self, Links};
+use crate::trash_page;
 use crate::window::MainWindow;
 
 /// What a sidebar section shows.
@@ -24,6 +25,7 @@ enum Content {
     Books(Shelf, &'static str, &'static str),
     /// A list of names, each leading to its books.
     Names(ShelfList, &'static str, &'static str),
+    Trash,
     NotYet,
 }
 
@@ -146,7 +148,10 @@ const SECTIONS: &[&[Section]] = &[
         not_yet("Duplicates"),
         not_yet("Needs Attention"),
     ],
-    &[not_yet("Trash")],
+    &[Section {
+        name: "Trash",
+        content: Content::Trash,
+    }],
 ];
 
 fn sections() -> impl Iterator<Item = &'static Section> {
@@ -172,6 +177,8 @@ pub struct App {
     /// The copy saved or shown most recently, which "add next issue"
     /// follows on from.
     recent_copy: Option<CopyId>,
+    /// For views built while loading, whose buttons send messages.
+    sender: ComponentSender<App>,
     section: &'static Section,
     /// The name-list entry whose books are shown, if any.
     shelf: Option<ShelfEntry>,
@@ -200,6 +207,15 @@ pub enum AppMsg {
     AddFrom(CopyId, Prefill),
     /// Start the issue after the copy saved or opened most recently.
     AddNext,
+    TrashCopy(CopyId),
+    TrashEdition(EditionId),
+    TrashIssue(IssueId),
+    Restore(TrashId),
+    /// Ask before deleting a group in Trash for good.
+    ConfirmPurge(TrashId, String),
+    Purge(TrashId),
+    ConfirmEmpty,
+    EmptyTrash,
     FormSave,
     /// Leave the form, asking first if it has unsaved changes.
     FormCancel,
@@ -309,6 +325,7 @@ impl Component for App {
             open: None,
             form: None,
             recent_copy: None,
+            sender: sender.clone(),
             section: &SECTIONS[0][0],
             shelf: None,
             as_list: false,
@@ -416,6 +433,55 @@ impl Component for App {
                     root.pop_page();
                 }
             }
+            AppMsg::TrashCopy(copy) => {
+                let issue = self.with_db(|db| Ok(db.edition(db.copy(copy)?.edition)?.issue));
+                let trashed = self.with_db(|db| db.trash_copy(copy));
+                self.after_trash(trashed, issue.ok(), root, &sender);
+            }
+            AppMsg::TrashEdition(edition) => {
+                let issue = self.with_db(|db| Ok(db.edition(edition)?.issue));
+                let trashed = self.with_db(|db| db.trash_edition(edition));
+                self.after_trash(trashed, issue.ok(), root, &sender);
+            }
+            AppMsg::TrashIssue(issue) => {
+                let trashed = self.with_db(|db| db.trash_issue(issue));
+                self.after_trash(trashed, None, root, &sender);
+            }
+            AppMsg::Restore(trash) => match self.with_db(|db| db.restore(trash)) {
+                Ok(()) => {
+                    root.pop_to_section();
+                    self.show(root);
+                    root.toast("Restored");
+                }
+                Err(why) => root.toast(&format!("Could not restore: {why}")),
+            },
+            AppMsg::ConfirmPurge(trash, label) => confirm(
+                root,
+                "Delete Forever?",
+                &format!(
+                    "\u{201c}{label}\u{201d} and everything in it will be deleted. \
+                     This cannot be undone."
+                ),
+                "_Delete Forever",
+                &sender,
+                move || AppMsg::Purge(trash),
+            ),
+            AppMsg::Purge(trash) => match self.with_db(|db| db.purge(trash)) {
+                Ok(()) => self.show(root),
+                Err(why) => root.toast(&format!("Could not delete: {why}")),
+            },
+            AppMsg::ConfirmEmpty => confirm(
+                root,
+                "Empty Trash?",
+                "Everything in Trash will be deleted. This cannot be undone.",
+                "_Empty Trash",
+                &sender,
+                || AppMsg::EmptyTrash,
+            ),
+            AppMsg::EmptyTrash => match self.with_db(|db| db.empty_trash()) {
+                Ok(()) => self.show(root),
+                Err(why) => root.toast(&format!("Could not empty Trash: {why}")),
+            },
             AppMsg::ShelfBack => {
                 // The form is left only through its Cancel, which asks
                 // before discarding.
@@ -458,6 +524,44 @@ impl App {
         self.store.as_ref().map_err(Clone::clone)
     }
 
+    /// Runs `f` on the open collection.
+    fn with_db<T>(
+        &self,
+        f: impl FnOnce(&Database) -> mylongbox_core::Result<T>,
+    ) -> Result<T, String> {
+        match &self.open {
+            Some((_, db)) => f(db).map_err(|e| e.to_string()),
+            None => Err("no collection is open".into()),
+        }
+    }
+
+    /// Shows the collection as it is after something moved to Trash, back
+    /// on the page of `issue` if it is still there, and offers Undo.
+    fn after_trash(
+        &mut self,
+        trashed: Result<TrashId, String>,
+        issue: Option<IssueId>,
+        root: &MainWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        match trashed {
+            Ok(trash) => {
+                root.pop_to_section();
+                self.show(root);
+                if let Some(issue) = issue
+                    && self.with_db(|db| db.issue_detail(issue)).is_ok()
+                {
+                    self.open_issue(issue, root, sender);
+                }
+                let undo = sender.clone();
+                root.toast_undo("Moved to Trash", move || {
+                    undo.input(AppMsg::Restore(trash));
+                });
+            }
+            Err(why) => root.toast(&format!("Could not move to Trash: {why}")),
+        }
+    }
+
     fn open_issue(&mut self, issue: IssueId, root: &MainWindow, sender: &ComponentSender<Self>) {
         let Some((_, db)) = &self.open else {
             return;
@@ -474,6 +578,18 @@ impl App {
                     open: Rc::new(move |issue| open.input(AppMsg::OpenIssue(issue))),
                     edit: Rc::new(move |copy| edit.input(AppMsg::EditCopy(copy))),
                     prefill: Rc::new(move |copy, kind| prefill.input(AppMsg::AddFrom(copy, kind))),
+                    trash_copy: {
+                        let s = sender.clone();
+                        Rc::new(move |copy| s.input(AppMsg::TrashCopy(copy)))
+                    },
+                    trash_edition: {
+                        let s = sender.clone();
+                        Rc::new(move |edition| s.input(AppMsg::TrashEdition(edition)))
+                    },
+                    trash_issue: {
+                        let s = sender.clone();
+                        Rc::new(move |issue| s.input(AppMsg::TrashIssue(issue)))
+                    },
                 };
                 root.push_page(&issue_page::page(&detail, &links));
             }
@@ -649,6 +765,30 @@ impl App {
                 }
                 return Ok(());
             }
+            (None, Content::Trash) => {
+                let groups = db.trash_groups()?;
+                if groups.is_empty() {
+                    root.show_empty(
+                        "Trash Is Empty",
+                        "Anything moved to Trash waits here until you empty it.",
+                    );
+                } else {
+                    let (restore, purge, empty) = (
+                        self.sender.clone(),
+                        self.sender.clone(),
+                        self.sender.clone(),
+                    );
+                    let hooks = trash_page::Hooks {
+                        restore: Rc::new(move |id| restore.input(AppMsg::Restore(id))),
+                        purge: Rc::new(move |id, label| {
+                            purge.input(AppMsg::ConfirmPurge(id, label));
+                        }),
+                        empty: Rc::new(move || empty.input(AppMsg::ConfirmEmpty)),
+                    };
+                    root.show_custom(&trash_page::page(&groups, &hooks));
+                }
+                return Ok(());
+            }
             (None, Content::NotYet) => {
                 root.show_empty(self.section.name, "Not available yet.");
                 return Ok(());
@@ -779,6 +919,32 @@ fn pick_export_file(root: &MainWindow, sender: &ComponentSender<App>, name: &str
             && let Some(path) = file.path()
         {
             sender.input(AppMsg::ExportPicked(path));
+        }
+    });
+}
+
+/// Asks before something that cannot be undone, sending `yes()` if the
+/// user goes ahead.
+fn confirm(
+    root: &MainWindow,
+    heading: &str,
+    body: &str,
+    action: &str,
+    sender: &ComponentSender<App>,
+    yes: impl Fn() -> AppMsg + 'static,
+) {
+    let dialog = adw::AlertDialog::builder()
+        .heading(heading)
+        .body(body)
+        .default_response("cancel")
+        .close_response("cancel")
+        .build();
+    dialog.add_responses(&[("cancel", "_Cancel"), ("go", action)]);
+    dialog.set_response_appearance("go", adw::ResponseAppearance::Destructive);
+    let sender = sender.clone();
+    dialog.choose(Some(root), None::<&gio::Cancellable>, move |response| {
+        if response == "go" {
+            sender.input(yes());
         }
     });
 }
