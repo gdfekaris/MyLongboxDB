@@ -215,7 +215,8 @@ text_column!(DateColumn, "Cover Date", expand: false, xalign: 0.0, |r| {
 text_column!(GradeColumn, "Grade", expand: false, xalign: 0.0, condition);
 text_column!(LocationColumn, "Location", expand: false, xalign: 0.0, location);
 text_column!(ValueColumn, "Value", expand: false, xalign: 1.0, |r| {
-    r.value.map(|v| v.to_string()).unwrap_or_default()
+    // What it is worth now, so at the newest rate.
+    r.value.map(|v| format::money(v, None)).unwrap_or_default()
 });
 
 pub fn book_table() -> TypedColumnView<Book, gtk::MultiSelection> {

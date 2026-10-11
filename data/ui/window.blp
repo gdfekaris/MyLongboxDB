@@ -161,6 +161,13 @@ template $MainWindow: Adw.ApplicationWindow {
                     }
                   }
 
+                  [top]
+                  Adw.Banner rates_banner {
+                    button-label: _("_Update Rates");
+                    action-name: "win.edit-rates";
+                    use-markup: false;
+                  }
+
                   [bottom]
                   ActionBar selection_bar {
                     revealed: false;
@@ -294,6 +301,13 @@ menu main_menu {
     item {
       label: _("_Export a Copy…");
       action: "win.export-collection";
+    }
+  }
+
+  section {
+    item {
+      label: _("_Preferences");
+      action: "win.preferences";
     }
   }
 }

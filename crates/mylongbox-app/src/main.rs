@@ -10,7 +10,9 @@ mod chart;
 mod form;
 mod format;
 mod issue_page;
+mod prefs;
 mod prompt;
+mod settings;
 mod trash_page;
 mod window;
 

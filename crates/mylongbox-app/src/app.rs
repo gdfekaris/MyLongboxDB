@@ -15,8 +15,9 @@ use relm4::{Component, ComponentParts, ComponentSender};
 use crate::books::{self, Book, Name};
 use crate::form::{Focus, Form, Hooks};
 use crate::issue_page::{self, Links};
+use crate::settings::{self, Settings};
 use crate::window::MainWindow;
-use crate::{bulk_dialog, format, prompt, trash_page};
+use crate::{bulk_dialog, format, prefs, prompt, trash_page};
 
 /// What a sidebar section shows.
 #[derive(Clone, Copy)]
@@ -179,6 +180,8 @@ pub struct App {
     recent_copy: Option<CopyId>,
     /// The copy to show unfolded on the next book page opened.
     open_copy: Option<CopyId>,
+    /// How amounts and grades are shown.
+    settings: Settings,
     /// For views built while loading, whose buttons send messages.
     sender: ComponentSender<App>,
     section: &'static Section,
@@ -215,6 +218,15 @@ pub enum AppMsg {
     AddValue(CopyId),
     SaveValue(CopyId, Date, Amount, String),
     DeleteValue(CopyId, ValueEntry),
+    /// Open Preferences, on the exchange rates if asked.
+    ShowPreferences(bool),
+    SettingsChanged(Settings),
+    RatesChanged,
+    OpenCollectionNamed(String),
+    RenameCollection(String),
+    DoRenameCollection(String, String),
+    ConfirmDeleteCollection(String),
+    DoDeleteCollection(String),
     RenameEntry,
     EntryAliases,
     MergeEntry,
@@ -311,6 +323,13 @@ impl Component for App {
                 .connect_active_notify(move |t| sender.input(AppMsg::Selecting(t.is_active())));
         }
         add_action(&root, "bulk-edit", &sender, || AppMsg::BulkEdit);
+        add_action(&root, "preferences", &sender, || {
+            AppMsg::ShowPreferences(false)
+        });
+        add_action(&root, "edit-rates", &sender, || {
+            AppMsg::ShowPreferences(true)
+        });
+        relm4::main_application().set_accels_for_action("win.preferences", &["<Control>comma"]);
         add_action(&root, "rename-entry", &sender, || AppMsg::RenameEntry);
         add_action(&root, "entry-aliases", &sender, || AppMsg::EntryAliases);
         add_action(&root, "merge-entry", &sender, || AppMsg::MergeEntry);
@@ -363,6 +382,7 @@ impl Component for App {
             form: None,
             recent_copy: None,
             open_copy: None,
+            settings: Settings::load(&settings::path()),
             sender: sender.clone(),
             section: &SECTIONS[0][0],
             shelf: None,
@@ -497,6 +517,88 @@ impl Component for App {
                         });
                     }
                     Err(why) => root.toast(&format!("Could not delete the value: {why}")),
+                }
+            }
+            AppMsg::ShowPreferences(show_rates) => self.show_preferences(show_rates, root, &sender),
+            AppMsg::SettingsChanged(settings) => {
+                self.settings = settings;
+                if let Err(why) = settings.save(&settings::path()) {
+                    root.toast(&format!("Could not save the preferences: {why}"));
+                }
+                self.refresh_display(root);
+                root.pop_to_section();
+                self.show(root);
+            }
+            AppMsg::RatesChanged => {
+                self.refresh_display(root);
+                root.pop_to_section();
+                self.show(root);
+            }
+            AppMsg::OpenCollectionNamed(name) => self.open_collection(&name, root),
+            AppMsg::RenameCollection(name) => {
+                let s = sender.clone();
+                let old = name.clone();
+                prompt::ask_text(
+                    root,
+                    prompt::Ask {
+                        heading: "Rename Collection",
+                        body: "Only the name changes; everything in the collection stays.",
+                        field: "Name",
+                        initial: &name,
+                        action: "_Rename",
+                        suggest: None,
+                    },
+                    move |new| s.input(AppMsg::DoRenameCollection(old.clone(), new)),
+                );
+            }
+            AppMsg::DoRenameCollection(old, new) => {
+                // An open collection is closed so its file can be renamed,
+                // then opened again under the new name.
+                let was_open = self.open.as_ref().is_some_and(|(n, _)| *n == old);
+                if was_open {
+                    self.form = None;
+                    root.pop_to_section();
+                    self.open = None;
+                }
+                let renamed = self
+                    .store()
+                    .and_then(|s| s.rename(&old, &new).map_err(|e| e.to_string()));
+                match renamed {
+                    Ok(info) => {
+                        if was_open {
+                            self.open_collection(&info.name, root);
+                        }
+                        root.toast(&format!("Renamed to \u{201c}{}\u{201d}", info.name));
+                    }
+                    Err(why) => {
+                        if was_open {
+                            self.open_collection(&old, root);
+                        }
+                        root.toast(&format!("Could not rename: {why}"));
+                    }
+                }
+            }
+            AppMsg::ConfirmDeleteCollection(name) => {
+                let doomed = name.clone();
+                confirm(
+                    root,
+                    "Delete Collection?",
+                    &format!(
+                        "\u{201c}{name}\u{201d} and everything in it will be deleted for good. \
+                         Export a copy first if you may want it back."
+                    ),
+                    "_Delete",
+                    &sender,
+                    move || AppMsg::DoDeleteCollection(doomed.clone()),
+                );
+            }
+            AppMsg::DoDeleteCollection(name) => {
+                match self
+                    .store()
+                    .and_then(|s| s.delete(&name).map_err(|e| e.to_string()))
+                {
+                    Ok(()) => root.toast(&format!("Deleted \u{201c}{name}\u{201d}")),
+                    Err(why) => root.toast(&format!("Could not delete: {why}")),
                 }
             }
             AppMsg::RenameEntry => {
@@ -774,6 +876,80 @@ impl App {
         self.store.as_ref().map_err(Clone::clone)
     }
 
+    fn show_preferences(
+        &mut self,
+        show_rates: bool,
+        root: &MainWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        let collections = self
+            .store()
+            .ok()
+            .and_then(|s| s.list().ok())
+            .unwrap_or_default();
+        let msg = |f: fn(String) -> AppMsg| -> Box<dyn Fn(String)> {
+            let s = sender.clone();
+            Box::new(move |name| s.input(f(name)))
+        };
+        let hooks = prefs::Hooks {
+            settings_changed: {
+                let s = sender.clone();
+                Box::new(move |settings| s.input(AppMsg::SettingsChanged(settings)))
+            },
+            rates_changed: {
+                let s = sender.clone();
+                Rc::new(move || s.input(AppMsg::RatesChanged))
+            },
+            open: msg(AppMsg::OpenCollectionNamed),
+            rename: msg(AppMsg::RenameCollection),
+            delete: msg(AppMsg::ConfirmDeleteCollection),
+            action: {
+                let root = root.clone();
+                Box::new(move |name| {
+                    ActionGroupExt::activate_action(&root, name, None);
+                })
+            },
+        };
+        let state = prefs::State {
+            settings: self.settings,
+            collections: &collections,
+            current: self.open.as_ref().map(|(n, _)| n.as_str()),
+            db: self.open.as_ref().map(|(_, db)| db),
+            show_rates,
+        };
+        prefs::dialog(&state, hooks).present(Some(root));
+    }
+
+    /// Applies the preferences and the open collection's exchange rates
+    /// to how amounts and grades are shown, and reminds about rates that
+    /// are missing or old.
+    fn refresh_display(&self, root: &MainWindow) {
+        let rates = self.with_db(|db| db.rate_table()).unwrap_or_default();
+        let reminder = self.open.as_ref().and_then(|_| {
+            let today = format::today()?;
+            match (rates.latest(), self.settings.currency) {
+                (None, Some(currency)) => Some(format!(
+                    "Add an exchange rate to show every amount in {}",
+                    match currency {
+                        Currency::Usd => "US dollars",
+                        Currency::Gold => "gold",
+                        Currency::Btc => "bitcoin",
+                    }
+                )),
+                (Some(latest), _) if rates.needs_update(today) => Some(format!(
+                    "Your newest exchange rate is {} days old",
+                    latest.date().days_until(today)
+                )),
+                _ => None,
+            }
+        });
+        root.set_rates_reminder(reminder.as_deref());
+        format::set_display(format::Display {
+            settings: self.settings,
+            rates,
+        });
+    }
+
     /// Shows the shelf of `shelf` afresh, after its entry was renamed or
     /// another was merged into it, so its name and books are current.
     fn show_entry(&mut self, shelf: Shelf, root: &MainWindow) {
@@ -1027,6 +1203,7 @@ impl App {
             Ok(db) => self.open = Some((name.to_owned(), Rc::new(db))),
             Err(why) => root.toast(&format!("Could not open \u{201c}{name}\u{201d}: {why}")),
         }
+        self.refresh_display(root);
         self.show(root);
     }
 

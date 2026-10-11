@@ -1,20 +1,87 @@
 //! How catalog values read on screen.
 
+use std::cell::RefCell;
+
 use gtk::glib;
 use mylongbox_core::{
-    Binding, BookCondition, CoverDate, Date, Distribution, Grade, GradeType, MagazineFormat, Role,
-    Verification,
+    Amount, Binding, BookCondition, CoverDate, Date, Distribution, Grade, GradeType,
+    MagazineFormat, RateTable, Role, Verification,
 };
+
+use crate::settings::Settings;
+
+thread_local! {
+    /// How amounts and grades are shown; the app updates it when the
+    /// preferences or the exchange rates change. GTK runs on one thread.
+    static DISPLAY: RefCell<Display> = RefCell::new(Display::default());
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Display {
+    pub settings: Settings,
+    pub rates: RateTable,
+}
+
+pub fn set_display(display: Display) {
+    DISPLAY.with(|d| *d.borrow_mut() = display);
+}
+
+pub fn display_settings() -> Settings {
+    DISPLAY.with(|d| d.borrow().settings)
+}
+
+/// An amount in the currency chosen in the preferences, converted at the
+/// rate for `on` (or the newest rate when the date is not known), with
+/// thousands grouped. "—" means no rate covers it.
+pub fn money(amount: Amount, on: Option<Date>) -> String {
+    DISPLAY.with(|d| {
+        let d = d.borrow();
+        let shown = match d.settings.currency {
+            None => Ok(amount),
+            Some(target) => match on {
+                Some(date) => d.rates.convert(amount, date, target),
+                None => d.rates.convert_at_latest(amount, target),
+            },
+        };
+        shown.map_or_else(|_| "\u{2014}".to_owned(), |a| grouped(&a.to_string()))
+    })
+}
+
+/// Adds commas between thousands in the whole part of a formatted
+/// amount: `$1234567.89` becomes `$1,234,567.89`.
+pub fn grouped(text: &str) -> String {
+    let start = text
+        .find(|c: char| c.is_ascii_digit())
+        .unwrap_or(text.len());
+    let end = text[start..]
+        .find(|c: char| !c.is_ascii_digit())
+        .map_or(text.len(), |i| start + i);
+    let digits = &text[start..end];
+    let mut whole = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            whole.push(',');
+        }
+        whole.push(c);
+    }
+    format!("{}{whole}{}", &text[..start], &text[end..])
+}
 
 const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-/// e.g. `CGC 9.8`, or `9.4` for the owner's own estimate.
+/// e.g. `CGC 9.8`, or `9.4` for the owner's own estimate, with the
+/// grade's letters added when the preferences ask for them.
 pub fn grade(grade: Option<Grade>, grade_type: Option<GradeType>) -> String {
     let Some(grade) = grade else {
         return String::new();
     };
+    let shown = match grade.name() {
+        Some(name) if display_settings().grade_names => format!("{grade} {name}"),
+        _ => grade.to_string(),
+    };
+    let grade = shown;
     match grade_type {
         Some(GradeType::Cgc) => format!("CGC {grade}"),
         Some(GradeType::Cbcs) => format!("CBCS {grade}"),
@@ -303,6 +370,44 @@ mod tests {
         assert!(date.days_until(utc).abs() <= 1, "{date}");
         assert_eq!(local_date("yesterday"), None);
         assert_eq!(local_date(""), None);
+    }
+
+    #[test]
+    fn thousands_are_grouped() {
+        assert_eq!(grouped("$1234567.89"), "$1,234,567.89");
+        assert_eq!(grouped("$999.00"), "$999.00");
+        assert_eq!(grouped("1000.0000 oz"), "1,000.0000 oz");
+        assert_eq!(grouped("0.00870721 BTC"), "0.00870721 BTC");
+        assert_eq!(grouped("$-1234.00"), "$-1,234.00");
+    }
+
+    #[test]
+    fn amounts_show_in_the_chosen_currency_or_a_dash() {
+        use mylongbox_core::{Currency, ExchangeRate};
+        let rate = ExchangeRate::new(
+            Date::new(2020, 1, 1).unwrap(),
+            Amount::new(Currency::Usd, 150_000),
+            Amount::new(Currency::Usd, 700_000),
+        )
+        .unwrap();
+        let ounce = Amount::new(Currency::Gold, 10_000);
+        set_display(Display::default());
+        assert_eq!(money(ounce, None), "1.0000 oz");
+        set_display(Display {
+            settings: Settings {
+                currency: Some(Currency::Usd),
+                grade_names: true,
+            },
+            rates: RateTable::new([rate]),
+        });
+        assert_eq!(money(ounce, Date::new(2021, 1, 1).ok()), "$1,500.00");
+        assert_eq!(money(ounce, Date::new(2019, 1, 1).ok()), "\u{2014}");
+        assert_eq!(
+            grade(Grade::parse("9.4"), Some(GradeType::Cgc)),
+            "CGC 9.4 NM"
+        );
+        assert_eq!(grade(Grade::parse("9.3"), None), "9.3");
+        set_display(Display::default());
     }
 
     #[test]

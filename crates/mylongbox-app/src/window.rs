@@ -41,6 +41,8 @@ mod imp {
         #[template_child]
         pub selection_bar: TemplateChild<gtk::ActionBar>,
         #[template_child]
+        pub rates_banner: TemplateChild<adw::Banner>,
+        #[template_child]
         pub selection_label: TemplateChild<gtk::Label>,
         #[template_child]
         pub content_stack: TemplateChild<gtk::Stack>,
@@ -177,6 +179,13 @@ impl MainWindow {
         imp.grid_scroller.set_child(Some(grid));
         imp.list_scroller.set_child(Some(list));
         imp.names_scroller.set_child(Some(names));
+    }
+
+    /// Shows a reminder about the exchange rates, or hides it.
+    pub fn set_rates_reminder(&self, reminder: Option<&str>) {
+        let banner = &self.imp().rates_banner;
+        banner.set_title(reminder.unwrap_or(""));
+        banner.set_revealed(reminder.is_some());
     }
 
     pub fn select_toggle(&self) -> gtk::ToggleButton {

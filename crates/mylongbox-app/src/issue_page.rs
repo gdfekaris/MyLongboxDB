@@ -348,7 +348,7 @@ fn edition_group(
         flag(f.has_dust_jacket, "Dust jacket"),
         flag(f.has_slipcase, "Slipcase"),
         f.cover_price
-            .map(|p| format!("Cover price {p}"))
+            .map(|p| format!("Cover price {}", format::money(p, None)))
             .unwrap_or_default(),
     ]);
 
@@ -415,7 +415,7 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
     let value = c
         .values
         .last()
-        .map(|v| format!("Worth {}", v.value))
+        .map(|v| format!("Worth {}", format::money(v.value, None)))
         .unwrap_or_default();
 
     let row = expander(
@@ -487,7 +487,9 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
     add(
         "Purchased",
         format::joined([
-            f.purchase_price.map(|p| p.to_string()).unwrap_or_default(),
+            f.purchase_price
+                .map(|p| format::money(p, f.purchase_date))
+                .unwrap_or_default(),
             f.purchase_date.map(format::date).unwrap_or_default(),
             f.seller.clone(),
         ]),
@@ -526,7 +528,7 @@ fn value_history(row: &adw::ExpanderRow, c: &CopyDetail, links: &Links) {
     }
     for v in c.values.iter().rev() {
         let entry = plain_row(
-            &v.value.to_string(),
+            &format::money(v.value, Some(v.date)),
             &format::joined([
                 format!("Value as of {}", format::date(v.date)),
                 v.source.clone(),
