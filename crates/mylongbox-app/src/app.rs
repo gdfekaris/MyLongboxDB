@@ -240,6 +240,11 @@ pub enum AppMsg {
     ExportCsv(bool),
     /// Write the CSV, of these copies or of every one.
     CsvPicked(PathBuf, Option<Vec<CopyId>>),
+    /// Ask where to save a full export.
+    ExportZip,
+    ZipPicked(PathBuf),
+    /// Write the full export, once the message saying so has shown.
+    WriteZip(PathBuf),
     SectionSelected(usize),
     NameActivated(u32),
     /// A book in the grid or list, by position.
@@ -365,6 +370,7 @@ impl Component for App {
             AppMsg::ImportCollection
         });
         add_action(&root, "export-csv", &sender, || AppMsg::ExportCsv(false));
+        add_action(&root, "export-zip", &sender, || AppMsg::ExportZip);
         add_action(&root, "export-shown-csv", &sender, || {
             AppMsg::ExportCsv(true)
         });
@@ -658,6 +664,38 @@ impl Component for App {
                 match result {
                     Ok(1) => root.toast("Exported 1 book"),
                     Ok(n) => root.toast(&format!("Exported {n} books")),
+                    Err(why) => root.toast(&format!("Could not export: {why}")),
+                }
+            }
+            AppMsg::ExportZip => match &self.open {
+                Some((name, _)) => pick_zip_file(root, &sender, &format!("{name}.zip")),
+                None => root.toast("Open a collection first"),
+            },
+            AppMsg::ZipPicked(path) => {
+                root.toast("Exporting\u{2026}");
+                let sender = sender.clone();
+                glib::timeout_add_local_once(std::time::Duration::from_millis(100), move || {
+                    sender.input(AppMsg::WriteZip(path));
+                });
+            }
+            AppMsg::WriteZip(path) => {
+                // Written whole in the app's own cache first, as a zip
+                // file is finished by going back to its start, then copied
+                // to where it was asked for.
+                let staging = glib::user_cache_dir().join("mylongboxdb-export.zip");
+                let result = self.with_db(|db| {
+                    if let Some(dir) = staging.parent() {
+                        std::fs::create_dir_all(dir)?;
+                    }
+                    let file = std::fs::File::create(&staging)?;
+                    let count = db.export_zip(None, std::io::BufWriter::new(file))?;
+                    std::fs::copy(&staging, &path)?;
+                    Ok(count)
+                });
+                let _ = std::fs::remove_file(&staging);
+                match result {
+                    Ok(1) => root.toast("Exported 1 book with its photos"),
+                    Ok(n) => root.toast(&format!("Exported {n} books with their photos")),
                     Err(why) => root.toast(&format!("Could not export: {why}")),
                 }
             }
@@ -1636,6 +1674,7 @@ impl App {
             "export-collection",
             "export-csv",
             "export-shown-csv",
+            "export-zip",
             "add-comic",
             "add-magazine",
             "add-collected",
@@ -1990,6 +2029,30 @@ fn pick_file_to_import(root: &MainWindow, sender: &ComponentSender<App>) {
             && let Some(path) = file.path()
         {
             sender.input(AppMsg::ImportPicked(path));
+        }
+    });
+}
+
+/// Asks where to save a full export, through the file chooser.
+fn pick_zip_file(root: &MainWindow, sender: &ComponentSender<App>, name: &str) {
+    let zip = gtk::FileFilter::new();
+    zip.set_name(Some("Zip archives"));
+    zip.add_suffix("zip");
+    zip.add_mime_type("application/zip");
+    let filters = gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&zip);
+    let dialog = gtk::FileDialog::builder()
+        .title("Full Export with Photos")
+        .modal(true)
+        .initial_name(name)
+        .filters(&filters)
+        .build();
+    let sender = sender.clone();
+    dialog.save(Some(root), None::<&gio::Cancellable>, move |result| {
+        if let Ok(file) = result
+            && let Some(path) = file.path()
+        {
+            sender.input(AppMsg::ZipPicked(path));
         }
     });
 }
