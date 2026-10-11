@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -8,6 +9,7 @@ use mylongbox_core::{
     Database, Date, EditionId, IssueId, Prefill, Shelf, ShelfEntry, ShelfList, Side, TrashId,
     ValueEntry,
 };
+use mylongbox_media::Edit;
 use relm4::typed_view::column::TypedColumnView;
 use relm4::typed_view::grid::TypedGridView;
 use relm4::typed_view::list::TypedListView;
@@ -18,7 +20,7 @@ use crate::form::{Focus, Form, Hooks};
 use crate::issue_page::{self, Links};
 use crate::settings::{self, Settings};
 use crate::window::MainWindow;
-use crate::{bulk_dialog, covers, format, prefs, prompt, trash_page};
+use crate::{bulk_dialog, covers, format, photo_editor, prefs, prompt, trash_page};
 
 /// What a sidebar section shows.
 #[derive(Clone, Copy)]
@@ -225,6 +227,14 @@ pub enum AppMsg {
     /// Ask for a photo file for one side of a copy.
     AddPhoto(CopyId, Side),
     PhotoPicked(CopyId, Side, PathBuf),
+    /// The editor closed with an edit for a photo loaded earlier.
+    PhotoEdited {
+        opened: u64,
+        copy: CopyId,
+        side: Side,
+        loaded: Box<covers::Loaded>,
+        edit: Edit,
+    },
     RemovePhoto(CopyId, Side),
     /// Put back a removed photo.
     RestorePhoto(CopyId, Side, Box<CoverPhoto>),
@@ -271,7 +281,15 @@ pub enum AppMsg {
 #[derive(Debug)]
 pub enum CommandMsg {
     Imported(Result<CollectionInfo, String>),
-    /// A photo file read and saved as JPEGs, ready to store in the
+    /// A photo file read and ready for the editor, for the collection
+    /// opened as number `opened`.
+    PhotoLoaded {
+        opened: u64,
+        copy: CopyId,
+        side: Side,
+        loaded: Result<Box<covers::Loaded>, String>,
+    },
+    /// A photo edited and saved as JPEGs, ready to store in the
     /// collection opened as number `opened`.
     PhotoReady {
         opened: u64,
@@ -541,13 +559,29 @@ impl Component for App {
             }
             AppMsg::AddPhoto(copy, side) => pick_photo(root, &sender, copy, side),
             AppMsg::PhotoPicked(copy, side, path) => {
-                root.toast("Preparing the photo\u{2026}");
-                let (output, opened) = (self.settings.photos, self.opened);
+                root.toast("Opening the photo\u{2026}");
+                let opened = self.opened;
+                sender.spawn_oneshot_command(move || CommandMsg::PhotoLoaded {
+                    opened,
+                    copy,
+                    side,
+                    loaded: covers::load(&path).map(Box::new),
+                });
+            }
+            AppMsg::PhotoEdited {
+                opened,
+                copy,
+                side,
+                loaded,
+                edit,
+            } => {
+                root.toast("Saving the photo\u{2026}");
+                let output = self.settings.photos;
                 sender.spawn_oneshot_command(move || CommandMsg::PhotoReady {
                     opened,
                     copy,
                     side,
-                    photo: covers::prepare(&path, output).map(Box::new),
+                    photo: covers::finish(&loaded.full, &edit, output).map(Box::new),
                 });
             }
             AppMsg::RemovePhoto(copy, side) => match self.with_db(|db| db.remove_photo(copy, side))
@@ -917,9 +951,41 @@ impl Component for App {
 
     fn update_cmd(&mut self, msg: CommandMsg, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
-            CommandMsg::PhotoReady { opened, .. } if opened != self.opened => {
+            CommandMsg::PhotoReady { opened, .. } | CommandMsg::PhotoLoaded { opened, .. }
+                if opened != self.opened =>
+            {
                 root.toast("The photo was not added, as another collection is open now");
             }
+            CommandMsg::PhotoLoaded {
+                opened,
+                copy,
+                side,
+                loaded: Ok(loaded),
+            } => {
+                let title = match side {
+                    Side::Front => "Edit Front Cover",
+                    Side::Back => "Edit Back Cover",
+                };
+                let (preview, proposal) = (loaded.preview.clone(), loaded.proposal);
+                // The full photo waits here for the edit; closing the
+                // editor without saving drops it.
+                let loaded = RefCell::new(Some(loaded));
+                let sender = sender.clone();
+                photo_editor::open(root, title, preview, proposal, move |edit| {
+                    if let Some(loaded) = loaded.borrow_mut().take() {
+                        sender.input(AppMsg::PhotoEdited {
+                            opened,
+                            copy,
+                            side,
+                            loaded,
+                            edit,
+                        });
+                    }
+                });
+            }
+            CommandMsg::PhotoLoaded {
+                loaded: Err(why), ..
+            } => root.toast(&format!("Could not open the photo: {why}")),
             CommandMsg::PhotoReady {
                 copy,
                 side,

@@ -12,7 +12,10 @@ use std::rc::Weak;
 use adw::prelude::*;
 use gtk::{gdk, glib};
 use mylongbox_core::{CopyId, CoverPhoto, Database, Side};
-use mylongbox_media::{Output, decode_bytes, decode_file, encode, upright};
+use mylongbox_media::{
+    Crop, Edit, Output, RgbImage, apply_edit, decode_bytes, decode_file, encode, find_cover,
+    preview, upright,
+};
 
 /// Thumbnails kept decoded: a few screens of the cover grid.
 const CACHED: usize = 240;
@@ -82,24 +85,67 @@ pub fn thumbnail_of(copy: CopyId, side: Side) -> Option<gdk::Texture> {
 
 /// Decodes a stored JPEG for display, or `None` if it cannot be read.
 pub fn texture(jpeg: &[u8]) -> Option<gdk::Texture> {
-    let image = decode_bytes(jpeg).ok()?.image.into_rgb8();
+    texture_of(&decode_bytes(jpeg).ok()?.image.into_rgb8())
+}
+
+/// Hands pixels to GTK to show.
+pub fn texture_of(image: &RgbImage) -> Option<gdk::Texture> {
     let (width, height) = image.dimensions();
     let stride = usize::try_from(width).ok()?.checked_mul(3)?;
     let texture = gdk::MemoryTexture::new(
         i32::try_from(width).ok()?,
         i32::try_from(height).ok()?,
         gdk::MemoryFormat::R8g8b8,
-        &glib::Bytes::from_owned(image.into_raw()),
+        &glib::Bytes::from(image.as_raw().as_slice()),
         stride,
     );
     Some(texture.upcast())
 }
 
-/// Reads a photo file and makes the JPEGs the collection keeps. Slow
-/// for large photos, so it runs away from the window.
-pub fn prepare(path: &Path, output: Output) -> Result<CoverPhoto, String> {
-    let decoded = decode_file(path).map_err(|e| e.to_string())?;
-    let saved = encode(&upright(decoded), output).map_err(|e| e.to_string())?;
+/// The longest edge of the picture the editor shows.
+const PREVIEW_EDGE: u32 = 1200;
+
+/// A photo read and ready for the editor.
+pub struct Loaded {
+    /// Upright and in sRGB, at full size.
+    pub full: RgbImage,
+    pub preview: RgbImage,
+    /// A crop around the cover, if one stands out.
+    pub proposal: Option<Crop>,
+}
+
+impl std::fmt::Debug for Loaded {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The pixels would flood any log.
+        f.debug_struct("Loaded")
+            .field("full", &self.full.dimensions())
+            .field("proposal", &self.proposal)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Reads a photo file and readies it for editing. Slow for large
+/// photos, so it runs away from the window.
+pub fn load(path: &Path) -> Result<Loaded, String> {
+    let full = upright(decode_file(path).map_err(|e| e.to_string())?);
+    let preview = preview(&full, PREVIEW_EDGE);
+    let proposal = find_cover(&preview);
+    Ok(Loaded {
+        full,
+        preview,
+        proposal,
+    })
+}
+
+/// Applies the editor's changes to the full photo and makes the JPEGs
+/// the collection keeps. Also slow, so also away from the window.
+pub fn finish(full: &RgbImage, edit: &Edit, output: Output) -> Result<CoverPhoto, String> {
+    let saved = if edit.is_identity() {
+        encode(full, output)
+    } else {
+        encode(&apply_edit(full, edit), output)
+    }
+    .map_err(|e| e.to_string())?;
     Ok(CoverPhoto {
         full_jpeg: saved.full,
         thumb_jpeg: saved.thumbnail,
@@ -246,15 +292,31 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("cover.png");
         image_of(1000, 3000).save(&path).unwrap();
-        let photo = prepare(&path, Output::default()).unwrap();
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded.full.dimensions(), (1000, 3000));
+        assert_eq!(loaded.preview.dimensions(), (400, 1200));
+        assert_eq!(loaded.proposal, None, "a plain picture has no cover");
+        let photo = finish(&loaded.full, &Edit::default(), Output::default()).unwrap();
         assert_eq!((photo.width, photo.height), (533, 1600));
         assert!(photo.full_jpeg.starts_with(&[0xFF, 0xD8, 0xFF]));
         let thumbnail = texture(&photo.thumb_jpeg).unwrap();
         assert_eq!((thumbnail.width(), thumbnail.height()), (107, 320));
 
+        // The edit is applied to the full photo: turned, then halved.
+        let mut edit = Edit::default();
+        edit.turn_right();
+        edit.crop = Crop {
+            left: 0.0,
+            top: 0.0,
+            right: 0.5,
+            bottom: 1.0,
+        };
+        let photo = finish(&loaded.full, &edit, Output::default()).unwrap();
+        assert_eq!((photo.width, photo.height), (1500, 1000));
+
         std::fs::write(&path, b"not a photo").unwrap();
         assert_eq!(
-            prepare(&path, Output::default()).unwrap_err(),
+            load(&path).unwrap_err(),
             "this is not a JPEG, PNG, WebP, or HEIC photo"
         );
         let _ = std::fs::remove_dir_all(&dir);

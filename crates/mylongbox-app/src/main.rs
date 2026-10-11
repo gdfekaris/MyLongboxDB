@@ -11,6 +11,7 @@ mod covers;
 mod form;
 mod format;
 mod issue_page;
+mod photo_editor;
 mod prefs;
 mod prompt;
 mod settings;
