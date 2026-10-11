@@ -4,6 +4,9 @@
 #![forbid(unsafe_code)]
 
 mod decode;
+mod edit;
+#[cfg(test)]
+mod edit_tests;
 #[cfg(test)]
 mod fixtures;
 #[cfg(feature = "heic")]
@@ -15,6 +18,9 @@ mod pipeline_tests;
 pub use decode::{
     Colour, DecodeError, Decoded, Format, MAX_FILE_BYTES, MAX_PIXELS, MAX_SIDE, decode_bytes,
     decode_file,
+};
+pub use edit::{
+    Crop, Edit, MAX_STRAIGHTEN, MIN_CROP, apply as apply_edit, find_cover, preview, turned_size,
 };
 /// The picture types the pipeline works in.
 pub use image::{Rgb, RgbImage};
