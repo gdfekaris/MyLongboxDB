@@ -36,9 +36,9 @@ GTK build with a standard toolchain:
 cargo test -p mylongbox-core -p mylongbox-media -p mylongbox-sandbox
 ```
 
-The app links against GTK4, libadwaita, libheif, and lcms2 from the
-GNOME 49 SDK rather than the host system. To build and test everything,
-run Cargo inside the SDK with the pinned toolchain:
+The app links against GTK4, libadwaita, and libheif from the GNOME 49
+SDK rather than the host system. To build and test everything, run Cargo
+inside the SDK with the pinned toolchain:
 
 ```sh
 # Download crates on the host; the SDK shell below has no network.
@@ -78,6 +78,13 @@ its authors:
   tests check each of these settings.
 - **No `unsafe` code** outside the small `mylongbox-sandbox` crate.
   Every other crate declares `#![forbid(unsafe_code)]`.
+- **Photos are decoded within limits.** A photo over 50 MB, 100
+  megapixels, or 40,000 pixels on a side is refused before its pixels
+  are decoded. HEIC photos are read by a copy of libheif built into the
+  Flatpak with only the libde265 HEVC decoder and with plugin loading
+  off, so no other code is loaded. Verify with
+  `sdk cargo test -p mylongbox-media --features heic` and the `libheif`
+  module in the Flatpak manifest.
 
 - **No network or file access from the sandbox.** The Flatpak manifest
   grants exactly `--socket=wayland`, `--socket=fallback-x11`,
@@ -103,3 +110,7 @@ than in a public issue.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+The Flatpak also includes libheif and libde265, which are licensed under
+the GNU LGPL and linked dynamically. Their license files are installed
+in `/app/share/licenses/`.
