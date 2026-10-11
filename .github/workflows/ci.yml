@@ -34,7 +34,7 @@ jobs:
       - run: cargo deny check
       - run: cargo audit
       - name: Test crates that need no GTK
-        run: cargo test --locked -p mylongbox-core -p mylongbox-sandbox
+        run: cargo test --locked -p mylongbox-core -p mylongbox-media -p mylongbox-sandbox
 
   sdk:
     name: Clippy and tests in the GNOME SDK
