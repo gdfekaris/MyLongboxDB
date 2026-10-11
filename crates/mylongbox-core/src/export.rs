@@ -136,6 +136,78 @@ pub(crate) fn join_parts<S: AsRef<str>>(parts: impl IntoIterator<Item = S>) -> S
         .join(" | ")
 }
 
+/// A cell split at each `separator` not kept by a backslash, with the
+/// backslashes left in, so items made of parts can be split again.
+fn split_escaped(text: &str, separator: char) -> Vec<String> {
+    let mut items = vec![String::new()];
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        let item = items.last_mut().expect("never empty");
+        if c == '\\' {
+            item.push(c);
+            if let Some(next) = chars.next() {
+                item.push(next);
+            }
+        } else if c == separator {
+            items.push(String::new());
+        } else {
+            item.push(c);
+        }
+    }
+    items
+        .into_iter()
+        .map(|i| i.trim().to_owned())
+        .filter(|i| !i.is_empty())
+        .collect()
+}
+
+/// An item with its backslashes taken out.
+fn unescape(item: &str) -> String {
+    let mut out = String::with_capacity(item.len());
+    let mut chars = item.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            out.extend(chars.next());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// A list cell's items, undoing [`join`]; empty items are dropped.
+pub(crate) fn split(text: &str, separator: char) -> Vec<String> {
+    split_escaped(text, separator)
+        .iter()
+        .map(|i| unescape(i))
+        .collect()
+}
+
+/// A list cell's items with their parts still joined, undoing
+/// `join_escaped`; split each with [`split_parts`].
+pub(crate) fn split_items(text: &str, separator: char) -> Vec<String> {
+    split_escaped(text, separator)
+}
+
+/// An item's parts, undoing [`join_parts`]. Empty parts are kept, since
+/// parts are known by their place.
+pub(crate) fn split_parts(item: &str) -> Vec<String> {
+    let mut parts = vec![String::new()];
+    let mut chars = item.chars();
+    while let Some(c) = chars.next() {
+        let part = parts.last_mut().expect("never empty");
+        if c == '\\' {
+            part.push(c);
+            part.extend(chars.next());
+        } else if c == '|' {
+            parts.push(String::new());
+        } else {
+            part.push(c);
+        }
+    }
+    parts.iter().map(|p| unescape(p.trim())).collect()
+}
+
 fn yes_no(flag: Option<bool>) -> String {
     match flag {
         Some(true) => "yes".into(),

@@ -37,6 +37,9 @@ mod fixtures;
 mod gaps;
 #[cfg(test)]
 mod gaps_tests;
+mod import;
+#[cfg(test)]
+mod import_tests;
 mod issue_number;
 mod links;
 mod lookup;
@@ -80,6 +83,9 @@ pub use filter::{
     MoneyField, NumberField, OwnedAs, Presence, TextCondition, TextField,
 };
 pub use gaps::SeriesGaps;
+pub use import::{
+    ImportReport, ImportSettings, ImportSource, Outcome as ImportOutcome, RowReport, auto_mapping,
+};
 pub use issue_number::{IssueNumber, IssueNumberError};
 pub use links::{Appearance, ArcPart, Credit, Named, Signature};
 pub use lookup::{Lookup, LookupId};
