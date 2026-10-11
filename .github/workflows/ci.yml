@@ -80,6 +80,9 @@ jobs:
       - name: Test
         shell: bash
         run: sdk cargo test --locked --workspace
+      - name: Test photo reading with libheif
+        shell: bash
+        run: sdk cargo test --locked -p mylongbox-media --features heic
 
   flatpak:
     name: Flatpak build and permissions
