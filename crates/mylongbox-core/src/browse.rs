@@ -31,6 +31,11 @@ pub enum Shelf {
     StoryArc(StoryArcId),
     /// In box order, with copies that have no position last.
     StorageBox(BoxId),
+    /// Copies of every edition owned more than once.
+    Duplicates,
+    /// Copies missing a front cover photo, a grade (or a book condition),
+    /// a storage box, or a value.
+    NeedsAttention,
 }
 
 /// A sidebar section that lists names, each leading to a [`Shelf`].
@@ -284,6 +289,27 @@ impl Database {
             Shelf::Everything => query_all(conn, copy_rows!("1"), (), copy_row),
             Shelf::Category(category) => query(copy_rows!("s.category = ?1"), &category),
             Shelf::KeyIssues => query_all(conn, copy_rows!("i.is_key = 1"), (), copy_row),
+            Shelf::Duplicates => query_all(
+                conn,
+                copy_rows!(
+                    "c.edition_id IN (SELECT edition_id FROM copy WHERE trash_id IS NULL
+                     GROUP BY edition_id HAVING count(*) > 1)"
+                ),
+                (),
+                copy_row,
+            ),
+            Shelf::NeedsAttention => query_all(
+                conn,
+                copy_rows!(
+                    "(NOT EXISTS (SELECT 1 FROM cover_photo p
+                                  WHERE p.copy_id = c.id AND p.side = 'front')
+                      OR (c.grade IS NULL AND c.book_condition IS NULL)
+                      OR c.box_id IS NULL
+                      OR NOT EXISTS (SELECT 1 FROM value_entry v WHERE v.copy_id = c.id))"
+                ),
+                (),
+                copy_row,
+            ),
             Shelf::Series(id) => query(copy_rows!(on_shelf!(series)), &id),
             Shelf::Publisher(id) => query(copy_rows!(on_shelf!(publisher)), &id),
             Shelf::Creator(id) => query(copy_rows!(on_shelf!(creator)), &id),

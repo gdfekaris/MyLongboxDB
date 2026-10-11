@@ -31,6 +31,9 @@ mod filter;
 mod filter_tests;
 #[cfg(test)]
 mod fixtures;
+mod gaps;
+#[cfg(test)]
+mod gaps_tests;
 mod issue_number;
 mod links;
 mod lookup;
@@ -72,6 +75,7 @@ pub use filter::{
     Choice, Compare, DateCondition, DateField, Filter, FilterSet, Flag, ListCondition, ListField,
     MoneyField, NumberField, OwnedAs, Presence, TextCondition, TextField,
 };
+pub use gaps::SeriesGaps;
 pub use issue_number::{IssueNumber, IssueNumberError};
 pub use links::{Appearance, ArcPart, Credit, Named, Signature};
 pub use lookup::{Lookup, LookupId};
