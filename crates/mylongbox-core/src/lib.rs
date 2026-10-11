@@ -81,5 +81,6 @@ pub use money::{
     STALE_AFTER_DAYS,
 };
 pub use photos::{CoverPhoto, MAX_PHOTO_SIDE};
+pub use search::SearchResults;
 pub use store::{CollectionInfo, CollectionStore, MAX_NAME};
 pub use values::ValueEntry;

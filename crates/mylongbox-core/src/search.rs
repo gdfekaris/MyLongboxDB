@@ -4,6 +4,8 @@
 
 use std::collections::HashMap;
 
+use strsim::osa_distance;
+
 use crate::browse::{CopyRow, copy_row};
 use crate::catalog::query_all;
 use crate::db::Database;
@@ -131,7 +133,69 @@ fn like_escaped(term: &str) -> String {
 /// The words of a query. Quoting is not offered; each word must be found
 /// somewhere in the book.
 fn terms(query: &str) -> Vec<&str> {
-    query.split_whitespace().collect()
+    terms_of(query).collect()
+}
+
+fn terms_of(query: &str) -> impl Iterator<Item = &str> {
+    query.split_whitespace()
+}
+
+/// What a quick search found.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SearchResults {
+    /// The books found, best first.
+    pub rows: Vec<CopyRow>,
+    /// The query with mistyped words corrected, when correcting them is
+    /// what found the books; for a "Did you mean" line.
+    pub did_you_mean: Option<String>,
+}
+
+/// Folded words, each with how it is written and how many names use it.
+type Vocabulary = HashMap<String, (String, u32)>;
+
+/// The words of a name: split at spaces with punctuation trimmed off,
+/// and hyphenated words also in their parts, so "Spider-Man" offers
+/// "Spider-Man", "Spider", and "Man". Words shorter than three letters
+/// are left out.
+fn words_of(text: &str) -> impl Iterator<Item = &str> {
+    text.split_whitespace()
+        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
+        .flat_map(|w| {
+            let parts = w.contains('-').then(|| w.split('-'));
+            std::iter::once(w).chain(parts.into_iter().flatten())
+        })
+        .filter(|w| w.chars().count() >= 3)
+}
+
+/// How many edits a mistyped word of `len` letters may be from the word
+/// meant: none below four letters, where nearly every word is near
+/// another; then one, two, and at most three.
+pub(crate) fn edits_allowed(len: usize) -> usize {
+    match len {
+        0..=3 => 0,
+        4..=5 => 1,
+        6..=9 => 2,
+        _ => 3,
+    }
+}
+
+/// The known word nearest to `term`, as it is usually written, if one is
+/// near enough. Swapping two letters counts as one edit, so "Kriby"
+/// finds "Kirby". Ties go to the word more names use.
+fn correction(vocabulary: &Vocabulary, term: &str) -> Option<String> {
+    let typed = fold(term.trim_matches(|c: char| !c.is_alphanumeric()));
+    let len = typed.chars().count();
+    let allowed = edits_allowed(len);
+    if allowed == 0 {
+        return None;
+    }
+    vocabulary
+        .iter()
+        .filter(|(word, _)| word.chars().count().abs_diff(len) <= allowed)
+        .map(|(word, (written, uses))| (osa_distance(&typed, word), *uses, word, written))
+        .filter(|(edits, ..)| (1..=allowed).contains(edits))
+        .min_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)).then(a.2.cmp(b.2)))
+        .map(|(.., written)| written.clone())
 }
 
 /// Lower case with accents taken off, for judging how well text matches.
@@ -232,16 +296,30 @@ impl Database {
 
     /// The live copies matching every word of `query`, best first. Each
     /// word is found anywhere in a name, case and accents aside; a book
-    /// ranks by where its words matched and how well.
-    pub fn quick_search(&self, query: &str) -> Result<Vec<CopyRow>> {
+    /// ranks by where its words matched and how well. A word that finds
+    /// nothing is taken to be mistyped and replaced by the nearest word
+    /// the collection knows, if one is near enough.
+    pub fn quick_search(&self, query: &str) -> Result<SearchResults> {
         let terms = terms(query);
         if terms.is_empty() {
-            return Ok(Vec::new());
+            return Ok(SearchResults::default());
         }
         let tx = self.tx()?;
+        let mut vocabulary = None;
+        let mut corrections = Vec::new();
         let mut scores: Option<HashMap<CopyId, f64>> = None;
         for term in terms {
-            let found = self.term_scores(term)?;
+            let mut hits = self.term_hits(term)?;
+            if hits.is_empty() {
+                if vocabulary.is_none() {
+                    vocabulary = Some(self.vocabulary()?);
+                }
+                if let Some(word) = vocabulary.as_ref().and_then(|v| correction(v, term)) {
+                    hits = self.term_hits(&word)?;
+                    corrections.push((term, word));
+                }
+            }
+            let found = self.copies_for(hits)?;
             scores = Some(match scores {
                 None => found,
                 // A book must match every word; its score adds up.
@@ -269,11 +347,45 @@ impl Database {
             let score = |r: &CopyRow| scores.get(&r.copy).copied().unwrap_or(0.0);
             score(b).total_cmp(&score(a))
         });
-        Ok(rows)
+        let did_you_mean = (!corrections.is_empty() && !rows.is_empty()).then(|| {
+            terms_of(query)
+                .map(|t| {
+                    corrections
+                        .iter()
+                        .find(|(typed, _)| *typed == t)
+                        .map_or(t, |(_, word)| word.as_str())
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        });
+        Ok(SearchResults { rows, did_you_mean })
     }
 
-    /// Each live copy one word finds, with the best score it finds it by.
-    fn term_scores(&self, term: &str) -> Result<HashMap<CopyId, f64>> {
+    /// Every word of the names in the index, folded, with how it is
+    /// written and how many names use it. Notes are left out, as their
+    /// words would make odd suggestions.
+    fn vocabulary(&self) -> Result<Vocabulary> {
+        let texts: Vec<String> = query_all(
+            &self.conn,
+            "SELECT text FROM search_source WHERE kind <> 14 ORDER BY id",
+            [],
+            |row| row.get(0),
+        )?;
+        let mut words = Vocabulary::new();
+        for text in &texts {
+            for word in words_of(text) {
+                let entry = words
+                    .entry(fold(word))
+                    .or_insert_with(|| (word.to_owned(), 0));
+                entry.1 += 1;
+            }
+        }
+        Ok(words)
+    }
+
+    /// The entries one word finds, each with the best score it finds it
+    /// by.
+    fn term_hits(&self, term: &str) -> Result<HashMap<Kind, HashMap<i64, f64>>> {
         let folded = fold(term);
         // Trigrams need three characters; shorter words are looked for
         // by scanning the indexed text instead, and must begin a word, as
@@ -324,6 +436,15 @@ impl Database {
             let best = owners.entry(kind).or_default().entry(owner).or_insert(0.0);
             *best = best.max(score);
         }
+        Ok(owners)
+    }
+
+    /// Each live copy the entries found by a word lead to, with the best
+    /// score it is found by.
+    fn copies_for(
+        &self,
+        mut owners: HashMap<Kind, HashMap<i64, f64>>,
+    ) -> Result<HashMap<CopyId, f64>> {
         let mut copies: HashMap<CopyId, f64> = HashMap::new();
         // In a fixed order, so the same search always runs the same way.
         for kind in Kind::ALL {

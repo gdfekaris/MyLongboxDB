@@ -1,7 +1,7 @@
 //! Tests of quick search and the index behind it.
 
 use crate::model::*;
-use crate::search::{fold, quality};
+use crate::search::{edits_allowed, fold, quality};
 use crate::{BookEntry, Database, IssueNumber, SeriesChoice, Shelf};
 
 fn db() -> Database {
@@ -31,9 +31,15 @@ fn add(db: &Database, e: &BookEntry) -> CopyId {
 fn found(db: &Database, query: &str) -> Vec<CopyId> {
     db.quick_search(query)
         .unwrap()
+        .rows
         .into_iter()
         .map(|r| r.copy)
         .collect()
+}
+
+/// The correction offered for a query, if any.
+fn suggested(db: &Database, query: &str) -> Option<String> {
+    db.quick_search(query).unwrap().did_you_mean
 }
 
 /// A small collection where each book is findable by one kind of field.
@@ -282,6 +288,69 @@ fn a_rebuilt_index_replaces_whatever_was_there() {
     assert!(found(&c.db, "planted").is_empty());
 }
 
+#[test]
+fn mistyped_words_find_what_was_meant() {
+    let c = collection();
+    assert_eq!(found(&c.db, "kriby"), [c.fantastic]);
+    assert_eq!(suggested(&c.db, "kriby").as_deref(), Some("Kirby"));
+    assert_eq!(found(&c.db, "wolverien"), [c.hulk]);
+    assert_eq!(suggested(&c.db, "wolverien").as_deref(), Some("Wolverine"));
+    // Other words stay as typed.
+    assert_eq!(found(&c.db, "fantastic kriby"), [c.fantastic]);
+    assert_eq!(
+        suggested(&c.db, "fantastic kriby").as_deref(),
+        Some("fantastic Kirby")
+    );
+    // Hyphenated names are known whole and in parts.
+    assert_eq!(found(&c.db, "spiderman"), [c.spider]);
+    assert_eq!(suggested(&c.db, "spiderman").as_deref(), Some("Spider-Man"));
+    assert_eq!(found(&c.db, "spidr"), [c.spider]);
+    // Capitals, accents, and punctuation around a word are no obstacle.
+    assert_eq!(suggested(&c.db, "KRIBY!").as_deref(), Some("Kirby"));
+    assert_eq!(suggested(&c.db, "Wolvérien").as_deref(), Some("Wolverine"));
+    // A word that is found needs no correction.
+    assert_eq!(suggested(&c.db, "kirby"), None);
+}
+
+#[test]
+fn only_near_known_names_are_suggested() {
+    let c = collection();
+    for query in ["xyzzyqw", "zzz", "kir", "conventoin"] {
+        assert_eq!(suggested(&c.db, query), None, "{query}");
+    }
+    // Words of notes are found as typed, but never suggested.
+    assert!(found(&c.db, "conventoin").is_empty());
+    assert_eq!(found(&c.db, "convention"), [c.hulk]);
+    // A correction that finds nothing live is not offered.
+    c.db.trash_copy(c.fantastic).unwrap();
+    assert!(found(&c.db, "kriby").is_empty());
+    assert_eq!(suggested(&c.db, "kriby"), None);
+}
+
+#[test]
+fn the_more_used_word_wins_a_tie() {
+    let db = db();
+    let mut a = entry("Incredible Hulk", 1968, "1");
+    a.characters = vec![("Hulk".into(), false)];
+    let hulk = add(&db, &a);
+    let bulk = add(&db, &entry("Bulk Comics", 1990, "1"));
+    // "Gulk" is one edit from both; Hulk names two entries.
+    assert_eq!(suggested(&db, "gulk").as_deref(), Some("Hulk"));
+    assert_eq!(found(&db, "gulk"), [hulk]);
+    assert_eq!(found(&db, "bulk"), [bulk]);
+}
+
+#[test]
+fn longer_words_may_be_further_off() {
+    assert_eq!(edits_allowed(3), 0);
+    assert_eq!(edits_allowed(4), 1);
+    assert_eq!(edits_allowed(5), 1);
+    assert_eq!(edits_allowed(6), 2);
+    assert_eq!(edits_allowed(9), 2);
+    assert_eq!(edits_allowed(10), 3);
+    assert_eq!(edits_allowed(40), 3);
+}
+
 /// Runs FTS5's own check that the index matches the text it indexes.
 fn assert_consistent(db: &Database) {
     db.conn
@@ -337,9 +406,11 @@ fn searching_ten_thousand_copies_is_quick() {
         "mighty comet",
         "astonishing nova scouts",
         "zzzz",
+        "astonsihing",
+        "qqqqqqqqq",
     ] {
         let start = std::time::Instant::now();
-        let rows = db.quick_search(query).unwrap();
+        let rows = db.quick_search(query).unwrap().rows;
         let took = start.elapsed();
         assert!(
             took.as_millis() < 100,
