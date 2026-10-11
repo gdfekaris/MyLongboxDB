@@ -180,7 +180,7 @@ fn a_full_export_brings_its_photos() {
     db.export_zip(None, &mut out).unwrap();
 
     let fresh = Database::open_in_memory().unwrap();
-    let mut source = ImportSource::from_zip(out.into_inner()).unwrap();
+    let mut source = ImportSource::from_zip(Cursor::new(out.into_inner())).unwrap();
     assert!(source.is_own_format());
     let settings = settings(&source);
     let dry = fresh.check_import(&source, &settings).unwrap();
@@ -400,13 +400,13 @@ fn ids_already_taken_are_not_reused() {
 #[test]
 fn files_that_are_not_imports_are_refused() {
     assert!(ImportSource::from_csv(b"").is_err());
-    assert!(ImportSource::from_zip(b"PK not a zip".to_vec()).is_err());
+    assert!(ImportSource::from_zip(Cursor::new(b"PK not a zip".to_vec())).is_err());
     let mut out = Cursor::new(Vec::new());
     let mut zip = zip::ZipWriter::new(&mut out);
     zip.start_file("other.txt", zip::write::SimpleFileOptions::default())
         .unwrap();
     zip.finish().unwrap();
-    assert!(ImportSource::from_zip(out.into_inner()).is_err());
+    assert!(ImportSource::from_zip(Cursor::new(out.into_inner())).is_err());
 }
 
 #[test]
@@ -525,4 +525,71 @@ fn what_the_collection_already_has_is_kept() {
         (hulk.notes.as_str(), hulk.known_issue_count),
         ("Theirs", Some(6))
     );
+}
+
+#[test]
+fn an_import_can_go_a_few_rows_at_a_time() {
+    let db = Database::open_in_memory().unwrap();
+    generate(
+        &db,
+        FixtureSpec {
+            copies: 40,
+            seed: 3,
+        },
+    )
+    .unwrap();
+    let text = csv_of(&db);
+    let source = ImportSource::from_csv(text.as_bytes()).unwrap();
+    let settings = settings(&source);
+    let fresh = Database::open_in_memory().unwrap();
+    let whole = fresh.check_import(&source, &settings).unwrap();
+
+    let mut run = fresh.start_import(&source).unwrap();
+    let mut slices = 0;
+    while !fresh.import_rows(&mut run, &source, &settings, 7).unwrap() {
+        slices += 1;
+        assert_eq!(run.rows_done(), slices * 7);
+    }
+    assert_eq!(slices, 5);
+    assert_eq!(run.report(), &whole);
+    // Abandoned, it leaves nothing behind; finished, it keeps it all.
+    fresh.abandon_import(run).unwrap();
+    assert!(fresh.browse(crate::Shelf::Everything).unwrap().is_empty());
+    let mut run = fresh.start_import(&source).unwrap();
+    while !fresh.import_rows(&mut run, &source, &settings, 7).unwrap() {}
+    assert_eq!(fresh.finish_import(run).unwrap(), whole);
+    assert_eq!(csv_of(&fresh), text);
+}
+
+#[test]
+fn files_are_opened_by_what_they_hold() {
+    let dir = std::env::temp_dir().join(format!("mlbx-import-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = Database::open_in_memory().unwrap();
+    let e = BookEntry::new(
+        Category::Comic,
+        SeriesChoice::New {
+            name: "Thor".into(),
+            start_year: None,
+            volume: None,
+            publisher: None,
+            magazine_format: None,
+            black_and_white: None,
+        },
+        IssueNumber::new("1").ok(),
+    );
+    db.add_book(&e).unwrap();
+    // Named .csv, but a zip all the same.
+    let zip_path = dir.join("export.csv");
+    db.export_zip(None, std::fs::File::create(&zip_path).unwrap())
+        .unwrap();
+    let csv_path = dir.join("books.txt");
+    std::fs::write(&csv_path, csv_of(&db)).unwrap();
+    let mut from_zip = ImportSource::open(&zip_path).unwrap();
+    let from_csv = ImportSource::open(&csv_path).unwrap();
+    assert_eq!(from_zip.headers(), from_csv.headers());
+    assert_eq!(from_zip.len(), 1);
+    assert!(from_zip.read_photo("images/none.jpg").is_err());
+    assert!(ImportSource::open(&dir.join("missing.csv")).is_err());
+    std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -8,7 +8,7 @@
 //! value history, and the time they were added.
 
 use std::collections::{HashMap, HashSet};
-use std::io::{Cursor, Read};
+use std::io::{Read, Seek};
 
 use rusqlite::{OptionalExtension, params};
 use uuid::Uuid;
@@ -31,13 +31,20 @@ const MAX_CSV_BYTES: u64 = 100 * 1024 * 1024;
 /// The largest photo read from an archive; decoding sets its own limits.
 const MAX_PHOTO_BYTES: u64 = 50 * 1024 * 1024;
 
+/// What an archive is read from: a file, or bytes in memory.
+pub trait ArchiveReader: Read + Seek + Send {}
+
+impl<T: Read + Seek + Send> ArchiveReader for T {}
+
+type Archive = zip::ZipArchive<Box<dyn ArchiveReader>>;
+
 /// A file to import: a CSV, or a full export with its photos.
 pub struct ImportSource {
     rows: Vec<Vec<String>>,
     /// Each row's line in the file.
     lines: Vec<usize>,
     headers: Vec<String>,
-    archive: Option<zip::ZipArchive<Cursor<Vec<u8>>>>,
+    archive: Option<Archive>,
 }
 
 impl std::fmt::Debug for ImportSource {
@@ -168,10 +175,28 @@ fn unreadable(e: csv::Error) -> Error {
 }
 
 impl ImportSource {
-    /// A full export: its `collection.csv`, with its photos to hand.
-    pub fn from_zip(bytes: Vec<u8>) -> Result<Self> {
+    /// The file at `path`: a full export if it is a zip archive, and
+    /// otherwise a CSV.
+    pub fn open(path: &std::path::Path) -> Result<Self> {
+        let mut file = std::fs::File::open(path)?;
+        let mut magic = [0; 4];
+        let is_zip = file.read_exact(&mut magic).is_ok() && magic == *b"PK\x03\x04";
+        file.rewind()?;
+        if is_zip {
+            return Self::from_zip(std::io::BufReader::new(file));
+        }
+        let mut bytes = Vec::new();
+        // A file too large is refused without reading it all.
+        file.take(MAX_CSV_BYTES + 1).read_to_end(&mut bytes)?;
+        Self::from_csv(&bytes)
+    }
+
+    /// A full export: its `collection.csv`, with its photos read from
+    /// the archive as they are needed.
+    pub fn from_zip(reader: impl ArchiveReader + 'static) -> Result<Self> {
         let not_export = || Error::Invalid("the archive is not a MyLongboxDB full export".into());
-        let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| not_export())?;
+        let reader: Box<dyn ArchiveReader> = Box::new(reader);
+        let mut archive = zip::ZipArchive::new(reader).map_err(|_| not_export())?;
         let csv =
             read_entry(&mut archive, "collection.csv", MAX_CSV_BYTES).ok_or_else(not_export)?;
         let mut source = Self::from_csv(&csv)?;
@@ -204,19 +229,19 @@ impl ImportSource {
             && self.headers.iter().any(|h| h == "Copy ID")
     }
 
-    fn photo(&mut self, path: &str) -> Option<Vec<u8>> {
-        read_entry(self.archive.as_mut()?, path, MAX_PHOTO_BYTES)
+    /// A photo's file from the archive, by the path its row names.
+    pub fn read_photo(&mut self, path: &str) -> std::result::Result<Vec<u8>, String> {
+        self.archive
+            .as_mut()
+            .and_then(|archive| read_entry(archive, path, MAX_PHOTO_BYTES))
+            .ok_or_else(|| "the file is missing from the archive or too large".to_owned())
     }
 }
 
 /// An archive entry's bytes, if it exists and is no larger than `limit`.
 /// Only entries named in the CSV are read, and nothing is unpacked to
 /// disk, so names inside the archive cannot reach outside it.
-fn read_entry(
-    archive: &mut zip::ZipArchive<Cursor<Vec<u8>>>,
-    name: &str,
-    limit: u64,
-) -> Option<Vec<u8>> {
+fn read_entry(archive: &mut Archive, name: &str, limit: u64) -> Option<Vec<u8>> {
     let entry = archive.by_name(name).ok()?;
     if entry.size() > limit {
         return None;
@@ -757,6 +782,7 @@ impl Kept {
 /// The largest id in each table when an import starts: rows above it
 /// were made by the import, so they may take the file's ids, and copies
 /// at or below it were owned before.
+#[derive(Debug)]
 struct Before {
     series: i64,
     issue: i64,
@@ -764,61 +790,49 @@ struct Before {
     copy: i64,
 }
 
-/// A row's photo to add once its copy exists.
-struct PendingPhoto {
-    copy: CopyId,
-    side: Side,
-    path: String,
+/// A row's photo, to add once its copy exists.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingPhoto {
+    pub copy: CopyId,
+    pub side: Side,
+    /// Its file in the archive.
+    pub path: String,
+}
+
+/// An import under way. Rows are added a few at a time, so a window can
+/// show progress between them, inside one transaction that
+/// [`Database::finish_import`] commits or [`Database::abandon_import`]
+/// undoes. Until one of them is called, everything the collection is
+/// asked to do joins that transaction.
+#[derive(Debug)]
+pub struct ImportRun {
+    before: Before,
+    next: usize,
+    with_photos: bool,
+    report: ImportReport,
+    photos: Vec<PendingPhoto>,
+}
+
+impl ImportRun {
+    /// How many rows have been read.
+    pub fn rows_done(&self) -> usize {
+        self.next
+    }
+
+    pub fn report(&self) -> &ImportReport {
+        &self.report
+    }
+
+    /// The photos of the books added so far, for the caller to prepare
+    /// and pass to [`Database::import_photo`].
+    pub fn photos(&self) -> &[PendingPhoto] {
+        &self.photos
+    }
 }
 
 impl Database {
-    /// Runs the whole import and undoes it, reporting what each row
-    /// would do. Photos are not read.
-    pub fn check_import(
-        &self,
-        source: &ImportSource,
-        settings: &ImportSettings,
-    ) -> Result<ImportReport> {
-        let _undone = self.tx()?;
-        Ok(self.run_import(source, settings)?.0)
-    }
-
-    /// Adds every row that can be added, in one transaction, leaving out
-    /// rows already owned, rows with problems, and, if the settings say
-    /// so, likely duplicates. `prepare` turns a photo's file into what is
-    /// stored, or says why it cannot; a photo that fails is reported and
-    /// its book is added without it.
-    pub fn import(
-        &self,
-        source: &mut ImportSource,
-        settings: &ImportSettings,
-        prepare: &dyn Fn(Vec<u8>) -> std::result::Result<CoverPhoto, String>,
-    ) -> Result<ImportReport> {
-        let tx = self.tx()?;
-        let (mut report, photos) = self.run_import(source, settings)?;
-        for PendingPhoto { copy, side, path } in photos {
-            let photo = source
-                .photo(&path)
-                .ok_or_else(|| "the file is missing from the archive or too large".to_owned())
-                .and_then(prepare);
-            match photo {
-                Ok(photo) => {
-                    if let Err(e) = self.set_photo(copy, side, &photo) {
-                        report.photo_problems.push(format!("{path}: {e}"));
-                    }
-                }
-                Err(why) => report.photo_problems.push(format!("{path}: {why}")),
-            }
-        }
-        tx.commit()?;
-        Ok(report)
-    }
-
-    fn run_import(
-        &self,
-        source: &ImportSource,
-        settings: &ImportSettings,
-    ) -> Result<(ImportReport, Vec<PendingPhoto>)> {
+    /// Begins an import of `source`.
+    pub fn start_import(&self, source: &ImportSource) -> Result<ImportRun> {
         let largest = |kept: Kept| -> Result<i64> {
             Ok(self.conn.query_row(kept.largest(), [], |r| r.get(0))?)
         };
@@ -828,15 +842,35 @@ impl Database {
             edition: largest(Kept::Edition)?,
             copy: largest(Kept::Copy)?,
         };
-        let with_photos = source.archive.is_some();
-        let mut report = ImportReport::default();
-        let mut photos = Vec::new();
-        for (index, row) in source.rows.iter().enumerate() {
+        self.conn.execute_batch("SAVEPOINT import")?;
+        Ok(ImportRun {
+            before,
+            next: 0,
+            with_photos: source.archive.is_some(),
+            report: ImportReport::default(),
+            photos: Vec::new(),
+        })
+    }
+
+    /// Adds up to `limit` more rows, returning whether every row has now
+    /// been read. Rows that cannot be added are reported, not fatal; an
+    /// error means the collection itself failed, and the run should be
+    /// abandoned.
+    pub fn import_rows(
+        &self,
+        run: &mut ImportRun,
+        source: &ImportSource,
+        settings: &ImportSettings,
+        limit: usize,
+    ) -> Result<bool> {
+        let end = run.next.saturating_add(limit).min(source.rows.len());
+        while run.next < end {
+            let index = run.next;
             let cells = Cells {
                 by_field: settings
                     .mapping
                     .iter()
-                    .zip(row)
+                    .zip(&source.rows[index])
                     .filter_map(|(field, cell)| Some(((*field)?, cell.as_str())))
                     .collect(),
                 separator: settings.separator,
@@ -845,10 +879,10 @@ impl Database {
                 Err(problem) => Outcome::Problem(problem),
                 Ok(planned) => {
                     let unit = self.tx()?;
-                    match self.import_row(planned, settings, &before, with_photos) {
+                    match self.import_row(planned, settings, &run.before, run.with_photos) {
                         Ok((outcome, pending)) => {
                             unit.commit()?;
-                            photos.extend(pending);
+                            run.photos.extend(pending);
                             outcome
                         }
                         Err(Error::Sqlite(e)) if !is_constraint(&e) => {
@@ -858,13 +892,94 @@ impl Database {
                     }
                 }
             };
-            report.rows.push(RowReport {
+            run.report.rows.push(RowReport {
                 line: source.lines[index],
                 label: label(&cells),
                 outcome,
             });
+            run.next += 1;
         }
-        Ok((report, photos))
+        Ok(run.next == source.rows.len())
+    }
+
+    /// Stores a photo of the run's, once the caller has made it from the
+    /// file, or notes why it could not be.
+    pub fn import_photo(
+        &self,
+        run: &mut ImportRun,
+        photo: &PendingPhoto,
+        prepared: std::result::Result<CoverPhoto, String>,
+    ) -> Result<()> {
+        let why = match prepared {
+            Ok(stored) => match self.set_photo(photo.copy, photo.side, &stored) {
+                Ok(()) => return Ok(()),
+                Err(Error::Sqlite(e)) if !is_constraint(&e) => return Err(Error::Sqlite(e)),
+                Err(e) => e.to_string(),
+            },
+            Err(why) => why,
+        };
+        run.report
+            .photo_problems
+            .push(format!("{}: {why}", photo.path));
+        Ok(())
+    }
+
+    /// Keeps everything the run added.
+    pub fn finish_import(&self, run: ImportRun) -> Result<ImportReport> {
+        self.conn.execute_batch("RELEASE import")?;
+        Ok(run.report)
+    }
+
+    /// Undoes everything the run added, returning what it found: a dry
+    /// run is a run abandoned once every row is read.
+    pub fn abandon_import(&self, run: ImportRun) -> Result<ImportReport> {
+        self.conn
+            .execute_batch("ROLLBACK TO import; RELEASE import")?;
+        Ok(run.report)
+    }
+
+    /// Runs the whole import and undoes it, reporting what each row
+    /// would do.
+    pub fn check_import(
+        &self,
+        source: &ImportSource,
+        settings: &ImportSettings,
+    ) -> Result<ImportReport> {
+        let mut run = self.start_import(source)?;
+        match self.import_rows(&mut run, source, settings, usize::MAX) {
+            Ok(_) => self.abandon_import(run),
+            Err(e) => {
+                self.abandon_import(run)?;
+                Err(e)
+            }
+        }
+    }
+
+    /// Runs the whole import at once and keeps it. `prepare` turns a
+    /// photo's file into what is stored, or says why it cannot.
+    pub fn import(
+        &self,
+        source: &mut ImportSource,
+        settings: &ImportSettings,
+        prepare: &dyn Fn(Vec<u8>) -> std::result::Result<CoverPhoto, String>,
+    ) -> Result<ImportReport> {
+        let mut run = self.start_import(source)?;
+        let added = self
+            .import_rows(&mut run, source, settings, usize::MAX)
+            .and_then(|_| {
+                for photo in run.photos.clone() {
+                    let prepared = source.read_photo(&photo.path).and_then(prepare);
+                    self.import_photo(&mut run, &photo, prepared)?;
+                }
+                Ok(())
+            });
+        match added {
+            Ok(()) => self.finish_import(run),
+            Err(e) => {
+                self.abandon_import(run)?;
+                Err(e)
+            }
+        }
     }
 
     /// The live row with the file's id, if any; an error if it is in

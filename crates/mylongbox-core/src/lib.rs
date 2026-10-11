@@ -84,7 +84,8 @@ pub use filter::{
 };
 pub use gaps::SeriesGaps;
 pub use import::{
-    ImportReport, ImportSettings, ImportSource, Outcome as ImportOutcome, RowReport, auto_mapping,
+    ArchiveReader, ImportReport, ImportRun, ImportSettings, ImportSource, Outcome as ImportOutcome,
+    PendingPhoto, RowReport, auto_mapping,
 };
 pub use issue_number::{IssueNumber, IssueNumberError};
 pub use links::{Appearance, ArcPart, Credit, Named, Signature};
