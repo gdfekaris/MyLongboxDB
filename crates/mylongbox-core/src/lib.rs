@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+// Its SQL fragments are shared with search.
+#[macro_use]
 mod browse;
 #[cfg(test)]
 mod browse_tests;
@@ -43,6 +45,9 @@ mod photos_tests;
 mod rates;
 #[cfg(test)]
 mod schema_tests;
+mod search;
+#[cfg(test)]
+mod search_tests;
 mod shelf_ops;
 #[cfg(test)]
 mod shelf_ops_tests;

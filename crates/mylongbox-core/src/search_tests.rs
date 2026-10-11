@@ -1,0 +1,350 @@
+//! Tests of quick search and the index behind it.
+
+use crate::model::*;
+use crate::search::{fold, quality};
+use crate::{BookEntry, Database, IssueNumber, SeriesChoice, Shelf};
+
+fn db() -> Database {
+    Database::open_in_memory().unwrap()
+}
+
+fn entry(series: &str, year: u16, number: &str) -> BookEntry {
+    BookEntry::new(
+        Category::Comic,
+        SeriesChoice::New {
+            name: series.into(),
+            start_year: Some(year),
+            volume: None,
+            publisher: None,
+            magazine_format: None,
+            black_and_white: None,
+        },
+        Some(IssueNumber::new(number).unwrap()),
+    )
+}
+
+fn add(db: &Database, e: &BookEntry) -> CopyId {
+    db.add_book(e).unwrap().copy
+}
+
+/// The copies a query finds, in order.
+fn found(db: &Database, query: &str) -> Vec<CopyId> {
+    db.quick_search(query)
+        .unwrap()
+        .into_iter()
+        .map(|r| r.copy)
+        .collect()
+}
+
+/// A small collection where each book is findable by one kind of field.
+struct Shelf8 {
+    db: Database,
+    spider: CopyId,
+    hulk: CopyId,
+    fantastic: CopyId,
+}
+
+fn collection() -> Shelf8 {
+    let db = db();
+    let mut e = entry("Amazing Spider-Man", 1963, "121");
+    e.issue.title = "The Night Gwen Stacy Died".into();
+    e.credits = vec![("Gerry Conway".into(), Role::Writer)];
+    e.characters = vec![("Green Goblin".into(), false)];
+    e.story_arcs = vec![("Death of Gwen".into(), Some(1))];
+    e.tags = vec!["Key".into()];
+    e.storage_box = Some("Attic Shelf".into());
+    let spider = add(&db, &e);
+
+    let mut e = entry("Incredible Hulk", 1968, "181");
+    e.series = SeriesChoice::New {
+        name: "Incredible Hulk".into(),
+        start_year: Some(1968),
+        volume: None,
+        publisher: Some("Marvel".into()),
+        magazine_format: None,
+        black_and_white: None,
+    };
+    e.characters = vec![("Wolverine".into(), true)];
+    e.copy.notes = "Slight spine roll; bought at a convention".into();
+    e.cover_artists = vec!["Herb Trimpe".into()];
+    let hulk = add(&db, &e);
+
+    let mut e = entry("Fantastic Four", 1961, "48");
+    e.credits = vec![("Jack Kirby".into(), Role::Penciller)];
+    e.teams = vec![("Inhumans".into(), true)];
+    e.storage_box = Some("Long Box B".into());
+    let fantastic = add(&db, &e);
+    Shelf8 {
+        db,
+        spider,
+        hulk,
+        fantastic,
+    }
+}
+
+#[test]
+fn every_kind_of_field_is_searched() {
+    let c = collection();
+    for (query, copy) in [
+        ("spider-man", c.spider),
+        ("gwen stacy died", c.spider),
+        ("conway", c.spider),
+        ("goblin", c.spider),
+        ("death of gwen", c.spider),
+        ("key", c.spider),
+        ("attic", c.spider),
+        ("marvel", c.hulk),
+        ("wolverine", c.hulk),
+        ("spine roll", c.hulk),
+        ("trimpe", c.hulk),
+        ("kirby", c.fantastic),
+        ("inhumans", c.fantastic),
+    ] {
+        assert_eq!(found(&c.db, query), [copy], "{query}");
+    }
+    assert!(found(&c.db, "nothing like this").is_empty());
+    assert!(found(&c.db, "   ").is_empty());
+}
+
+#[test]
+fn case_accents_and_word_parts_do_not_matter() {
+    let db = db();
+    let mut e = entry("Pokémon Adventures", 2000, "1");
+    e.credits = vec![("José Muñoz".into(), Role::Penciller)];
+    let poke = add(&db, &e);
+    let x = add(&db, &entry("X-Men", 1963, "1"));
+    assert_eq!(found(&db, "POKEMON"), [poke]);
+    assert_eq!(found(&db, "pokémon"), [poke]);
+    assert_eq!(found(&db, "jose munoz"), [poke]);
+    assert_eq!(found(&db, "kémo"), [poke]);
+    assert_eq!(found(&db, "ADVENT"), [poke]);
+    // Words shorter than three letters are looked for too, at the start
+    // of a word.
+    assert_eq!(found(&db, "x"), [x]);
+    assert_eq!(found(&db, "x-m"), [x]);
+    assert_eq!(found(&db, "Po"), [poke]);
+    assert_eq!(found(&db, "mu"), [poke]);
+    assert!(found(&db, "ok").is_empty(), "not inside a word");
+    assert_eq!(found(&db, "oke"), [poke], "three letters may be anywhere");
+}
+
+#[test]
+fn every_word_must_be_found_somewhere() {
+    let c = collection();
+    assert_eq!(found(&c.db, "spider conway"), [c.spider]);
+    assert_eq!(found(&c.db, "goblin attic"), [c.spider]);
+    assert!(found(&c.db, "spider kirby").is_empty());
+    assert_eq!(found(&c.db, "long box"), [c.fantastic]);
+    // A short word may begin a word in a different field of each book.
+    let mut every = found(&c.db, "c");
+    every.sort();
+    assert_eq!(every, [c.spider, c.hulk]);
+}
+
+#[test]
+fn names_rank_above_notes_and_whole_matches_above_parts() {
+    let db = db();
+    let mut noted = entry("Avengers", 1963, "4");
+    noted.copy.notes = "Thor cameo".into();
+    let noted = add(&db, &noted);
+    let series = add(&db, &entry("Thor", 1966, "126"));
+    let mut part = entry("Journey into Mystery", 1952, "83");
+    part.issue.title = "The Mighty Thor arrives".into();
+    let part = add(&db, &part);
+    assert_eq!(found(&db, "thor"), [series, part, noted]);
+    // A book found through several fields ranks by its best one.
+    let mut both = entry("Thor", 1966, "127");
+    both.copy.notes = "thor and loki".into();
+    let both = add(&db, &both);
+    assert_eq!(found(&db, "thor"), [series, both, part, noted]);
+
+    assert_eq!(quality(&fold("Thor"), "thor"), 1.0);
+    assert_eq!(
+        fold("Pokémon Café ÅNGSTRÖM Ñandú"),
+        "pokemon cafe angstrom nandu"
+    );
+    assert!(quality("thor annual", "thor") > quality("mighty thor", "thor"));
+    assert!(quality("mighty thor", "thor") > quality("panthor", "thor"));
+    assert!(quality("panthor", "thor") > quality("thór", "thor"));
+}
+
+#[test]
+fn query_syntax_is_taken_literally() {
+    let db = db();
+    let mut e = entry("Weird Science", 1950, "1");
+    e.copy.notes = "100% complete; \"near mint\" said the_seller".into();
+    let weird = add(&db, &e);
+    add(&db, &entry("Other", 1990, "1"));
+    for query in ["100%", "\"near", "the_seller", "_s"] {
+        assert_eq!(found(&db, query), [weird], "{query}");
+    }
+    // Wildcards and FTS5 operators are plain characters: they find only
+    // text that has them, and raise no error.
+    for (query, wanted) in [
+        ("%", vec![weird]),
+        ("_", vec![weird]),
+        ("\"", vec![weird]),
+        ("*", vec![]),
+        ("sci*", vec![]),
+        ("AND", vec![]),
+        ("NEAR(a b)", vec![]),
+        ("-x", vec![]),
+        ("^we", vec![]),
+    ] {
+        assert_eq!(found(&db, query), wanted, "{query}");
+    }
+}
+
+#[test]
+fn trash_hides_books_until_restored() {
+    let c = collection();
+    let trash = c.db.trash_copy(c.hulk).unwrap();
+    assert!(found(&c.db, "wolverine").is_empty());
+    c.db.restore(trash).unwrap();
+    assert_eq!(found(&c.db, "wolverine"), [c.hulk]);
+}
+
+#[test]
+fn the_index_follows_every_change() {
+    let c = collection();
+    let kirby =
+        c.db.find_lookup::<CreatorId>("Jack Kirby")
+            .unwrap()
+            .unwrap();
+    c.db.rename_lookup(kirby, "Jacob Kurtzberg").unwrap();
+    assert!(found(&c.db, "kirby").is_empty());
+    assert_eq!(found(&c.db, "kurtzberg"), [c.fantastic]);
+    c.db.add_alias(kirby, "King Kirby").unwrap();
+    assert_eq!(found(&c.db, "king"), [c.fantastic]);
+    c.db.remove_alias(kirby, "King Kirby").unwrap();
+    assert!(found(&c.db, "king").is_empty());
+
+    let mut fields = c.db.copy(c.hulk).unwrap().fields;
+    fields.notes = "Signed in silver".into();
+    c.db.update_copy(c.hulk, &fields).unwrap();
+    assert!(found(&c.db, "spine").is_empty());
+    assert_eq!(found(&c.db, "silver"), [c.hulk]);
+
+    let series = c.db.find_issue_series(c.spider);
+    c.db.rename_shelf(Shelf::Series(series), "Spectacular Spider-Man")
+        .unwrap();
+    assert_eq!(found(&c.db, "spectacular"), [c.spider]);
+    assert!(found(&c.db, "amazing").is_empty());
+
+    // After all that, the index agrees with its source, and is exactly
+    // what a rebuild would make.
+    assert_consistent(&c.db);
+    let before = index(&c.db);
+    c.db.rebuild_search_index().unwrap();
+    assert_eq!(index(&c.db), before);
+}
+
+#[test]
+fn merging_entries_keeps_their_names_findable() {
+    let db = db();
+    let mut a = entry("Fantastic Four", 1961, "1");
+    a.credits = vec![("J. Kirby".into(), Role::Penciller)];
+    let first = add(&db, &a);
+    let mut b = entry("Fantastic Four", 1961, "2");
+    b.credits = vec![("Jack Kirby".into(), Role::Penciller)];
+    let second = add(&db, &b);
+    let alias = db.find_lookup::<CreatorId>("J. Kirby").unwrap().unwrap();
+    db.merge_shelf(Shelf::Creator(alias), "Jack Kirby").unwrap();
+    // The merged spelling became an alternate name of the kept entry.
+    assert_eq!(found(&db, "j. kirby"), [first, second]);
+    assert_consistent(&db);
+    let before = index(&db);
+    db.rebuild_search_index().unwrap();
+    assert_eq!(index(&db), before);
+}
+
+#[test]
+fn a_rebuilt_index_replaces_whatever_was_there() {
+    let c = collection();
+    let before = index(&c.db);
+    // A file from elsewhere could carry an index that does not match.
+    c.db.conn
+        .execute(
+            "INSERT INTO search_text (rowid, text) VALUES (99999, 'planted')",
+            [],
+        )
+        .unwrap();
+    c.db.conn
+        .execute(
+            "INSERT INTO search_text (search_text) VALUES ('delete-all')",
+            [],
+        )
+        .unwrap();
+    assert!(found(&c.db, "wolverine").is_empty());
+    c.db.rebuild_search_index().unwrap();
+    assert_eq!(index(&c.db), before);
+    assert_eq!(found(&c.db, "wolverine"), [c.hulk]);
+    assert!(found(&c.db, "planted").is_empty());
+}
+
+/// Runs FTS5's own check that the index matches the text it indexes.
+fn assert_consistent(db: &Database) {
+    db.conn
+        .execute(
+            "INSERT INTO search_text (search_text, rank) VALUES ('integrity-check', 1)",
+            [],
+        )
+        .unwrap();
+}
+
+/// Every row of the search index, in order.
+fn index(db: &Database) -> Vec<(i64, String, i64, i64)> {
+    crate::catalog::query_all(
+        &db.conn,
+        "SELECT s.id, s.text, s.kind, s.owner FROM search_text f
+         JOIN search_source s ON s.id = f.rowid ORDER BY s.id",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+    )
+    .unwrap()
+}
+
+impl Database {
+    fn find_issue_series(&self, copy: CopyId) -> SeriesId {
+        let edition = self.edition(self.copy(copy).unwrap().edition).unwrap();
+        self.issue(edition.issue).unwrap().series
+    }
+}
+
+/// The search target: every query under 100 ms at 10,000 copies. Run with
+/// `cargo test --release -- --ignored`.
+#[test]
+#[ignore = "slow in debug builds; run in release"]
+fn searching_ten_thousand_copies_is_quick() {
+    use crate::fixtures::{FixtureSpec, generate};
+    let db = db();
+    generate(
+        &db,
+        FixtureSpec {
+            copies: 10_000,
+            seed: 42,
+        },
+    )
+    .unwrap();
+    // Broad and narrow words, short ones, several at once, and none.
+    for query in [
+        "a",
+        "e",
+        "man",
+        "uncanny",
+        "widget-man",
+        "ghost",
+        "mighty comet",
+        "astonishing nova scouts",
+        "zzzz",
+    ] {
+        let start = std::time::Instant::now();
+        let rows = db.quick_search(query).unwrap();
+        let took = start.elapsed();
+        assert!(
+            took.as_millis() < 100,
+            "{query:?} took {took:?} for {} books",
+            rows.len()
+        );
+    }
+}

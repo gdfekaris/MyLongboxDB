@@ -354,7 +354,7 @@ fn entry(row: &Row<'_>, shelf: fn(i64) -> Shelf) -> rusqlite::Result<ShelfEntry>
     })
 }
 
-fn copy_row(row: &Row<'_>) -> rusqlite::Result<CopyRow> {
+pub(crate) fn copy_row(row: &Row<'_>) -> rusqlite::Result<CopyRow> {
     Ok(CopyRow {
         copy: row.get(0)?,
         issue: row.get(1)?,
