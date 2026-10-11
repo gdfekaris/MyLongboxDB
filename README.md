@@ -84,6 +84,12 @@ its authors:
   `--share=ipc`, and `--device=dri`: no network, and no access to your
   home folder or the host filesystem. Verify with
   `flatpak info --show-permissions io.github.gdfekaris.MyLongboxDB`.
+  Collections live in the app's own folder,
+  `~/.var/app/io.github.gdfekaris.MyLongboxDB/data/collections/`. Files
+  elsewhere are reached only through the system file chooser: importing
+  copies a collection in after checking it, and exporting writes a
+  copy out. GTK's recently used files list is turned off, so the app
+  leaves no record of which files you picked.
 
 The runtime self-restrictions will be documented here, with verification
 steps, as they land.

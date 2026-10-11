@@ -2,18 +2,138 @@ using Gtk 4.0;
 using Adw 1;
 
 template $MainWindow: Adw.ApplicationWindow {
-  title: "MyLongboxDB";
-  default-width: 1000;
-  default-height: 700;
+  title: _("MyLongboxDB");
+  default-width: 1100;
+  default-height: 720;
+  width-request: 360;
+  height-request: 294;
 
-  content: Adw.ToolbarView {
-    [top]
-    Adw.HeaderBar {}
+  Adw.Breakpoint {
+    condition ("max-width: 640sp")
 
-    content: Adw.StatusPage {
-      icon-name: "io.github.gdfekaris.MyLongboxDB";
-      title: "MyLongboxDB";
-      description: "Your collection will appear here.";
+    setters {
+      split_view.collapsed: true;
+    }
+  }
+
+  content: Adw.ToastOverlay toast_overlay {
+    child: Adw.ViewStack stack {
+      Adw.ViewStackPage {
+        name: "welcome";
+
+        child: Adw.ToolbarView {
+          [top]
+          Adw.HeaderBar {
+            show-title: false;
+          }
+
+          content: Adw.StatusPage {
+            icon-name: "io.github.gdfekaris.MyLongboxDB";
+            title: _("Welcome to MyLongboxDB");
+            description: _("Catalog and search your comics, magazines, and collected editions. Everything stays on this computer.");
+
+            child: Box {
+              orientation: vertical;
+              spacing: 12;
+              halign: center;
+
+              Button {
+                label: _("_Create New Collection");
+                use-underline: true;
+                action-name: "win.new-collection";
+
+                styles [
+                  "pill",
+                  "suggested-action",
+                ]
+              }
+
+              Button {
+                label: _("_Import Collection File…");
+                use-underline: true;
+                action-name: "win.import-collection";
+
+                styles [
+                  "pill",
+                ]
+              }
+            };
+          };
+        };
+      }
+
+      Adw.ViewStackPage {
+        name: "collection";
+
+        child: Adw.NavigationSplitView split_view {
+          sidebar: Adw.NavigationPage {
+            title: _("MyLongboxDB");
+
+            child: Adw.ToolbarView {
+              [top]
+              Adw.HeaderBar {}
+
+              content: ScrolledWindow {
+                hscrollbar-policy: never;
+
+                child: ListBox sidebar {
+                  selection-mode: single;
+
+                  styles [
+                    "navigation-sidebar",
+                  ]
+                };
+              };
+            };
+          };
+
+          content: Adw.NavigationPage content_page {
+            title: _("Everything");
+
+            child: Adw.ToolbarView {
+              [top]
+              Adw.HeaderBar {
+                title-widget: Adw.WindowTitle window_title {
+                  title: _("Everything");
+                };
+
+                [end]
+                MenuButton {
+                  icon-name: "open-menu-symbolic";
+                  menu-model: main_menu;
+                  primary: true;
+                  tooltip-text: _("Main Menu");
+                }
+              }
+
+              content: Adw.StatusPage {
+                icon-name: "io.github.gdfekaris.MyLongboxDB";
+                title: _("Nothing Here Yet");
+                description: _("Comics you add will appear here.");
+              };
+            };
+          };
+        };
+      }
     };
   };
+}
+
+menu main_menu {
+  section {
+    item {
+      label: _("_New Collection…");
+      action: "win.new-collection";
+    }
+
+    item {
+      label: _("_Import Collection File…");
+      action: "win.import-collection";
+    }
+
+    item {
+      label: _("_Export a Copy…");
+      action: "win.export-collection";
+    }
+  }
 }
