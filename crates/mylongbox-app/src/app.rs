@@ -5,9 +5,9 @@ use std::rc::{Rc, Weak};
 use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
-    Amount, BulkChange, Category, CollectionInfo, CollectionStore, CopyId, CoverPhoto, Currency,
-    Database, Date, EditionId, FilterSet, IssueId, Prefill, SeriesId, Shelf, ShelfEntry, ShelfList,
-    Side, TrashId, ValueEntry,
+    Amount, BulkChange, Category, CollectionInfo, CollectionStore, CopyId, CopyRow, CoverPhoto,
+    Currency, Database, Date, EditionId, FilterSet, IssueId, Prefill, SeriesId, Shelf, ShelfEntry,
+    ShelfList, Side, TrashId, ValueEntry,
 };
 use mylongbox_media::Edit;
 use relm4::typed_view::column::TypedColumnView;
@@ -20,9 +20,11 @@ use crate::filter_panel::FilterPanel;
 use crate::form::{Focus, Form, Hooks};
 use crate::issue_page::{self, Links};
 use crate::settings::{self, Settings};
+use crate::sorting::SortBy;
 use crate::window::MainWindow;
 use crate::{
-    bulk_dialog, covers, form, format, gaps_page, photo_editor, prefs, prompt, trash_page, viewer,
+    bulk_dialog, covers, form, format, gaps_page, photo_editor, prefs, prompt, sorting, trash_page,
+    viewer,
 };
 
 /// What a sidebar section shows.
@@ -222,6 +224,8 @@ pub struct App {
     current_db: Rc<RefCell<Weak<Database>>>,
     /// Whether issues in collected editions fill gaps.
     gaps_collected: bool,
+    sort: SortBy,
+    sort_reversed: bool,
 }
 
 #[derive(Debug)]
@@ -309,6 +313,7 @@ pub enum AppMsg {
     GapsCountCollected(bool),
     /// Show a series' books, as from its gaps.
     OpenSeries(SeriesId, String),
+    Sort(SortBy, bool),
 }
 
 #[derive(Debug)]
@@ -479,6 +484,50 @@ impl Component for App {
                 .connect_button_clicked(move |_| sender.input(AppMsg::UseCorrection));
         }
         {
+            // The sort menu's choices: what to sort by, and which way.
+            let sort = gio::SimpleAction::new_stateful(
+                "sort",
+                Some(glib::VariantTy::STRING),
+                &"usual".to_variant(),
+            );
+            let reversed =
+                gio::SimpleAction::new_stateful("sort-reversed", None, &false.to_variant());
+            let send = {
+                let (sender, sort, reversed) = (sender.clone(), sort.clone(), reversed.clone());
+                move || {
+                    let by = sort
+                        .state()
+                        .and_then(|s| s.get::<String>())
+                        .map_or(SortBy::Usual, |n| SortBy::from_name(&n));
+                    let back = reversed
+                        .state()
+                        .and_then(|s| s.get::<bool>())
+                        .unwrap_or(false);
+                    sender.input(AppMsg::Sort(by, back));
+                }
+            };
+            let send = Rc::new(send);
+            {
+                let send = send.clone();
+                sort.connect_change_state(move |action, value| {
+                    if let Some(value) = value {
+                        action.set_state(value);
+                        send();
+                    }
+                });
+            }
+            reversed.connect_activate(move |action, _| {
+                let on = action
+                    .state()
+                    .and_then(|s| s.get::<bool>())
+                    .unwrap_or(false);
+                action.set_state(&(!on).to_variant());
+                send();
+            });
+            root.add_action(&sort);
+            root.add_action(&reversed);
+        }
+        {
             // Ctrl+F opens the search box, or closes it.
             let search = gio::SimpleAction::new("search", None);
             let toggle = root.search_toggle();
@@ -510,6 +559,8 @@ impl Component for App {
             found: 0,
             current_db,
             gaps_collected: false,
+            sort: SortBy::Usual,
+            sort_reversed: false,
         };
 
         let startup = match &model.store {
@@ -706,6 +757,13 @@ impl Component for App {
             AppMsg::FiltersChanged => {
                 if self.filters_shown {
                     root.pop_to_section();
+                    self.show(root);
+                }
+            }
+            AppMsg::Sort(by, reversed) => {
+                self.sort = by;
+                self.sort_reversed = reversed;
+                if root.is_showing_books() {
                     self.show(root);
                 }
             }
@@ -1591,18 +1649,15 @@ impl App {
         self.found = rows.len();
         // The header counts what was found, which is known only now.
         self.show_header(root);
-        self.grid.clear();
-        self.table.clear();
         if rows.is_empty() {
+            self.fill_books(Vec::new(), false, root);
             root.show_empty(
                 "No Books Found",
                 "Try other words, or fewer filters. Search looks at series, titles, \
                  publishers, people, characters, teams, story arcs, tags, boxes, and notes.",
             );
         } else {
-            self.grid.extend_from_iter(rows.iter().cloned().map(Book));
-            self.table.extend_from_iter(rows.into_iter().map(Book));
-            root.show_books(self.as_list);
+            self.fill_books(rows, false, root);
         }
         Ok(())
     }
@@ -1709,16 +1764,31 @@ impl App {
             }
         };
         let rows = db.browse(shelf)?;
+        if rows.is_empty() {
+            self.fill_books(Vec::new(), false, root);
+            root.show_empty(empty, hint);
+        } else {
+            self.fill_books(rows, shelf == Shelf::NeedsAttention, root);
+        }
+        Ok(())
+    }
+
+    /// Shows `rows` in the grid and the list, sorted as chosen, with
+    /// their totals underneath. `needs` says on each card what its book
+    /// still needs.
+    fn fill_books(&mut self, mut rows: Vec<CopyRow>, needs: bool, root: &MainWindow) {
+        sorting::sort(&mut rows, self.sort, self.sort_reversed, &format::in_cents);
+        root.set_totals(&format::totals(&rows));
         self.grid.clear();
         self.table.clear();
         if rows.is_empty() {
-            root.show_empty(empty, hint);
-        } else {
-            self.grid.extend_from_iter(rows.iter().cloned().map(Book));
-            self.table.extend_from_iter(rows.into_iter().map(Book));
-            root.show_books(self.as_list);
+            return;
         }
-        Ok(())
+        self.grid
+            .extend_from_iter(rows.iter().cloned().map(|r| Book(r, needs)));
+        self.table
+            .extend_from_iter(rows.into_iter().map(|r| Book(r, needs)));
+        root.show_books(self.as_list);
     }
 }
 

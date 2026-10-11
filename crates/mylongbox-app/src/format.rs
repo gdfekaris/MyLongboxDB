@@ -47,6 +47,54 @@ pub fn money(amount: Amount, on: Option<Date>) -> String {
     })
 }
 
+/// What a list of results adds up to, for the bar under them: how many
+/// books, what they are worth today, and what they cost when bought,
+/// in the currency chosen in the preferences.
+pub fn totals(rows: &[mylongbox_core::CopyRow]) -> String {
+    DISPLAY.with(|d| {
+        let d = d.borrow();
+        let target = d.settings.currency;
+        let show = |a: Amount| grouped(&a.to_string());
+        let worth = crate::sorting::total(
+            rows.iter()
+                .filter_map(|r| r.value.map(|v| (v, r.value_date))),
+            target,
+            &d.rates,
+            true,
+            show,
+        );
+        let cost = crate::sorting::total(
+            rows.iter()
+                .filter_map(|r| r.purchase_price.map(|p| (p, r.purchase_date))),
+            target,
+            &d.rates,
+            false,
+            show,
+        );
+        let count = match rows.len() {
+            1 => "1 book".to_owned(),
+            n => format!("{} books", grouped(&n.to_string())),
+        };
+        joined([
+            count,
+            worth.map(|w| format!("Worth {w}")).unwrap_or_default(),
+            cost.map(|c| format!("Cost {c}")).unwrap_or_default(),
+        ])
+    })
+}
+
+/// A value in US cents at the newest rate, so values in different
+/// currencies sort together.
+pub fn in_cents(amount: Amount) -> Option<i64> {
+    DISPLAY.with(|d| {
+        d.borrow()
+            .rates
+            .convert_at_latest(amount, mylongbox_core::Currency::Usd)
+            .ok()
+            .map(Amount::units)
+    })
+}
+
 /// Adds commas between thousands in the whole part of a formatted
 /// amount: `$1234567.89` becomes `$1,234,567.89`.
 pub fn grouped(text: &str) -> String {

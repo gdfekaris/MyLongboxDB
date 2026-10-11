@@ -18,6 +18,7 @@ mod photo_editor;
 mod prefs;
 mod prompt;
 mod settings;
+mod sorting;
 mod trash_page;
 mod viewer;
 mod window;

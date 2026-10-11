@@ -37,6 +37,12 @@ mod imp {
         #[template_child]
         pub select_toggle: TemplateChild<gtk::ToggleButton>,
         #[template_child]
+        pub sort_button: TemplateChild<gtk::MenuButton>,
+        #[template_child]
+        pub results_bar: TemplateChild<gtk::ActionBar>,
+        #[template_child]
+        pub results_label: TemplateChild<gtk::Label>,
+        #[template_child]
         pub entry_menu_button: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub selection_bar: TemplateChild<gtk::ActionBar>,
@@ -278,10 +284,29 @@ impl MainWindow {
         self.imp().view_toggle.get()
     }
 
+    /// Shows how many books are shown and what they add up to, under
+    /// them.
+    pub fn set_totals(&self, text: &str) {
+        self.imp().results_label.set_label(text);
+    }
+
+    /// Hides what only belongs with books: the view and sort buttons and
+    /// the totals.
+    fn hide_book_controls(&self) {
+        let imp = self.imp();
+        imp.view_toggle.set_visible(false);
+        imp.sort_button.set_visible(false);
+        imp.results_bar.set_revealed(false);
+        imp.select_toggle.set_visible(false);
+        imp.select_toggle.set_active(false);
+    }
+
     /// Shows books as a cover grid or a list.
     pub fn show_books(&self, as_list: bool) {
         let imp = self.imp();
         imp.view_toggle.set_visible(true);
+        imp.sort_button.set_visible(true);
+        imp.results_bar.set_revealed(true);
         imp.select_toggle.set_visible(true);
         imp.content_stack
             .set_visible_child_name(if as_list { "list" } else { "grid" });
@@ -297,27 +322,21 @@ impl MainWindow {
     /// Shows a view built for the section, such as Trash.
     pub fn show_custom(&self, view: &impl IsA<gtk::Widget>) {
         let imp = self.imp();
-        imp.view_toggle.set_visible(false);
-        imp.select_toggle.set_visible(false);
-        imp.select_toggle.set_active(false);
+        self.hide_book_controls();
         imp.custom_bin.set_child(Some(view));
         imp.content_stack.set_visible_child_name("custom");
     }
 
     pub fn show_names(&self) {
         let imp = self.imp();
-        imp.view_toggle.set_visible(false);
-        imp.select_toggle.set_visible(false);
-        imp.select_toggle.set_active(false);
+        self.hide_book_controls();
         imp.content_stack.set_visible_child_name("names");
     }
 
     /// Explains why there is nothing to show.
     pub fn show_empty(&self, title: &str, description: &str) {
         let imp = self.imp();
-        imp.view_toggle.set_visible(false);
-        imp.select_toggle.set_visible(false);
-        imp.select_toggle.set_active(false);
+        self.hide_book_controls();
         imp.empty_page.set_title(title);
         // The description is always read as markup, and can hold error
         // text.

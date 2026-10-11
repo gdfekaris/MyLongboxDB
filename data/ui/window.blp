@@ -147,6 +147,13 @@ template $MainWindow: Adw.ApplicationWindow {
                     }
 
                     [end]
+                    MenuButton sort_button {
+                      icon-name: "view-sort-descending-symbolic";
+                      tooltip-text: _("Sort");
+                      menu-model: sort_menu;
+                    }
+
+                    [end]
                     ToggleButton select_toggle {
                       icon-name: "selection-mode-symbolic";
                       tooltip-text: _("Select");
@@ -212,6 +219,22 @@ template $MainWindow: Adw.ApplicationWindow {
                     button-label: _("_Update Rates");
                     action-name: "win.edit-rates";
                     use-markup: false;
+                  }
+
+                  [bottom]
+                  ActionBar results_bar {
+                    revealed: false;
+
+                    [start]
+                    Label results_label {
+                      ellipsize: end;
+
+                      styles [
+                        "caption",
+                        "dim-label",
+                        "numeric",
+                      ]
+                    }
                   }
 
                   [bottom]
@@ -309,6 +332,53 @@ menu entry_menu {
     item {
       label: _("_Delete…");
       action: "win.delete-entry";
+    }
+  }
+}
+
+menu sort_menu {
+  section {
+    item {
+      label: _("_Usual Order");
+      action: "win.sort";
+      target: "usual";
+    }
+
+    item {
+      label: _("_Cover Date");
+      action: "win.sort";
+      target: "cover-date";
+    }
+
+    item {
+      label: _("_Grade");
+      action: "win.sort";
+      target: "grade";
+    }
+
+    item {
+      label: _("Current _Value");
+      action: "win.sort";
+      target: "value";
+    }
+
+    item {
+      label: _("_Purchase Date");
+      action: "win.sort";
+      target: "purchase-date";
+    }
+
+    item {
+      label: _("Date _Added");
+      action: "win.sort";
+      target: "added";
+    }
+  }
+
+  section {
+    item {
+      label: _("_Reverse Order");
+      action: "win.sort-reversed";
     }
   }
 }

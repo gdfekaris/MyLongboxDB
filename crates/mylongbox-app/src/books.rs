@@ -2,15 +2,16 @@
 
 use adw::prelude::*;
 use gtk::pango::EllipsizeMode;
-use mylongbox_core::{Category, CopyRow, ShelfEntry};
+use mylongbox_core::{Category, CopyRow, Need, ShelfEntry};
 use relm4::typed_view::column::{RelmColumn, TypedColumnView};
 use relm4::typed_view::grid::RelmGridItem;
 use relm4::typed_view::list::RelmListItem;
 
 use crate::{covers, format};
 
-/// One physical book in the cover grid or the list.
-pub struct Book(pub CopyRow);
+/// One physical book in the cover grid or the list, and whether its card
+/// says what the book still needs, as on the Needs Attention shelf.
+pub struct Book(pub CopyRow, pub bool);
 
 pub struct BookWidgets {
     photo: gtk::Picture,
@@ -19,6 +20,7 @@ pub struct BookWidgets {
     signed: gtk::Label,
     series: gtk::Label,
     issue: gtk::Label,
+    needs: gtk::Label,
 }
 
 /// Comic covers are about 2:3.
@@ -81,6 +83,10 @@ impl RelmGridItem for Book {
         series.set_wrap_mode(gtk::pango::WrapMode::WordChar);
         series.set_lines(2);
         let issue = label(&["caption", "dim-label"]);
+        let needs = label(&["caption", "warning"]);
+        needs.set_wrap(true);
+        needs.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+        needs.set_lines(2);
 
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -94,6 +100,7 @@ impl RelmGridItem for Book {
         root.append(&overlay);
         root.append(&series);
         root.append(&issue);
+        root.append(&needs);
         (
             root,
             BookWidgets {
@@ -103,6 +110,7 @@ impl RelmGridItem for Book {
                 signed,
                 series,
                 issue,
+                needs,
             },
         )
     }
@@ -119,7 +127,36 @@ impl RelmGridItem for Book {
         widgets.signed.set_visible(row.signed);
         widgets.series.set_label(&row.series);
         widgets.issue.set_label(&issue_line(row));
+        let needs = if self.1 {
+            needs_line(row)
+        } else {
+            String::new()
+        };
+        widgets.needs.set_visible(!needs.is_empty());
+        widgets.needs.set_label(&needs);
         root.set_tooltip_text(Some(&row.label()));
+    }
+}
+
+/// What a book still needs, e.g. `Needs back photo, value`, or nothing
+/// when it is complete.
+pub fn needs_line(row: &CopyRow) -> String {
+    let needs: Vec<&str> = row
+        .needs()
+        .into_iter()
+        .map(|need| match need {
+            Need::FrontPhoto => "front photo",
+            Need::BackPhoto => "back photo",
+            Need::Grade if row.category == Category::CollectedEdition => "condition",
+            Need::Grade => "grade",
+            Need::StorageBox => "box",
+            Need::Value => "value",
+        })
+        .collect();
+    if needs.is_empty() {
+        String::new()
+    } else {
+        format!("Needs {}", needs.join(", "))
     }
 }
 
