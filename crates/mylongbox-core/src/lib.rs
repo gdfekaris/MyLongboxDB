@@ -37,6 +37,7 @@ mod money;
 #[cfg(test)]
 mod schema_tests;
 mod store;
+mod values;
 
 pub use browse::{CopyRow, Shelf, ShelfEntry, ShelfList};
 pub use collects::{CollectedIn, CollectedIssue, Ownership, PreviewEntry};
@@ -45,7 +46,7 @@ pub use collects_text::{
 };
 pub use date::{Date, DateError};
 pub use db::{APPLICATION_ID, Database};
-pub use detail::{CopyDetail, EditionDetail, IssueDetail, ValueEntry};
+pub use detail::{CopyDetail, EditionDetail, IssueDetail};
 pub use entry::{BookEntry, Prefill, SavedBook, SeriesChoice};
 pub use error::{Error, Result};
 pub use issue_number::{IssueNumber, IssueNumberError};
@@ -56,10 +57,12 @@ pub use model::{
     Binding, BookCondition, BoxId, Category, CharacterId, Copy, CopyFields, CopyId, CoverDate,
     CreatorId, Distribution, Edition, EditionFields, EditionId, Grade, GradeType, Isbn, Issue,
     IssueFields, IssueId, MagazineFormat, PublisherId, Role, RowUuid, Series, SeriesFields,
-    SeriesId, SignatureFields, StoryArcId, TagId, TeamId, TrashGroup, TrashId, Verification,
+    SeriesId, SignatureFields, StoryArcId, TagId, TeamId, TrashGroup, TrashId, ValueId,
+    Verification,
 };
 pub use money::{
     Amount, ConversionError, Currency, ExchangeRate, ParseAmountError, RateError, RateTable,
     STALE_AFTER_DAYS,
 };
 pub use store::{CollectionInfo, CollectionStore, MAX_NAME};
+pub use values::ValueEntry;

@@ -1,28 +1,16 @@
 //! Everything the detail page shows about one issue: its series, credits,
 //! contents, and every edition and copy the owner has of it.
 
-use rusqlite::OptionalExtension;
-
 use crate::catalog::{issue_label, live};
 use crate::collects::{CollectedIn, CollectedIssue, Ownership};
-use crate::date::Date;
 use crate::db::Database;
 use crate::error::Result;
 use crate::links::{Appearance, ArcPart, Credit, Named, Signature};
 use crate::model::{
-    BoxId, CharacterId, Copy, CopyId, CreatorId, Edition, Issue, IssueId, PublisherId, Series,
-    TagId, TeamId,
+    BoxId, CharacterId, Copy, CreatorId, Edition, Issue, IssueId, PublisherId, Series, TagId,
+    TeamId,
 };
-use crate::money::{Amount, Currency};
-
-/// A dated valuation of a copy.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ValueEntry {
-    pub date: Date,
-    pub value: Amount,
-    /// Free text, e.g. `GoCollect`.
-    pub source: String,
-}
+use crate::values::ValueEntry;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CopyDetail {
@@ -31,8 +19,8 @@ pub struct CopyDetail {
     pub tags: Vec<Named<TagId>>,
     /// In the order signed.
     pub signatures: Vec<Signature>,
-    /// The newest value entry, if any.
-    pub value: Option<ValueEntry>,
+    /// Valuations, oldest first; the last is what it is worth now.
+    pub values: Vec<ValueEntry>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -121,26 +109,8 @@ impl Database {
             storage_box,
             tags: self.tags(copy.id)?,
             signatures: self.signatures(copy.id)?,
-            value: self.latest_value(copy.id)?,
+            values: self.values(copy.id)?,
             copy,
         })
-    }
-
-    fn latest_value(&self, copy: CopyId) -> Result<Option<ValueEntry>> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT date, value_units, value_currency, source FROM value_entry
-                 WHERE copy_id = ?1 ORDER BY date DESC, id DESC LIMIT 1",
-                [copy],
-                |row| {
-                    Ok(ValueEntry {
-                        date: row.get(0)?,
-                        value: Amount::new(row.get::<_, Currency>(2)?, row.get(1)?),
-                        source: row.get(3)?,
-                    })
-                },
-            )
-            .optional()?)
     }
 }

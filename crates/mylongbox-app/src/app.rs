@@ -4,8 +4,8 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
-    Category, CollectionInfo, CollectionStore, CopyId, Database, EditionId, IssueId, Prefill,
-    Shelf, ShelfEntry, ShelfList, TrashId,
+    Amount, Category, CollectionInfo, CollectionStore, CopyId, Currency, Database, Date, EditionId,
+    IssueId, Prefill, Shelf, ShelfEntry, ShelfList, TrashId, ValueEntry,
 };
 use relm4::typed_view::column::TypedColumnView;
 use relm4::typed_view::grid::TypedGridView;
@@ -15,8 +15,8 @@ use relm4::{Component, ComponentParts, ComponentSender};
 use crate::books::{self, Book, Name};
 use crate::form::{Focus, Form, Hooks};
 use crate::issue_page::{self, Links};
-use crate::trash_page;
 use crate::window::MainWindow;
+use crate::{format, trash_page};
 
 /// What a sidebar section shows.
 #[derive(Clone, Copy)]
@@ -177,6 +177,8 @@ pub struct App {
     /// The copy saved or shown most recently, which "add next issue"
     /// follows on from.
     recent_copy: Option<CopyId>,
+    /// The copy to show unfolded on the next book page opened.
+    open_copy: Option<CopyId>,
     /// For views built while loading, whose buttons send messages.
     sender: ComponentSender<App>,
     section: &'static Section,
@@ -207,6 +209,10 @@ pub enum AppMsg {
     AddFrom(CopyId, Prefill),
     /// Start the issue after the copy saved or opened most recently.
     AddNext,
+    /// Ask for a new value of a copy.
+    AddValue(CopyId),
+    SaveValue(CopyId, Date, Amount, String),
+    DeleteValue(CopyId, ValueEntry),
     TrashCopy(CopyId),
     TrashEdition(EditionId),
     TrashIssue(IssueId),
@@ -325,6 +331,7 @@ impl Component for App {
             open: None,
             form: None,
             recent_copy: None,
+            open_copy: None,
             sender: sender.clone(),
             section: &SECTIONS[0][0],
             shelf: None,
@@ -433,6 +440,33 @@ impl Component for App {
                     root.pop_page();
                 }
             }
+            AppMsg::AddValue(copy) => ask_value(root, &sender, copy),
+            AppMsg::SaveValue(copy, date, value, source) => {
+                match self.with_db(|db| db.add_value(copy, date, value, &source)) {
+                    Ok(_) => {
+                        self.refresh_copy(copy, root, &sender);
+                        root.toast("Value added");
+                    }
+                    Err(why) => root.toast(&format!("Could not add the value: {why}")),
+                }
+            }
+            AppMsg::DeleteValue(copy, entry) => {
+                match self.with_db(|db| db.delete_value(entry.id)) {
+                    Ok(()) => {
+                        self.refresh_copy(copy, root, &sender);
+                        let undo = sender.clone();
+                        root.toast_undo("Value deleted", move || {
+                            undo.input(AppMsg::SaveValue(
+                                copy,
+                                entry.date,
+                                entry.value,
+                                entry.source.clone(),
+                            ));
+                        });
+                    }
+                    Err(why) => root.toast(&format!("Could not delete the value: {why}")),
+                }
+            }
             AppMsg::TrashCopy(copy) => {
                 let issue = self.with_db(|db| Ok(db.edition(db.copy(copy)?.edition)?.issue));
                 let trashed = self.with_db(|db| db.trash_copy(copy));
@@ -535,6 +569,18 @@ impl App {
         }
     }
 
+    /// Replaces the open page of a copy's issue with a fresh one, and the
+    /// section beneath, after the copy changed.
+    fn refresh_copy(&mut self, copy: CopyId, root: &MainWindow, sender: &ComponentSender<Self>) {
+        let Ok(issue) = self.with_db(|db| Ok(db.edition(db.copy(copy)?.edition)?.issue)) else {
+            return;
+        };
+        root.pop_page();
+        self.show(root);
+        self.open_copy = Some(copy);
+        self.open_issue(issue, root, sender);
+    }
+
     /// Shows the collection as it is after something moved to Trash, back
     /// on the page of `issue` if it is still there, and offers Undo.
     fn after_trash(
@@ -590,8 +636,17 @@ impl App {
                         let s = sender.clone();
                         Rc::new(move |issue| s.input(AppMsg::TrashIssue(issue)))
                     },
+                    add_value: {
+                        let s = sender.clone();
+                        Rc::new(move |copy| s.input(AppMsg::AddValue(copy)))
+                    },
+                    delete_value: {
+                        let s = sender.clone();
+                        Rc::new(move |copy, entry| s.input(AppMsg::DeleteValue(copy, entry)))
+                    },
                 };
-                root.push_page(&issue_page::page(&detail, &links));
+                let open_copy = self.open_copy.take();
+                root.push_page(&issue_page::page(&detail, &links, open_copy));
             }
             Err(why) => root.toast(&why.to_string()),
         }
@@ -919,6 +974,81 @@ fn pick_export_file(root: &MainWindow, sender: &ComponentSender<App>, name: &str
             && let Some(path) = file.path()
         {
             sender.input(AppMsg::ExportPicked(path));
+        }
+    });
+}
+
+/// Asks for a copy's value on a date, with today filled in. Add is
+/// enabled only once the amount and date can be read.
+fn ask_value(root: &MainWindow, sender: &ComponentSender<App>, copy: CopyId) {
+    let amount = adw::EntryRow::builder().title("Value").build();
+    let currency = gtk::DropDown::from_strings(&["USD", "Gold (oz)", "Bitcoin"]);
+    currency.set_valign(gtk::Align::Center);
+    amount.add_suffix(&currency);
+    let date = adw::EntryRow::builder().title("Date (YYYY-MM-DD)").build();
+    date.set_text(&format::today().map(|d| d.to_string()).unwrap_or_default());
+    let source = adw::EntryRow::builder()
+        .title("Source (e.g. GoCollect, eBay sold)")
+        .build();
+    let fields = gtk::ListBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .css_classes(["boxed-list"])
+        .build();
+    fields.append(&amount);
+    fields.append(&date);
+    fields.append(&source);
+
+    let read = {
+        let (amount, currency, date) = (amount.clone(), currency.clone(), date.clone());
+        move || -> Option<(Date, Amount)> {
+            let cleaned: String = amount
+                .text()
+                .trim()
+                .trim_start_matches('$')
+                .chars()
+                .filter(|c| *c != ',')
+                .collect();
+            let currency = Currency::ALL[usize::try_from(currency.selected()).unwrap_or(0)];
+            let value = Amount::parse(currency, &cleaned).ok()?;
+            Some((date.text().trim().parse().ok()?, value))
+        }
+    };
+    let dialog = adw::AlertDialog::builder()
+        .heading("Add Value")
+        .body("What this copy was worth, and when.")
+        .extra_child(&fields)
+        .focus_widget(&amount)
+        .default_response("add")
+        .close_response("cancel")
+        .build();
+    dialog.add_responses(&[("cancel", "_Cancel"), ("add", "_Add")]);
+    dialog.set_response_appearance("add", adw::ResponseAppearance::Suggested);
+    dialog.set_response_enabled("add", false);
+    {
+        let weak = dialog.downgrade();
+        let read = read.clone();
+        let check = move || {
+            if let Some(dialog) = weak.upgrade() {
+                dialog.set_response_enabled("add", read().is_some());
+            }
+        };
+        let c = check.clone();
+        amount.connect_changed(move |_| c());
+        let c = check.clone();
+        date.connect_changed(move |_| c());
+        currency.connect_selected_notify(move |_| check());
+    }
+    let sender = sender.clone();
+    dialog.choose(Some(root), None::<&gio::Cancellable>, move |response| {
+        if response == "add"
+            && let Some((date, value)) = read()
+        {
+            sender.input(AppMsg::SaveValue(
+                copy,
+                date,
+                value,
+                source.text().trim().to_owned(),
+            ));
         }
     });
 }

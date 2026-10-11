@@ -5,6 +5,7 @@
 mod app;
 mod autocomplete;
 mod books;
+mod chart;
 mod form;
 mod format;
 mod issue_page;

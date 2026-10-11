@@ -7,11 +7,11 @@ use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
     Category, CopyDetail, CopyId, EditionDetail, EditionId, IssueDetail, IssueId, MagazineFormat,
-    Prefill, Role, format_collects,
+    Prefill, Role, ValueEntry, format_collects,
 };
 
 use crate::books::version;
-use crate::format;
+use crate::{chart, format};
 
 /// What the page's rows do when chosen.
 #[derive(Clone)]
@@ -24,9 +24,15 @@ pub struct Links {
     pub trash_copy: Rc<dyn Fn(CopyId)>,
     pub trash_edition: Rc<dyn Fn(EditionId)>,
     pub trash_issue: Rc<dyn Fn(IssueId)>,
+    pub add_value: Rc<dyn Fn(CopyId)>,
+    /// Deletes a value of a copy; the value is passed whole so it can be
+    /// put back.
+    pub delete_value: Rc<dyn Fn(CopyId, ValueEntry)>,
 }
 
-pub fn page(d: &IssueDetail, links: &Links) -> adw::NavigationPage {
+/// The page for `d`, with the row of `open_copy` unfolded, as after a
+/// change to that copy.
+pub fn page(d: &IssueDetail, links: &Links, open_copy: Option<CopyId>) -> adw::NavigationPage {
     let prefs = adw::PreferencesPage::new();
     prefs.add(&summary(d));
     if !d.issue.fields.synopsis.is_empty() {
@@ -74,7 +80,7 @@ pub fn page(d: &IssueDetail, links: &Links) -> adw::NavigationPage {
     }
     let category = d.series.fields.category;
     for (n, edition) in d.editions.iter().enumerate() {
-        prefs.add(&edition_group(edition, n, category, links));
+        prefs.add(&edition_group(edition, n, category, links, open_copy));
     }
 
     let header = adw::HeaderBar::new();
@@ -157,6 +163,8 @@ fn summary(d: &IssueDetail) -> adw::PreferencesGroup {
         .width_request(160)
         .height_request(242)
         .valign(gtk::Align::Start)
+        // The placeholder inside expands; the cover keeps its size.
+        .hexpand(false)
         .css_classes(["card"])
         .build();
     cover.append(&placeholder);
@@ -315,6 +323,7 @@ fn edition_group(
     index: usize,
     category: Category,
     links: &Links,
+    open_copy: Option<CopyId>,
 ) -> adw::PreferencesGroup {
     let f = &e.edition.fields;
     let name = match version(&f.variant, f.printing) {
@@ -378,7 +387,9 @@ fn edition_group(
         group.add(&none);
     }
     for (n, copy) in e.copies.iter().enumerate() {
-        group.add(&copy_row(copy, n + 1, category, links));
+        let row = copy_row(copy, n + 1, category, links);
+        row.set_expanded(open_copy == Some(copy.copy.id));
+        group.add(&row);
     }
     group
 }
@@ -402,8 +413,8 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
         (None, _) => String::new(),
     };
     let value = c
-        .value
-        .as_ref()
+        .values
+        .last()
         .map(|v| format!("Worth {}", v.value))
         .unwrap_or_default();
 
@@ -482,19 +493,6 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
         ]),
     );
     add(
-        "Value",
-        c.value
-            .as_ref()
-            .map(|v| {
-                format::joined([
-                    v.value.to_string(),
-                    format!("as of {}", format::date(v.date)),
-                    v.source.clone(),
-                ])
-            })
-            .unwrap_or_default(),
-    );
-    add(
         "Tags",
         c.tags
             .iter()
@@ -509,6 +507,58 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
             .map(format::date)
             .unwrap_or_default(),
     );
+    value_history(&row, c, links);
+    row
+}
+
+/// The copy's values over time: a small chart once there are two, each
+/// value with a way to delete it, and a way to add one.
+fn value_history(row: &adw::ExpanderRow, c: &CopyDetail, links: &Links) {
+    if c.values.len() >= 2 {
+        let chart = chart::value_chart(&c.values);
+        row.add_row(
+            &gtk::ListBoxRow::builder()
+                .child(&chart)
+                .activatable(false)
+                .selectable(false)
+                .build(),
+        );
+    }
+    for v in c.values.iter().rev() {
+        let entry = plain_row(
+            &v.value.to_string(),
+            &format::joined([
+                format!("Value as of {}", format::date(v.date)),
+                v.source.clone(),
+            ]),
+        );
+        let delete = gtk::Button::builder()
+            .icon_name("user-trash-symbolic")
+            .valign(gtk::Align::Center)
+            .tooltip_text("Delete This Value")
+            .css_classes(["flat"])
+            .build();
+        let hook = links.delete_value.clone();
+        let (copy, entry_data) = (c.copy.id, v.clone());
+        delete.connect_clicked(move |_| hook(copy, entry_data.clone()));
+        entry.add_suffix(&delete);
+        row.add_row(&entry);
+    }
+    let add = adw::ButtonRow::builder()
+        .title("Add Value")
+        .start_icon_name("list-add-symbolic")
+        .build();
+    let hook = links.add_value.clone();
+    let copy = c.copy.id;
+    add.connect_activated(move |_| hook(copy));
+    row.add_row(&add);
+}
+
+fn plain_row(title: &str, subtitle: &str) -> adw::ActionRow {
+    let row = adw::ActionRow::new();
+    row.set_use_markup(false);
+    row.set_title(title);
+    row.set_subtitle(subtitle);
     row
 }
 

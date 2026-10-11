@@ -41,6 +41,8 @@ id_type! {
     TeamId;
     StoryArcId;
     TagId;
+    /// One dated valuation of a copy.
+    ValueId;
     /// A group of rows moved to Trash together.
     TrashId;
 }

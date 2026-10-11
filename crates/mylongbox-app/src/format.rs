@@ -197,6 +197,17 @@ pub fn local_date(timestamp: &str) -> Option<Date> {
     .ok()
 }
 
+/// Today's date on this computer.
+pub fn today() -> Option<Date> {
+    let now = glib::DateTime::now_local().ok()?;
+    Date::new(
+        u16::try_from(now.year()).ok()?,
+        u8::try_from(now.month()).ok()?,
+        u8::try_from(now.day_of_month()).ok()?,
+    )
+    .ok()
+}
+
 /// Joins the parts that are not empty with a middle dot.
 pub fn joined<I, S>(parts: I) -> String
 where

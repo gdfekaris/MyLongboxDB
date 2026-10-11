@@ -121,7 +121,8 @@ fn detail_gathers_the_whole_issue() {
     assert_eq!(copies[0].copy.id, boxed);
     assert_eq!(copies[0].storage_box.as_deref(), Some("Box 1"));
     assert_eq!(copies[0].tags[0].name, "Key");
-    let newest = copies[0].value.as_ref().unwrap();
+    assert_eq!(copies[0].values.len(), 3);
+    let newest = copies[0].values.last().unwrap();
     assert_eq!(newest.date, Date::new(2024, 1, 1).unwrap());
     assert_eq!(newest.value, Amount::new(Currency::Usd, 65_000));
     assert_eq!(newest.source, "GoCollect");
