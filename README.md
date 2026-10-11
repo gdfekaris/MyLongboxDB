@@ -85,8 +85,11 @@ its authors:
   and with plugin loading off, so no other code is loaded. Each photo is
   re-encoded from its pixels, so no EXIF, GPS, XMP, camera, or comment
   data from the original file is kept, and the original is never
-  changed. Verify with `sdk cargo test -p mylongbox-media --features heic`
-  and the `libheif` module in the Flatpak manifest.
+  changed. Photos stored in a collection are shown through the same
+  limited decoder, never through GTK's image loaders, so a collection
+  file from elsewhere cannot feed them hostile images. Verify with
+  `sdk cargo test -p mylongbox-media --features heic` and the `libheif`
+  module in the Flatpak manifest.
 
 - **No network or file access from the sandbox.** The Flatpak manifest
   grants exactly `--socket=wayland`, `--socket=fallback-x11`,
