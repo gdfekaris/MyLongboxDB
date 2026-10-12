@@ -110,8 +110,13 @@ its authors:
   `~/.var/app/io.github.gdfekaris.MyLongboxDB/data/collections/`. Files
   elsewhere are reached only through the system file chooser: importing
   copies a collection in after checking it, and exporting writes a
-  copy out. GTK's recently used files list is turned off, so the app
-  leaves no record of which files you picked.
+  copy out. Back Up Now writes to a folder you choose once in the same
+  file chooser, and checks each backup in full before writing it there.
+  Safety copies, made before imports, upgrades, changes to several
+  books at once, and deleting from Trash, stay in
+  `collections/safety/` beside your collections, one per collection; a
+  switch in Preferences turns them off. GTK's recently used files list
+  is turned off, so the app leaves no record of which files you picked.
 
 The runtime self-restrictions will be documented here, with verification
 steps, as they land.
