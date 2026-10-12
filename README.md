@@ -15,8 +15,8 @@ a Flatpak.
 ### Flatpak
 
 ```sh
-flatpak install --user flathub org.gnome.Sdk//49 \
-    org.freedesktop.Sdk.Extension.rust-stable//25.08 org.flatpak.Builder
+flatpak install --user flathub org.gnome.Sdk//51 \
+    org.freedesktop.Sdk.Extension.rust-stable//26.08 org.flatpak.Builder
 flatpak run org.flatpak.Builder --user --install --force-clean \
     _build build-aux/io.github.gdfekaris.MyLongboxDB.yml
 flatpak run io.github.gdfekaris.MyLongboxDB
@@ -36,7 +36,7 @@ GTK build with a standard toolchain:
 cargo test -p mylongbox-core -p mylongbox-media -p mylongbox-sandbox
 ```
 
-The app links against GTK4, libadwaita, and libheif from the GNOME 49
+The app links against GTK4, libadwaita, and libheif from the GNOME 51
 SDK rather than the host system. To build and test everything, run Cargo
 inside the SDK with the pinned toolchain:
 
@@ -50,7 +50,7 @@ sdk() {
         --env=PATH="$HOME/.cargo/bin:/usr/bin:/bin" \
         --env=CARGO_HOME="$HOME/.cargo" --env=RUSTUP_HOME="$HOME/.rustup" \
         --env=CARGO_TARGET_DIR="$PWD/target/sdk" --env=CARGO_NET_OFFLINE=true \
-        --cwd="$PWD" --command=sh org.gnome.Sdk//49 -c "$*"
+        --cwd="$PWD" --command=sh org.gnome.Sdk//51 -c "$*"
 }
 
 sdk cargo clippy --workspace --all-targets --all-features -- -D warnings
