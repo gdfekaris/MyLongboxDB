@@ -118,8 +118,21 @@ its authors:
   switch in Preferences turns them off. GTK's recently used files list
   is turned off, so the app leaves no record of which files you picked.
 
-The runtime self-restrictions will be documented here, with verification
-steps, as they land.
+- **The app locks itself out of the internet at startup.** Before
+  anything else runs, a seccomp filter is applied to every thread: any
+  socket other than a local Unix socket (which the display server,
+  D-Bus, and the file chooser use) is refused, and so is setting up
+  io_uring, which could open sockets another way. The kernel keeps the
+  filter until the app exits, so nothing can lift it. This holds even
+  outside the Flatpak, which already gives the app no network. Verify
+  with `cargo test -p mylongbox-sandbox`, whose tests apply the filter
+  and show internet sockets failing while Unix sockets work, and, with
+  the app open, `grep Seccomp_filters /proc/$(pgrep -x mylongboxdb)/status`,
+  which shows one filter more than the Flatpak sandbox's own (2 rather
+  than 1).
+
+File-access limits (Landlock) will be documented here, with
+verification steps, when they land.
 
 ## Reporting vulnerabilities
 
