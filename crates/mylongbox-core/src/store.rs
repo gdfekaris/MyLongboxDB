@@ -32,6 +32,23 @@ fn side_file(database: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
+/// The folder inside the store that keeps the safety copies, one for
+/// each collection, made before risky changes.
+const SAFETY: &str = "safety";
+
+/// Says why a safety copy was made, beside it.
+const REASON: &str = "reason";
+
+/// The copy of a collection made before its latest risky change.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SafetyCopy {
+    pub path: PathBuf,
+    /// e.g. `before importing books`.
+    pub reason: String,
+    pub size_bytes: u64,
+    pub made: std::time::SystemTime,
+}
+
 /// Longest collection name, in characters.
 pub const MAX_NAME: usize = 60;
 
@@ -105,6 +122,100 @@ impl CollectionStore {
         Ok(db)
     }
 
+    /// Opens a collection like [`CollectionStore::open`], first keeping a
+    /// safety copy if `safety_copies` is on and its schema is about to be
+    /// upgraded.
+    pub fn open_keeping(&self, name: &str, safety_copies: bool) -> Result<Database> {
+        if !safety_copies {
+            return self.open(name);
+        }
+        let path = self.path_for(name);
+        if !path.is_file() {
+            return Err(Error::NotFound);
+        }
+        let partial = self.safety_partial(name)?;
+        let db = Database::open_keeping(&path, Some(&partial))?;
+        if partial.exists() {
+            self.keep_safety_copy(name, &partial, "before the collection was upgraded")?;
+        }
+        fs::write(self.dir.join(LAST_OPENED), name)?;
+        Ok(db)
+    }
+
+    /// Replaces the safety copy of collection `name` with a copy of `db`
+    /// as it is now, saying why.
+    pub fn make_safety_copy(&self, db: &Database, name: &str, reason: &str) -> Result<()> {
+        let partial = self.safety_partial(name)?;
+        db.write_copy(&partial)?;
+        self.keep_safety_copy(name, &partial, reason)
+    }
+
+    /// The safety copy of collection `name`, if one was made.
+    pub fn safety_copy(&self, name: &str) -> Option<SafetyCopy> {
+        let path = self.safety_path(name, EXTENSION);
+        let meta = fs::metadata(&path).ok()?;
+        Some(SafetyCopy {
+            reason: fs::read_to_string(self.safety_path(name, REASON)).unwrap_or_default(),
+            size_bytes: meta.len(),
+            made: meta.modified().ok()?,
+            path,
+        })
+    }
+
+    /// Brings back the safety copy of collection `name` as a collection
+    /// of its own, leaving both the copy and the collection as they are.
+    pub fn restore_safety_copy(&self, name: &str) -> Result<CollectionInfo> {
+        let copy = self.safety_copy(name).ok_or(Error::NotFound)?;
+        self.import_as(&copy.path, &format!("{name} (safety copy)"))
+    }
+
+    /// Writes a backup of the open collection into the folder `dest_dir`
+    /// as `file_name`, or with a number added if that is taken, and
+    /// returns where it went and its size. The copy is checked in full
+    /// before it is written there, so a backup that exists is sound.
+    pub fn back_up(
+        &self,
+        db: &Database,
+        dest_dir: &Path,
+        file_name: &str,
+    ) -> Result<(PathBuf, u64)> {
+        // Made in the store first, because SQLite cannot write through
+        // the document portal; the checked bytes are then copied over.
+        let staging = self.dir.join(format!("backup.{IMPORTING}"));
+        remove_with_side_files(&staging);
+        let result = (|| {
+            db.write_copy(&staging)?;
+            let problems = Database::open(&staging)?.integrity_check()?;
+            if !problems.is_empty() {
+                return Err(Error::Damaged);
+            }
+            let dest = free_file(dest_dir, file_name);
+            fs::copy(&staging, &dest)?;
+            Ok((dest, fs::metadata(&staging)?.len()))
+        })();
+        remove_with_side_files(&staging);
+        result
+    }
+
+    fn safety_path(&self, name: &str, extension: &str) -> PathBuf {
+        self.dir.join(SAFETY).join(format!("{name}.{extension}"))
+    }
+
+    /// Where a safety copy is written before it replaces the last one,
+    /// cleared and ready.
+    fn safety_partial(&self, name: &str) -> Result<PathBuf> {
+        fs::create_dir_all(self.dir.join(SAFETY))?;
+        let partial = self.safety_path(name, IMPORTING);
+        remove_with_side_files(&partial);
+        Ok(partial)
+    }
+
+    fn keep_safety_copy(&self, name: &str, partial: &Path, reason: &str) -> Result<()> {
+        fs::rename(partial, self.safety_path(name, EXTENSION))?;
+        fs::write(self.safety_path(name, REASON), reason)?;
+        Ok(())
+    }
+
     /// Renames a closed collection. A name another collection has gets a
     /// number added, as when creating one.
     pub fn rename(&self, name: &str, new_name: &str) -> Result<CollectionInfo> {
@@ -130,6 +241,12 @@ impl CollectionStore {
                 fs::rename(old, side_file(&to, side))?;
             }
         }
+        for extension in [EXTENSION, REASON] {
+            let old = self.safety_path(name, extension);
+            if old.exists() {
+                fs::rename(old, self.safety_path(&new_name, extension))?;
+            }
+        }
         if self.remembered().as_deref() == Some(name) {
             fs::write(self.dir.join(LAST_OPENED), &new_name)?;
         }
@@ -149,6 +266,10 @@ impl CollectionStore {
             if file.exists() {
                 fs::remove_file(file)?;
             }
+        }
+        // Deleted means gone, safety copy and all.
+        for extension in [EXTENSION, REASON] {
+            let _ = fs::remove_file(self.safety_path(name, extension));
         }
         if self.remembered().as_deref() == Some(name) {
             fs::remove_file(self.dir.join(LAST_OPENED))?;
@@ -175,6 +296,16 @@ impl CollectionStore {
     /// own name, after checking it the same way opening does and running
     /// SQLite's quick check. The source is only read, never changed.
     pub fn import(&self, source: &Path) -> Result<CollectionInfo> {
+        let stem = source
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Imported collection");
+        self.import_as(source, stem)
+    }
+
+    /// Imports the collection file at `source` under the name `wanted`,
+    /// or with a number added if that is taken.
+    fn import_as(&self, source: &Path, wanted: &str) -> Result<CollectionInfo> {
         let mut header = [0u8; 16];
         let mut file = fs::File::open(source)?;
         if file.read_exact(&mut header).is_err() || &header != SQLITE_HEADER {
@@ -182,12 +313,8 @@ impl CollectionStore {
         }
         drop(file);
 
-        let stem = source
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("Imported collection");
         let name =
-            self.free_name(&clean_name(stem).unwrap_or_else(|_| "Imported collection".into()))?;
+            self.free_name(&clean_name(wanted).unwrap_or_else(|_| "Imported collection".into()))?;
         let staging = self.dir.join(format!("{name}.{IMPORTING}"));
         let _ = fs::remove_file(&staging);
         let checked = (|| -> Result<()> {
@@ -252,6 +379,32 @@ impl CollectionStore {
         }
         Ok(candidate)
     }
+}
+
+/// Removes a database file and any files SQLite kept beside it.
+fn remove_with_side_files(path: &Path) {
+    let _ = fs::remove_file(path);
+    for side in SIDE_FILES {
+        let _ = fs::remove_file(side_file(path, side));
+    }
+}
+
+/// `dir/file_name`, or `dir/stem-2.ext`, `-3`, … whichever does not exist
+/// yet, so a backup never replaces another.
+fn free_file(dir: &Path, file_name: &str) -> PathBuf {
+    let first = dir.join(file_name);
+    let (stem, extension) = file_name.rsplit_once('.').unwrap_or((file_name, ""));
+    let mut candidate = first;
+    let mut n = 1;
+    while candidate.exists() {
+        n += 1;
+        candidate = dir.join(if extension.is_empty() {
+            format!("{stem}-{n}")
+        } else {
+            format!("{stem}-{n}.{extension}")
+        });
+    }
+    candidate
 }
 
 /// Keeps a name safe to use as a file name: letters, digits, spaces, and
@@ -533,5 +686,116 @@ mod tests {
         fs::write(&damaged, &bytes).unwrap();
         assert!(matches!(store.import(&damaged), Err(Error::Damaged)));
         assert_eq!(names(&store), ["Good"]);
+    }
+
+    /// Adds a book to the series `Thor` in `db`.
+    fn add_thor(db: &Database, number: &str) {
+        let e = crate::BookEntry::new(
+            crate::Category::Comic,
+            crate::SeriesChoice::New {
+                name: "Thor".into(),
+                start_year: None,
+                volume: None,
+                publisher: None,
+                magazine_format: None,
+                black_and_white: None,
+            },
+            crate::IssueNumber::new(number).ok(),
+        );
+        db.add_book(&e).unwrap();
+    }
+
+    fn books(db: &Database) -> usize {
+        db.browse(crate::Shelf::Everything).unwrap().len()
+    }
+
+    #[test]
+    fn a_safety_copy_keeps_the_collection_as_it_was() {
+        let dir = TempDir::new();
+        let store = store(&dir);
+        store.create("Comics").unwrap();
+        assert_eq!(store.safety_copy("Comics"), None);
+        let db = store.open_keeping("Comics", true).unwrap();
+        assert_eq!(store.safety_copy("Comics"), None, "no upgrade, no copy");
+        add_thor(&db, "1");
+        store
+            .make_safety_copy(&db, "Comics", "before importing books")
+            .unwrap();
+        add_thor(&db, "2");
+        // Each new copy replaces the last.
+        store
+            .make_safety_copy(&db, "Comics", "before emptying Trash")
+            .unwrap();
+        add_thor(&db, "3");
+        let copy = store.safety_copy("Comics").unwrap();
+        assert_eq!(copy.reason, "before emptying Trash");
+        assert!(copy.size_bytes > 0);
+        assert_eq!(
+            fs::read_dir(dir.0.join("collections/safety"))
+                .unwrap()
+                .count(),
+            2
+        );
+        assert_eq!(names(&store), ["Comics"], "safety copies are not listed");
+
+        let restored = store.restore_safety_copy("Comics").unwrap();
+        assert_eq!(restored.name, "Comics (safety copy)");
+        assert_eq!(books(&store.open(&restored.name).unwrap()), 2);
+        assert_eq!(books(&db), 3, "the collection itself is untouched");
+        assert!(store.safety_copy("Comics").is_some());
+
+        // Copies follow their collection when it is renamed or deleted.
+        drop(db);
+        store.rename("Comics", "Marvel").unwrap();
+        assert_eq!(store.safety_copy("Comics"), None);
+        assert_eq!(
+            store.safety_copy("Marvel").unwrap().reason,
+            "before emptying Trash"
+        );
+        store.delete("Marvel").unwrap();
+        assert_eq!(store.safety_copy("Marvel"), None);
+        assert!(matches!(
+            store.restore_safety_copy("Marvel"),
+            Err(Error::NotFound)
+        ));
+    }
+
+    #[test]
+    fn backups_are_checked_and_never_replace_one_another() {
+        let dir = TempDir::new();
+        let store = store(&dir);
+        store.create("Comics").unwrap();
+        let db = store.open("Comics").unwrap();
+        add_thor(&db, "1");
+        let backups = dir.0.join("backups");
+        fs::create_dir_all(&backups).unwrap();
+        let name = "mylongboxdb-Comics-2026-10-11-0930.sqlite";
+        let (first, size) = store.back_up(&db, &backups, name).unwrap();
+        assert_eq!(first, backups.join(name));
+        assert_eq!(size, fs::metadata(&first).unwrap().len());
+        add_thor(&db, "2");
+        let (second, _) = store.back_up(&db, &backups, name).unwrap();
+        assert_eq!(
+            second,
+            backups.join("mylongboxdb-Comics-2026-10-11-0930-2.sqlite")
+        );
+        // Nothing is left behind in the store, and each backup is a
+        // collection as it was.
+        assert_eq!(fs::read_dir(&backups).unwrap().count(), 2);
+        assert_eq!(names(&store), ["Comics"]);
+        let leftovers = fs::read_dir(store.dir())
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .path()
+                    .to_string_lossy()
+                    .contains("backup")
+            })
+            .count();
+        assert_eq!(leftovers, 0);
+        let imported = store.import(&first).unwrap();
+        assert_eq!(books(&store.open(&imported.name).unwrap()), 1);
+        assert!(store.back_up(&db, &dir.0.join("missing"), name).is_err());
     }
 }

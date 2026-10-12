@@ -65,6 +65,22 @@ pub(crate) fn run(conn: &mut Connection, migrations: &[Migration]) -> Result<()>
     Ok(())
 }
 
+/// Whether opening would upgrade an existing collection: it has a
+/// schema, at a version older than the newest migration.
+pub(crate) fn pending(conn: &Connection, migrations: &[Migration]) -> Result<bool> {
+    let has_meta: bool = conn.query_row(
+        "SELECT count(*) > 0 FROM sqlite_schema WHERE type = 'table' AND name = 'meta'",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_meta {
+        return Ok(false);
+    }
+    let latest = migrations.last().map_or(0, |m| m.version);
+    let current = read_version(conn)?;
+    Ok(current > 0 && current < latest)
+}
+
 /// The schema version recorded in `meta`, or 0 for a new collection.
 pub(crate) fn schema_version(conn: &Connection) -> Result<u32> {
     read_version(conn)
@@ -124,6 +140,17 @@ mod tests {
         assert_eq!(schema_version(&conn).unwrap(), 2);
         assert!(table_exists(&conn, "a"));
         assert!(table_exists(&conn, "b"));
+    }
+
+    #[test]
+    fn only_an_older_schema_is_pending() {
+        let mut conn = fresh();
+        assert!(!pending(&conn, TEST_MIGRATIONS).unwrap(), "a new file");
+        run(&mut conn, &TEST_MIGRATIONS[..1]).unwrap();
+        assert!(pending(&conn, TEST_MIGRATIONS).unwrap());
+        assert!(!pending(&conn, &TEST_MIGRATIONS[..1]).unwrap());
+        run(&mut conn, TEST_MIGRATIONS).unwrap();
+        assert!(!pending(&conn, TEST_MIGRATIONS).unwrap());
     }
 
     #[test]

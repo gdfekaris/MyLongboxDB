@@ -104,5 +104,5 @@ pub use money::{
 };
 pub use photos::{CoverPhoto, MAX_PHOTO_SIDE};
 pub use search::SearchResults;
-pub use store::{CollectionInfo, CollectionStore, MAX_NAME};
+pub use store::{CollectionInfo, CollectionStore, MAX_NAME, SafetyCopy};
 pub use values::ValueEntry;

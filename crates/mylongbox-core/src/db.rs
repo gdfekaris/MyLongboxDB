@@ -4,6 +4,7 @@ use rusqlite::config::DbConfig;
 use rusqlite::limits::Limit;
 use rusqlite::{Connection, OpenFlags};
 
+use crate::catalog::query_all;
 use crate::error::{Error, Result};
 use crate::migrate::{self, MIGRATIONS};
 
@@ -26,6 +27,13 @@ impl Database {
     /// Opens the collection at `path`, creating it if it does not exist,
     /// and brings its schema up to date.
     pub fn open(path: &Path) -> Result<Self> {
+        Self::open_keeping(path, None)
+    }
+
+    /// Opens the collection at `path` like [`Database::open`], first
+    /// writing a copy of it to `before_upgrade` if its schema is about to
+    /// be upgraded, so the upgrade can be undone by hand.
+    pub fn open_keeping(path: &Path, before_upgrade: Option<&Path>) -> Result<Self> {
         // The bundled SQLite is built with SQLITE_USE_URI, so any name
         // starting with "file:" is parsed as a URI whose query string can
         // change how the database is opened. An absolute path starts with
@@ -42,7 +50,13 @@ impl Database {
         // Hold the file's lock for as long as it is open, so a second
         // window or process cannot write to it at the same time.
         conn.pragma_update(None, "locking_mode", "EXCLUSIVE")?;
-        let db = Self::init(conn)?;
+        let conn = connect(conn)?;
+        if let Some(copy) = before_upgrade
+            && migrate::pending(&conn, MIGRATIONS)?
+        {
+            write_copy(&conn, copy)?;
+        }
+        let db = Self::migrate(conn)?;
         db.conn.execute_batch("BEGIN EXCLUSIVE; COMMIT;")?;
         Ok(db)
     }
@@ -62,18 +76,50 @@ impl Database {
     /// Writes a consistent copy of the open collection to `dest`, which
     /// must not exist yet. Works while the collection is in use.
     pub fn write_copy(&self, dest: &Path) -> Result<()> {
-        let dest = std::path::absolute(dest).map_err(Error::Io)?;
-        if dest.exists() {
-            return Err(Error::Io(std::io::Error::from(
-                std::io::ErrorKind::AlreadyExists,
-            )));
-        }
-        self.conn
-            .backup(rusqlite::MAIN_DB, &dest, None)
-            .inspect_err(|_| {
-                let _ = std::fs::remove_file(&dest);
+        write_copy(&self.conn, dest)
+    }
+
+    /// Runs SQLite's full integrity check and its check of every
+    /// reference between rows, returning what each found wrong; none
+    /// means the collection is sound. Slower than the quick check, since
+    /// it reads every index in full.
+    pub fn integrity_check(&self) -> Result<Vec<String>> {
+        let mut problems: Vec<String> =
+            query_all(&self.conn, "PRAGMA integrity_check", [], |row| row.get(0))?;
+        problems.retain(|p| p != "ok");
+        let broken: Vec<(String, i64, String)> =
+            query_all(&self.conn, "PRAGMA foreign_key_check", [], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })?;
-        Ok(())
+        problems.extend(broken.into_iter().map(|(table, row, parent)| {
+            format!("row {row} of {table} refers to a missing {parent}")
+        }));
+        Ok(problems)
+    }
+
+    /// Rewrites the collection without the space deleted rows left
+    /// behind, returning its size in bytes before and after.
+    pub fn compact(&self) -> Result<(u64, u64)> {
+        let before = self.size_bytes()?;
+        // VACUUM builds the new file as an attached database, which the
+        // connection otherwise refuses; the limit is restored whatever
+        // happens, and no SQL the app runs can attach anything meanwhile.
+        self.conn.set_limit(Limit::SQLITE_LIMIT_ATTACHED, 1)?;
+        let vacuumed = self.conn.execute_batch("VACUUM");
+        self.conn.set_limit(Limit::SQLITE_LIMIT_ATTACHED, 0)?;
+        vacuumed?;
+        Ok((before, self.size_bytes()?))
+    }
+
+    /// The collection's size in bytes, as its pages count it.
+    fn size_bytes(&self) -> Result<u64> {
+        let pages: i64 = self
+            .conn
+            .pragma_query_value(None, "page_count", |r| r.get(0))?;
+        let size: i64 = self
+            .conn
+            .pragma_query_value(None, "page_size", |r| r.get(0))?;
+        Ok(u64::try_from(pages.saturating_mul(size)).unwrap_or(0))
     }
 
     /// Opens a new, empty collection held only in memory.
@@ -82,7 +128,10 @@ impl Database {
     }
 
     fn init(conn: Connection) -> Result<Self> {
-        let mut conn = connect(conn)?;
+        Self::migrate(connect(conn)?)
+    }
+
+    fn migrate(mut conn: Connection) -> Result<Self> {
         migrate::run(&mut conn, MIGRATIONS)?;
         verify_schema(&conn)?;
         Ok(Self { conn })
@@ -162,6 +211,22 @@ pub(crate) fn run_steps(conn: &Connection, steps: &[&str], ids: [i64; 2]) -> Res
 /// Every collection file is treated as untrusted, since it may have come
 /// from someone else. The settings follow SQLite's guidance for
 /// untrusted databases: <https://sqlite.org/security.html>.
+/// Writes a consistent copy of the database `conn` has open to `dest`,
+/// which must not exist yet.
+fn write_copy(conn: &Connection, dest: &Path) -> Result<()> {
+    let dest = std::path::absolute(dest).map_err(Error::Io)?;
+    if dest.exists() {
+        return Err(Error::Io(std::io::Error::from(
+            std::io::ErrorKind::AlreadyExists,
+        )));
+    }
+    conn.backup(rusqlite::MAIN_DB, &dest, None)
+        .inspect_err(|_| {
+            let _ = std::fs::remove_file(&dest);
+        })?;
+    Ok(())
+}
+
 pub(crate) fn connect(conn: Connection) -> Result<Connection> {
     // Defensive mode blocks writes to the schema and other features that
     // can corrupt a database even from ordinary SQL.
@@ -380,5 +445,43 @@ mod tests {
         assert!(publishers(&db).is_empty());
         // The connection is usable afterwards, outside any transaction.
         assert!(db.conn.is_autocommit());
+    }
+
+    #[test]
+    fn the_integrity_check_finds_rows_that_lost_their_parent() {
+        let db = Database::open_in_memory().unwrap();
+        assert_eq!(db.integrity_check().unwrap(), Vec::<String>::new());
+        let series = db
+            .create_series(&crate::SeriesFields::new("Thor", crate::Category::Comic))
+            .unwrap();
+        let number = crate::IssueNumber::new("1").ok();
+        db.create_issue(series, &crate::IssueFields::new(number))
+            .unwrap();
+        // Only damage from outside the app could do this.
+        db.conn.pragma_update(None, "foreign_keys", false).unwrap();
+        db.conn.execute("DELETE FROM series", []).unwrap();
+        let problems = db.integrity_check().unwrap();
+        assert_eq!(problems, ["row 1 of issue refers to a missing series"]);
+    }
+
+    #[test]
+    fn compacting_gives_back_the_space_of_deleted_rows() {
+        let db = Database::open_in_memory().unwrap();
+        let series = db
+            .create_series(&crate::SeriesFields::new("Thor", crate::Category::Comic))
+            .unwrap();
+        let mut fields = crate::SeriesFields::new("Thor", crate::Category::Comic);
+        fields.notes = "x".repeat(2_000_000);
+        db.update_series(series, &fields).unwrap();
+        fields.notes.clear();
+        db.update_series(series, &fields).unwrap();
+        let (before, after) = db.compact().unwrap();
+        assert!(before > after + 1_000_000, "{before} {after}");
+        assert_eq!(
+            db.conn.limit(Limit::SQLITE_LIMIT_ATTACHED).unwrap(),
+            0,
+            "attaching is refused again"
+        );
+        assert_eq!(db.series(series).unwrap().fields.name, "Thor");
     }
 }
