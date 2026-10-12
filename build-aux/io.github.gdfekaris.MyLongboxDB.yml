@@ -92,8 +92,9 @@ modules:
       - install -Dm755 target/release/mylongboxdb -t /app/bin/
       - install -Dm644 data/io.github.gdfekaris.MyLongboxDB.desktop -t /app/share/applications/
       - install -Dm644 data/io.github.gdfekaris.MyLongboxDB.metainfo.xml -t /app/share/metainfo/
-      - install -Dm644 data/icons/hicolor/scalable/apps/io.github.gdfekaris.MyLongboxDB.svg
-        -t /app/share/icons/hicolor/scalable/apps/
+      - for size in 16 32 48 64 128 256 512; do install -Dm644
+        data/icons/hicolor/${size}x${size}/apps/io.github.gdfekaris.MyLongboxDB.png
+        -t /app/share/icons/hicolor/${size}x${size}/apps/ || exit 1; done
       # Each translation listed in po/LINGUAS, checked and compiled.
       - for lang in $(grep -v '^#' po/LINGUAS); do install -d /app/share/locale/$lang/LC_MESSAGES
         && msgfmt --check -o /app/share/locale/$lang/LC_MESSAGES/mylongboxdb.mo po/$lang.po
