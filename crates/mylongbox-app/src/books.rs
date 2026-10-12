@@ -36,7 +36,10 @@ impl RelmGridItem for Book {
         let missing = covers::placeholder(&gettext("No Cover Image"), true);
         // Filling the tile keeps the grid even; the book's page shows the
         // whole photo.
+        // The title under it names the book, so the cover is passed
+        // over by screen readers.
         let photo = gtk::Picture::builder()
+            .accessible_role(gtk::AccessibleRole::Presentation)
             .content_fit(gtk::ContentFit::Cover)
             .can_shrink(true)
             .hexpand(true)

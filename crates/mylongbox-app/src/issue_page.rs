@@ -200,6 +200,11 @@ fn photo_or_placeholder(
         .vexpand(true)
         .css_classes(["flat", "cover-button"])
         .build();
+    // The tooltip does not say which side; the name read out does.
+    button.update_property(&[gtk::accessible::Property::Label(&match side {
+        Side::Front => gettext("View the Front Cover Full Size"),
+        Side::Back => gettext("View the Back Cover Full Size"),
+    })]);
     let hook = links.view_photo.clone();
     button.connect_clicked(move |_| hook(copy, side));
     button.upcast()

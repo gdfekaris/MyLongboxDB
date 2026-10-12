@@ -1320,8 +1320,10 @@ fn section(
             let open = !revealer.reveals_child();
             revealer.set_reveal_child(open);
             button.set_icon_name(icon(open));
+            button.update_state(&[gtk::accessible::State::Expanded(Some(open))]);
         });
     }
+    toggle.update_state(&[gtk::accessible::State::Expanded(Some(open))]);
     let group = adw::PreferencesGroup::builder().title(title).build();
     if let Some(description) = description {
         group.set_description(Some(description));

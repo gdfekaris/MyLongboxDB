@@ -86,6 +86,11 @@ impl Viewer {
     fn show_side(&self) {
         let texture = self.texture().cloned();
         self.picture.set_paintable(texture.as_ref());
+        self.picture
+            .set_alternative_text(Some(&match self.side.get() {
+                Side::Front => gettext("Front cover photo"),
+                Side::Back => gettext("Back cover photo"),
+            }));
         self.across.set_visible(texture.is_some());
         self.missing.set_visible(texture.is_none());
         self.missing_label().set_label(&match self.side.get() {

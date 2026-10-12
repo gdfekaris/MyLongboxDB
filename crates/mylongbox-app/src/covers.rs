@@ -196,9 +196,11 @@ pub fn placeholder(text: &str, small: bool) -> gtk::Box {
     content
 }
 
-/// A photo shown whole within its frame.
+/// A photo shown whole within its frame, inside something, such as a
+/// button, that already says what it is to screen readers.
 pub fn picture(texture: &gdk::Texture, fit: gtk::ContentFit) -> gtk::Picture {
     gtk::Picture::builder()
+        .accessible_role(gtk::AccessibleRole::Presentation)
         .paintable(texture)
         .content_fit(fit)
         .can_shrink(true)
