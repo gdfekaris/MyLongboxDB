@@ -97,18 +97,32 @@ impl Database {
         Ok(problems)
     }
 
-    /// Rewrites the collection without the space deleted rows left
-    /// behind, returning its size in bytes before and after.
-    pub fn compact(&self) -> Result<(u64, u64)> {
+    /// Writes a compacted copy of the collection to `dest`, which must
+    /// not exist yet, without the space deleted rows left behind. Unlike
+    /// compacting in place, this needs no temporary copy beside it, so
+    /// it works where only the collection's own folders can be written.
+    /// Returns the collection's size in bytes and the copy's.
+    pub fn compact_into(&self, dest: &Path) -> Result<(u64, u64)> {
+        let dest = std::path::absolute(dest).map_err(Error::Io)?;
+        if dest.exists() {
+            return Err(Error::Io(std::io::Error::from(
+                std::io::ErrorKind::AlreadyExists,
+            )));
+        }
         let before = self.size_bytes()?;
-        // VACUUM builds the new file as an attached database, which the
-        // connection otherwise refuses; the limit is restored whatever
+        // VACUUM INTO writes the new file as an attached database, which
+        // the connection otherwise refuses; the limit is restored whatever
         // happens, and no SQL the app runs can attach anything meanwhile.
         self.conn.set_limit(Limit::SQLITE_LIMIT_ATTACHED, 1)?;
-        let vacuumed = self.conn.execute_batch("VACUUM");
+        let vacuumed = self
+            .conn
+            .execute("VACUUM INTO ?1", [dest.to_string_lossy().as_ref()]);
         self.conn.set_limit(Limit::SQLITE_LIMIT_ATTACHED, 0)?;
-        vacuumed?;
-        Ok((before, self.size_bytes()?))
+        if let Err(e) = vacuumed {
+            let _ = std::fs::remove_file(&dest);
+            return Err(e.into());
+        }
+        Ok((before, std::fs::metadata(&dest)?.len()))
     }
 
     /// The collection's size in bytes, as its pages count it.
@@ -244,6 +258,10 @@ pub(crate) fn connect(conn: Connection) -> Result<Connection> {
     conn.set_limit(Limit::SQLITE_LIMIT_ATTACHED, 0)?;
 
     conn.pragma_update(None, "cell_size_check", true)?;
+    // Temporary tables and sorts stay in memory: they hold book details,
+    // never photos, and files beside them could not be written once the
+    // app limits where it writes.
+    conn.pragma_update(None, "temp_store", "MEMORY")?;
     conn.pragma_update(None, "mmap_size", 0)?;
 
     check_ownership(&conn)?;
@@ -475,13 +493,32 @@ mod tests {
         db.update_series(series, &fields).unwrap();
         fields.notes.clear();
         db.update_series(series, &fields).unwrap();
-        let (before, after) = db.compact().unwrap();
+        let dest =
+            std::env::temp_dir().join(format!("mylongbox-compact-{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&dest);
+        let (before, after) = db.compact_into(&dest).unwrap();
         assert!(before > after + 1_000_000, "{before} {after}");
+        assert_eq!(after, std::fs::metadata(&dest).unwrap().len());
         assert_eq!(
             db.conn.limit(Limit::SQLITE_LIMIT_ATTACHED).unwrap(),
             0,
             "attaching is refused again"
         );
-        assert_eq!(db.series(series).unwrap().fields.name, "Thor");
+        assert!(db.compact_into(&dest).is_err(), "never over a file");
+        let copy = Database::open(&dest).unwrap();
+        assert_eq!(copy.series(series).unwrap().fields.name, "Thor");
+        assert!(copy.integrity_check().unwrap().is_empty());
+        drop(copy);
+        std::fs::remove_file(&dest).unwrap();
+    }
+
+    #[test]
+    fn temporary_data_stays_in_memory() {
+        let db = Database::open_in_memory().unwrap();
+        let store: i64 = db
+            .conn
+            .pragma_query_value(None, "temp_store", |r| r.get(0))
+            .unwrap();
+        assert_eq!(store, 2, "2 means memory");
     }
 }

@@ -63,6 +63,7 @@ mod search_tests;
 mod shelf_ops;
 #[cfg(test)]
 mod shelf_ops_tests;
+mod snapshot;
 mod store;
 mod values;
 
@@ -104,5 +105,6 @@ pub use money::{
 };
 pub use photos::{CoverPhoto, MAX_PHOTO_SIDE};
 pub use search::SearchResults;
+pub use snapshot::{CopyJob, CopyTarget};
 pub use store::{CollectionInfo, CollectionStore, MAX_NAME, SafetyCopy};
 pub use values::ValueEntry;

@@ -181,20 +181,107 @@ impl CollectionStore {
     ) -> Result<(PathBuf, u64)> {
         // Made in the store first, because SQLite cannot write through
         // the document portal; the checked bytes are then copied over.
-        let staging = self.dir.join(format!("backup.{IMPORTING}"));
-        remove_with_side_files(&staging);
+        let staging = self.staging("backup")?;
+        db.write_copy(&staging)?;
+        self.finish_backup(&staging, dest_dir, file_name)
+    }
+
+    /// Where a copy of the open collection is made for work on it away
+    /// from the window, such as a backup: a file in the store, which
+    /// SQLite can write, cleared and ready. `what` names the work, so
+    /// different work never shares a file.
+    pub fn staging(&self, what: &str) -> Result<PathBuf> {
+        let path = self.dir.join(format!("{what}.{IMPORTING}"));
+        remove_with_side_files(&path);
+        Ok(path)
+    }
+
+    /// Removes a copy made in [`CollectionStore::staging`] once its work
+    /// is done.
+    pub fn discard(&self, staging: &Path) {
+        remove_with_side_files(staging);
+    }
+
+    /// Finishes a backup from a copy in staging: checks it in full,
+    /// writes it into `dest_dir` as `file_name` (or with a number added),
+    /// and removes the copy, returning where the backup went and its size.
+    pub fn finish_backup(
+        &self,
+        staging: &Path,
+        dest_dir: &Path,
+        file_name: &str,
+    ) -> Result<(PathBuf, u64)> {
         let result = (|| {
-            db.write_copy(&staging)?;
-            let problems = Database::open(&staging)?.integrity_check()?;
-            if !problems.is_empty() {
+            if !check_file(staging)?.is_empty() {
                 return Err(Error::Damaged);
             }
             let dest = free_file(dest_dir, file_name);
-            fs::copy(&staging, &dest)?;
-            Ok((dest, fs::metadata(&staging)?.len()))
+            fs::copy(staging, &dest)?;
+            Ok((dest, fs::metadata(staging)?.len()))
         })();
-        remove_with_side_files(&staging);
+        self.discard(staging);
         result
+    }
+
+    /// Checks a copy in staging in full and removes it, returning what
+    /// the check found wrong; nothing means the collection is sound.
+    pub fn check_copy(&self, staging: &Path) -> Result<Vec<String>> {
+        let result = check_file(staging);
+        self.discard(staging);
+        result
+    }
+
+    /// Writes a compacted, checked copy of a copy in staging and removes
+    /// the staging copy, returning where the compacted one is and the
+    /// sizes before and after. [`CollectionStore::replace_with`] then puts
+    /// it in place of the collection.
+    pub fn compact_copy(&self, staging: &Path) -> Result<(PathBuf, u64, u64)> {
+        let compacted = self.staging("compacted")?;
+        let result = (|| {
+            let (before, after) = Database::open(staging)?.compact_into(&compacted)?;
+            if !check_file(&compacted)?.is_empty() {
+                return Err(Error::Damaged);
+            }
+            Ok((compacted.clone(), before, after))
+        })();
+        self.discard(staging);
+        if result.is_err() {
+            self.discard(&compacted);
+        }
+        result
+    }
+
+    /// Puts `replacement`, such as a compacted copy, in place of the
+    /// closed collection `name`.
+    pub fn replace_with(&self, name: &str, replacement: &Path) -> Result<()> {
+        let path = self.path_for(name);
+        if !path.is_file() {
+            return Err(Error::NotFound);
+        }
+        // Taking the lock proves no window has it open, and opening the
+        // replacement proves it is a sound collection before it goes in.
+        drop(Database::open(&path)?);
+        drop(Database::open(replacement)?);
+        for side in SIDE_FILES {
+            let _ = fs::remove_file(side_file(&path, side));
+        }
+        fs::rename(replacement, &path)?;
+        for side in SIDE_FILES {
+            let _ = fs::remove_file(side_file(replacement, side));
+        }
+        Ok(())
+    }
+
+    /// Where a safety copy is made in steps; hand it to
+    /// [`CollectionStore::adopt_safety_copy`] once it is complete.
+    pub fn safety_staging(&self, name: &str) -> Result<PathBuf> {
+        self.safety_partial(name)
+    }
+
+    /// Makes a complete copy from [`CollectionStore::safety_staging`]
+    /// the safety copy of collection `name`, replacing the last one.
+    pub fn adopt_safety_copy(&self, name: &str, staging: &Path, reason: &str) -> Result<()> {
+        self.keep_safety_copy(name, staging, reason)
     }
 
     fn safety_path(&self, name: &str, extension: &str) -> PathBuf {
@@ -379,6 +466,11 @@ impl CollectionStore {
         }
         Ok(candidate)
     }
+}
+
+/// Runs the full check on a collection file that is not open.
+fn check_file(path: &Path) -> Result<Vec<String>> {
+    Database::open(path)?.integrity_check()
 }
 
 /// Removes a database file and any files SQLite kept beside it.
@@ -797,5 +889,88 @@ mod tests {
         let imported = store.import(&first).unwrap();
         assert_eq!(books(&store.open(&imported.name).unwrap()), 1);
         assert!(store.back_up(&db, &dir.0.join("missing"), name).is_err());
+    }
+
+    /// Copies the open collection into `path` in small steps, as the
+    /// window does.
+    fn copy_in_steps(db: &Database, path: &Path) {
+        let mut target = crate::CopyTarget::create(path).unwrap();
+        {
+            let mut job = db.start_copy(&mut target).unwrap();
+            while !job.step(3).unwrap() {}
+        }
+        target.finish().unwrap();
+    }
+
+    #[test]
+    fn a_compacted_copy_takes_the_place_of_the_collection() {
+        let dir = TempDir::new();
+        let store = store(&dir);
+        store.create("Comics").unwrap();
+        let db = store.open("Comics").unwrap();
+        add_thor(&db, "1");
+        let mut fields = crate::SeriesFields::new("Hulk", crate::Category::Comic);
+        fields.notes = "x".repeat(3_000_000);
+        let hulk = db.create_series(&fields).unwrap();
+        fields.notes.clear();
+        db.update_series(hulk, &fields).unwrap();
+
+        let staging = store.staging("compact").unwrap();
+        copy_in_steps(&db, &staging);
+        let (compacted, before, after) = store.compact_copy(&staging).unwrap();
+        assert!(before > after + 2_000_000, "{before} {after}");
+        assert!(!staging.exists(), "the uncompacted copy is cleared away");
+        let staging = compacted;
+        // Not while the collection is open, and nothing is lost trying.
+        assert!(matches!(
+            store.replace_with("Comics", &staging),
+            Err(Error::Locked)
+        ));
+        assert!(staging.exists());
+        drop(db);
+        let size = |name: &str| fs::metadata(store.path_for(name)).unwrap().len();
+        let old = size("Comics");
+        store.replace_with("Comics", &staging).unwrap();
+        assert!(size("Comics") < old);
+        assert!(!staging.exists());
+        let db = store.open("Comics").unwrap();
+        assert_eq!(books(&db), 1);
+        assert_eq!(db.series(hulk).unwrap().fields.name, "Hulk");
+        assert_eq!(names(&store), ["Comics"]);
+        assert!(store.replace_with("Nope", &staging).is_err());
+    }
+
+    #[test]
+    fn copies_are_checked_backed_up_and_cleared_away() {
+        let dir = TempDir::new();
+        let store = store(&dir);
+        store.create("Comics").unwrap();
+        let db = store.open("Comics").unwrap();
+        add_thor(&db, "1");
+        let staging = store.staging("check").unwrap();
+        copy_in_steps(&db, &staging);
+        assert_eq!(store.check_copy(&staging).unwrap(), Vec::<String>::new());
+        assert!(!staging.exists());
+
+        let backups = dir.0.join("backups");
+        fs::create_dir_all(&backups).unwrap();
+        let staging = store.staging("backup").unwrap();
+        copy_in_steps(&db, &staging);
+        let (path, size) = store.finish_backup(&staging, &backups, "b.sqlite").unwrap();
+        assert_eq!(path, backups.join("b.sqlite"));
+        assert!(size > 0 && !staging.exists());
+
+        // A safety copy made in steps is adopted like one made at once.
+        let staging = store.safety_staging("Comics").unwrap();
+        copy_in_steps(&db, &staging);
+        store
+            .adopt_safety_copy("Comics", &staging, "before emptying Trash")
+            .unwrap();
+        assert_eq!(
+            store.safety_copy("Comics").unwrap().reason,
+            "before emptying Trash"
+        );
+        let restored = store.restore_safety_copy("Comics").unwrap();
+        assert_eq!(books(&store.open(&restored.name).unwrap()), 1);
     }
 }
