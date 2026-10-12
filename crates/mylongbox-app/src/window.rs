@@ -95,7 +95,30 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for MainWindow {}
+    impl ObjectImpl for MainWindow {
+        fn constructed(&self) {
+            self.parent_constructed();
+            // The sidebar list keeps Tab to itself, so focus could never
+            // leave it from the keyboard; Tab and Shift+Tab move on to the
+            // books and the header instead.
+            let keys = gtk::EventControllerKey::new();
+            keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+            let content = self.content_page.get();
+            keys.connect_key_pressed(move |_, key, _, _| {
+                let direction = match key {
+                    gtk::gdk::Key::Tab | gtk::gdk::Key::KP_Tab => gtk::DirectionType::TabForward,
+                    gtk::gdk::Key::ISO_Left_Tab => gtk::DirectionType::TabBackward,
+                    _ => return glib::Propagation::Proceed,
+                };
+                if content.child_focus(direction) {
+                    glib::Propagation::Stop
+                } else {
+                    glib::Propagation::Proceed
+                }
+            });
+            self.sidebar.add_controller(keys);
+        }
+    }
     impl WidgetImpl for MainWindow {}
     impl WindowImpl for MainWindow {}
     impl ApplicationWindowImpl for MainWindow {}
