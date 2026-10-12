@@ -5,7 +5,8 @@ comic books, magazines, and collected editions. Everything, including
 cover photos, lives in one local SQLite file, and the app never touches
 the network.
 
-**Status:** early development. Nothing is released yet.
+**Status:** 0.1.0 is the first release. It is not on Flathub yet; install
+it from the Releases page as described below.
 
 ## Installing
 
