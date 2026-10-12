@@ -7,6 +7,16 @@ the network.
 
 **Status:** early development. Nothing is released yet.
 
+## Installing
+
+Each release on the repository's Releases page has a Flatpak bundle and
+its SHA-256 checksum. Check the download, then install it:
+
+```sh
+sha256sum -c MyLongboxDB-0.1.0.flatpak.sha256
+flatpak install --user MyLongboxDB-0.1.0.flatpak
+```
+
 ## Building
 
 MyLongboxDB is written in Rust with GTK4 and libadwaita and ships only as
@@ -88,6 +98,12 @@ its authors:
 - **No networking code.** `deny.toml` bans HTTP, socket, and TLS crates
   and any dependency from outside crates.io. Verify with
   `cargo deny check`.
+- **Every dependency is reviewed or deliberately accepted.** cargo-vet
+  records, in `build-aux/supply-chain/`, which crates were audited by
+  organisations whose audits are imported (Mozilla, Google, the Bytecode
+  Alliance, and others) and which were accepted at a given version; a new
+  crate or a new version fails the check until someone looks at it.
+  Verify with `cargo vet --locked`.
 - **No running other programs.** `std::process`, GLib's spawn
   functions, GIO subprocesses, and GTK's URI and file launchers are
   banned through `clippy.toml`. Verify with
