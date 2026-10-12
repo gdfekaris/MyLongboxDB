@@ -27,5 +27,11 @@ mod window;
 const APP_ID: &str = "io.github.gdfekaris.MyLongboxDB";
 
 fn main() {
+    // First, before GTK or anything else can open a socket. Inside the
+    // Flatpak there is no network to reach anyway, so if an unusual
+    // kernel refuses the filter, the app says so and carries on.
+    if let Err(why) = mylongbox_sandbox::block_internet() {
+        eprintln!("mylongboxdb: could not block internet sockets: {why}");
+    }
     relm4::RelmApp::new(APP_ID).run::<app::App>(());
 }

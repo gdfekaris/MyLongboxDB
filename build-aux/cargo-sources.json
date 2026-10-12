@@ -1419,6 +1419,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/seccompiler/seccompiler-0.5.0.crate",
+        "sha256": "a4ae55de56877481d112a559bbc12667635fdaf5e005712fd4e2b2fa50ffc884",
+        "dest": "cargo/vendor/seccompiler-0.5.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"a4ae55de56877481d112a559bbc12667635fdaf5e005712fd4e2b2fa50ffc884\", \"files\": {}}",
+        "dest": "cargo/vendor/seccompiler-0.5.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/semver/semver-1.0.28.crate",
         "sha256": "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd",
         "dest": "cargo/vendor/semver-1.0.28"
