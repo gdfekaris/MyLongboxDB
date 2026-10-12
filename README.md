@@ -131,8 +131,18 @@ its authors:
   which shows one filter more than the Flatpak sandbox's own (2 rather
   than 1).
 
-File-access limits (Landlock) will be documented here, with
-verification steps, when they land.
+- **The app can change files only in its own folders.** At startup,
+  before any other thread runs, Landlock limits every way of changing
+  files (writing, creating, deleting, renaming, emptying) to the app's
+  data, cache, and settings folders, the files you pick in the file
+  chooser, and the graphics devices under `/dev`, and refuses TCP
+  connections as a second line behind the socket filter. Reading is left
+  to the Flatpak, which shows the app only its own folders and the
+  system files GTK needs. Verify with `cargo test -p mylongbox-sandbox`,
+  whose tests apply the limits and show changes failing outside the
+  allowed folder while reading still works. On a kernel without
+  Landlock the app prints a note and runs with the Flatpak's limits
+  alone.
 
 ## Reporting vulnerabilities
 
