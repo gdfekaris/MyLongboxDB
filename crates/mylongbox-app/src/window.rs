@@ -14,6 +14,8 @@ mod imp {
     pub struct MainWindow {
         #[template_child]
         pub toast_overlay: TemplateChild<adw::ToastOverlay>,
+        /// The message saying work is under way, until another replaces it.
+        pub working: std::cell::RefCell<Option<adw::Toast>>,
         #[template_child]
         pub stack: TemplateChild<adw::ViewStack>,
         #[template_child]
@@ -124,6 +126,32 @@ impl MainWindow {
         let toast = adw::Toast::new("");
         toast.set_use_markup(false);
         toast.set_title(&message);
+        self.show_toast(toast);
+    }
+
+    /// Shows that work is under way, such as `Backing up…`, until the
+    /// next message, which says how it went, takes its place.
+    pub fn toast_working(&self, message: &str) {
+        let toast = adw::Toast::new("");
+        toast.set_use_markup(false);
+        toast.set_title(message);
+        toast.set_timeout(0);
+        self.show_toast(toast.clone());
+        self.imp().working.replace(Some(toast));
+    }
+
+    /// Takes away the message that work is under way, when it ended
+    /// with something other than a message, such as a dialog opening.
+    pub fn end_working(&self) {
+        if let Some(working) = self.imp().working.take() {
+            working.dismiss();
+        }
+    }
+
+    fn show_toast(&self, toast: adw::Toast) {
+        if let Some(working) = self.imp().working.take() {
+            working.dismiss();
+        }
         self.imp().toast_overlay.add_toast(toast);
     }
 
@@ -134,7 +162,7 @@ impl MainWindow {
         toast.set_title(message);
         toast.set_button_label(Some("_Undo"));
         toast.connect_button_clicked(move |_| undo());
-        self.imp().toast_overlay.add_toast(toast);
+        self.show_toast(toast);
     }
 
     /// Shows the welcome page, or the open collection.

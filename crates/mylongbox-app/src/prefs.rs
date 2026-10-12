@@ -1,12 +1,14 @@
 //! The Preferences window: how amounts and grades are shown, the
-//! collections kept by the app, and the exchange-rate table.
+//! collections kept by the app, backups and upkeep, and the
+//! exchange-rate table.
 
 use std::cell::Cell;
+use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 
 use adw::prelude::*;
 use gtk::{gio, glib};
-use mylongbox_core::{Amount, CollectionInfo, Currency, Database, ExchangeRate};
+use mylongbox_core::{Amount, CollectionInfo, Currency, Database, ExchangeRate, SafetyCopy};
 use mylongbox_media::{LONG_EDGES, QUALITIES};
 
 use crate::format;
@@ -28,6 +30,9 @@ pub struct Hooks {
     pub delete: Box<dyn Fn(String)>,
     /// Runs a window action, such as importing a collection.
     pub action: Box<dyn Fn(&str)>,
+    pub backup_folder_chosen: Box<dyn Fn(PathBuf)>,
+    /// Brings back the named collection's safety copy.
+    pub restore_safety: Box<dyn Fn(String)>,
 }
 
 pub struct State<'a> {
@@ -38,6 +43,9 @@ pub struct State<'a> {
     pub db: Option<&'a Rc<Database>>,
     /// Opens on the exchange-rate page, as from the reminder banner.
     pub show_rates: bool,
+    pub backup_folder: Option<PathBuf>,
+    /// The open collection's safety copy, if it has one.
+    pub safety: Option<SafetyCopy>,
 }
 
 pub fn dialog(state: &State<'_>, hooks: Hooks) -> adw::PreferencesDialog {
@@ -54,6 +62,17 @@ pub fn dialog(state: &State<'_>, hooks: Hooks) -> adw::PreferencesDialog {
     general.add(&images_group(&settings, &hooks));
     general.add(&collections_group(state, &hooks, &dialog));
     dialog.add(&general);
+
+    let backups = adw::PreferencesPage::builder()
+        .title("Backups")
+        .icon_name("drive-harddisk-symbolic")
+        .build();
+    backups.add(&backup_group(state, &hooks, &dialog));
+    backups.add(&safety_group(state, &settings, &hooks, &dialog));
+    if let Some(db) = state.db {
+        backups.add(&upkeep_group(db, &dialog));
+    }
+    dialog.add(&backups);
 
     let rates = adw::PreferencesPage::builder()
         .title("Exchange Rates")
@@ -232,6 +251,233 @@ fn collections_group(
             row.set_sensitive(false);
         }
         group.add(&row);
+    }
+    group
+}
+
+/// A folder's name as the file chooser showed it; folders reached
+/// through the document portal have long made-up paths above it.
+fn folder_name(folder: &std::path::Path) -> String {
+    folder.file_name().map_or_else(
+        || folder.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    )
+}
+
+fn backup_group(
+    state: &State<'_>,
+    hooks: &Rc<Hooks>,
+    dialog: &adw::PreferencesDialog,
+) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::builder()
+        .title("Back Up")
+        .description(
+            "A backup is a complete copy of the open collection, checked before it is \
+             written. Import it to use it. Old backups are never removed.",
+        )
+        .build();
+    let folder = adw::ActionRow::builder()
+        .title("Backup Folder")
+        .subtitle(state.backup_folder.as_deref().map_or_else(
+            || "Asked for the first time you back up".to_owned(),
+            folder_name,
+        ))
+        .use_markup(false)
+        .build();
+    let choose = gtk::Button::builder()
+        .label("_Choose\u{2026}")
+        .use_underline(true)
+        .valign(gtk::Align::Center)
+        .build();
+    {
+        let (hooks, dialog, row) = (hooks.clone(), dialog.clone(), folder.clone());
+        choose.connect_clicked(move |_| {
+            let chooser = gtk::FileDialog::builder()
+                .title("Choose a Folder for Backups")
+                .modal(true)
+                .build();
+            let (hooks, row) = (hooks.clone(), row.clone());
+            let parent = dialog.root().and_downcast::<gtk::Window>();
+            chooser.select_folder(parent.as_ref(), None::<&gio::Cancellable>, move |result| {
+                if let Ok(file) = result
+                    && let Some(path) = file.path()
+                {
+                    row.set_subtitle(&folder_name(&path));
+                    (hooks.backup_folder_chosen)(path);
+                }
+            });
+        });
+    }
+    folder.add_suffix(&choose);
+    group.add(&folder);
+    let now = adw::ButtonRow::builder()
+        .title("Back _Up Now")
+        .use_underline(true)
+        .build();
+    now.set_sensitive(state.current.is_some());
+    {
+        let (hooks, dialog) = (hooks.clone(), dialog.clone());
+        now.connect_activated(move |_| {
+            dialog.close();
+            (hooks.action)("back-up");
+        });
+    }
+    group.add(&now);
+    group
+}
+
+/// When a file was last changed, in local time.
+fn made_at(time: std::time::SystemTime) -> String {
+    time.duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| glib::DateTime::from_unix_local(i64::try_from(d.as_secs()).ok()?).ok())
+        .and_then(|t| t.format("%-d %B %Y, %H:%M").ok())
+        .map_or_else(String::new, |t| t.to_string())
+}
+
+fn safety_group(
+    state: &State<'_>,
+    current: &Rc<Cell<Settings>>,
+    hooks: &Rc<Hooks>,
+    dialog: &adw::PreferencesDialog,
+) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::builder()
+        .title("Safety Copies")
+        .description(
+            "Kept in this app\u{2019}s own folder, one for each collection, each replacing \
+             the last.",
+        )
+        .build();
+    let switch = adw::SwitchRow::builder()
+        .title("Keep a Safety Copy")
+        .subtitle(
+            "Before importing books, upgrading a collection, changing several books at \
+             once, and deleting from Trash",
+        )
+        .active(current.get().safety_copies)
+        .build();
+    {
+        let (current, hooks) = (current.clone(), hooks.clone());
+        switch.connect_active_notify(move |row| {
+            let settings = Settings {
+                safety_copies: row.is_active(),
+                ..current.get()
+            };
+            current.set(settings);
+            (hooks.settings_changed)(settings);
+        });
+    }
+    group.add(&switch);
+    if let Some(name) = state.current {
+        let row = adw::ActionRow::builder()
+            .title(format!("Safety Copy of \u{201c}{name}\u{201d}"))
+            .use_markup(false)
+            .build();
+        match &state.safety {
+            Some(copy) => {
+                row.set_subtitle(&format!(
+                    "Made {} {} \u{b7} {}",
+                    made_at(copy.made),
+                    copy.reason,
+                    glib::format_size(copy.size_bytes)
+                ));
+                let open = gtk::Button::builder()
+                    .label("_Open")
+                    .use_underline(true)
+                    .tooltip_text("Open it as a collection of its own")
+                    .valign(gtk::Align::Center)
+                    .build();
+                let (hooks, dialog, name) = (hooks.clone(), dialog.clone(), name.to_owned());
+                open.connect_clicked(move |_| {
+                    dialog.close();
+                    (hooks.restore_safety)(name.clone());
+                });
+                row.add_suffix(&open);
+            }
+            None => row.set_subtitle("None made yet"),
+        }
+        group.add(&row);
+    }
+    group
+}
+
+/// Checking the open collection for damage, and compacting it.
+fn upkeep_group(db: &Rc<Database>, dialog: &adw::PreferencesDialog) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::builder()
+        .title("Upkeep")
+        .description("For the open collection. Both can take a while for a large one.")
+        .build();
+    let row = |title: &str, subtitle: &str, label: &str| {
+        let row = adw::ActionRow::builder()
+            .title(title)
+            .subtitle(subtitle)
+            .build();
+        let button = gtk::Button::builder()
+            .label(label)
+            .use_underline(true)
+            .valign(gtk::Align::Center)
+            .build();
+        row.add_suffix(&button);
+        group.add(&row);
+        button
+    };
+    let check = row(
+        "Check for Damage",
+        "Reads the whole collection, as a disk fault can harm files unnoticed",
+        "_Check",
+    );
+    {
+        let (db, dialog) = (Rc::downgrade(db), dialog.clone());
+        check.connect_clicked(move |_| {
+            let Some(db) = db.upgrade() else {
+                return;
+            };
+            match db.integrity_check() {
+                Ok(problems) if problems.is_empty() => {
+                    dialog.add_toast(adw::Toast::new("No damage found"));
+                }
+                Ok(problems) => {
+                    let mut body = String::from(
+                        "Open a backup or the safety copy to get back to a sound copy. What was \
+                         found:\n\n",
+                    );
+                    for p in problems.iter().take(10) {
+                        body.push_str(&format!("\u{2022} {p}\n"));
+                    }
+                    if problems.len() > 10 {
+                        body.push_str(&format!("and {} more", problems.len() - 10));
+                    }
+                    let alert =
+                        adw::AlertDialog::new(Some("The Collection Is Damaged"), Some(&body));
+                    alert.add_response("close", "_Close");
+                    alert.present(Some(&dialog));
+                }
+                Err(e) => dialog.add_toast(adw::Toast::new(&format!("Could not check: {e}"))),
+            }
+        });
+    }
+    let compact = row(
+        "Compact",
+        "Gives back the space deleted books and photos leave behind",
+        "C_ompact",
+    );
+    {
+        let (db, dialog) = (Rc::downgrade(db), dialog.clone());
+        compact.connect_clicked(move |_| {
+            let Some(db) = db.upgrade() else {
+                return;
+            };
+            let message = match db.compact() {
+                Ok((before, after)) if after < before => format!(
+                    "Compacted from {} to {}",
+                    glib::format_size(before),
+                    glib::format_size(after)
+                ),
+                Ok((_, after)) => format!("Already compact at {}", glib::format_size(after)),
+                Err(e) => format!("Could not compact: {e}"),
+            };
+            dialog.add_toast(adw::Toast::new(&message));
+        });
     }
     group
 }

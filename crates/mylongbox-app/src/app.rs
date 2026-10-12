@@ -250,6 +250,15 @@ pub enum AppMsg {
     BooksFilePicked(PathBuf),
     /// The import wizard added this many books.
     BooksImported(usize),
+    /// Back up the open collection, asking for a folder the first time.
+    BackUp,
+    BackupFolderPicked(PathBuf),
+    /// Remember the folder chosen in Preferences.
+    BackupFolderChosen(PathBuf),
+    /// Write the backup, once the message saying so has shown.
+    WriteBackup(PathBuf),
+    /// Bring back a collection's safety copy as a collection of its own.
+    RestoreSafetyCopy(String),
     SectionSelected(usize),
     NameActivated(u32),
     /// A book in the grid or list, by position.
@@ -384,6 +393,7 @@ impl Component for App {
         add_action(&root, "export-csv", &sender, || AppMsg::ExportCsv(false));
         add_action(&root, "export-zip", &sender, || AppMsg::ExportZip);
         add_action(&root, "import-books", &sender, || AppMsg::ImportBooks);
+        add_action(&root, "back-up", &sender, || AppMsg::BackUp);
         add_action(&root, "export-shown-csv", &sender, || {
             AppMsg::ExportCsv(true)
         });
@@ -620,7 +630,7 @@ impl Component for App {
             AppMsg::ImportPicked(path) => match self.store() {
                 Ok(store) => {
                     let store = store.clone();
-                    root.toast("Importing…");
+                    root.toast_working("Importing…");
                     sender.spawn_oneshot_command(move || {
                         CommandMsg::Imported(store.import(&path).map_err(|e| e.to_string()))
                     });
@@ -685,7 +695,7 @@ impl Component for App {
                 None => root.toast("Open a collection first"),
             },
             AppMsg::ZipPicked(path) => {
-                root.toast("Exporting\u{2026}");
+                root.toast_working("Exporting\u{2026}");
                 let sender = sender.clone();
                 glib::timeout_add_local_once(std::time::Duration::from_millis(100), move || {
                     sender.input(AppMsg::WriteZip(path));
@@ -717,7 +727,7 @@ impl Component for App {
                 None => root.toast("Open a collection first"),
             },
             AppMsg::BooksFilePicked(path) => {
-                root.toast("Reading the file\u{2026}");
+                root.toast_working("Reading the file\u{2026}");
                 let opened = self.opened;
                 let name = path
                     .file_name()
@@ -737,6 +747,68 @@ impl Component for App {
                     1 => "Imported 1 book".to_owned(),
                     n => format!("Imported {} books", format::grouped(&n.to_string())),
                 });
+            }
+            AppMsg::BackUp => {
+                if self.open.is_none() {
+                    root.toast("Open a collection first");
+                    return;
+                }
+                match settings::backup_folder(&settings::path()) {
+                    Some(folder) if folder.is_dir() => {
+                        sender.input(AppMsg::BackupFolderPicked(folder));
+                    }
+                    // The folder is asked for again if it has gone.
+                    _ => pick_backup_folder(root, &sender),
+                }
+            }
+            AppMsg::BackupFolderPicked(folder) => {
+                if let Err(why) = settings::set_backup_folder(&settings::path(), &folder) {
+                    root.toast(&format!("Could not remember the backup folder: {why}"));
+                }
+                root.toast_working("Backing up\u{2026}");
+                let sender = sender.clone();
+                glib::timeout_add_local_once(std::time::Duration::from_millis(100), move || {
+                    sender.input(AppMsg::WriteBackup(folder));
+                });
+            }
+            AppMsg::BackupFolderChosen(folder) => {
+                if let Err(why) = settings::set_backup_folder(&settings::path(), &folder) {
+                    root.toast(&format!("Could not remember the backup folder: {why}"));
+                }
+            }
+            AppMsg::WriteBackup(folder) => {
+                let result = match (self.store(), &self.open, glib::DateTime::now_local()) {
+                    (Ok(store), Some((name, db)), Ok(now)) => store
+                        .back_up(db, &folder, &format::backup_name(name, &now))
+                        .map_err(|e| e.to_string()),
+                    (Err(why), _, _) => Err(why),
+                    (_, None, _) => Err("no collection is open".into()),
+                    (_, _, Err(_)) => Err("the clock could not be read".into()),
+                };
+                match result {
+                    Ok((path, size)) => root.toast(&format!(
+                        "Backed up to \u{201c}{}\u{201d} ({})",
+                        path.file_name()
+                            .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
+                        glib::format_size(size)
+                    )),
+                    Err(why) => root.toast(&format!("Could not back up: {why}")),
+                }
+            }
+            AppMsg::RestoreSafetyCopy(name) => {
+                match self
+                    .store()
+                    .and_then(|s| s.restore_safety_copy(&name).map_err(|e| e.to_string()))
+                {
+                    Ok(info) => {
+                        self.open_collection(&info.name, root);
+                        root.toast(&format!(
+                            "Opened the safety copy as \u{201c}{}\u{201d}",
+                            info.name
+                        ));
+                    }
+                    Err(why) => root.toast(&format!("Could not open the safety copy: {why}")),
+                }
             }
             AppMsg::SectionSelected(index) => {
                 if let Some(section) = sections().nth(index) {
@@ -813,7 +885,7 @@ impl Component for App {
             }
             AppMsg::AddPhoto(copy, side) => pick_photo(root, &sender, copy, side),
             AppMsg::PhotoPicked(copy, side, path) => {
-                root.toast("Opening the photo\u{2026}");
+                root.toast_working("Opening the photo\u{2026}");
                 let opened = self.opened;
                 sender.spawn_oneshot_command(move || CommandMsg::PhotoLoaded {
                     opened,
@@ -829,7 +901,7 @@ impl Component for App {
                 loaded,
                 edit,
             } => {
-                root.toast("Saving the photo\u{2026}");
+                root.toast_working("Saving the photo\u{2026}");
                 let output = self.settings.photos;
                 sender.spawn_oneshot_command(move || CommandMsg::PhotoReady {
                     opened,
@@ -1152,7 +1224,10 @@ impl Component for App {
                 }
             }
             AppMsg::ApplyBulk(copies, change) => {
-                match self.with_db(|db| db.bulk_edit(&copies, &change)) {
+                match self
+                    .keep_safety_copy("before changing several books at once")
+                    .and_then(|()| self.with_db(|db| db.bulk_edit(&copies, &change)))
+                {
                     Ok(()) => {
                         root.select_toggle().set_active(false);
                         self.show(root);
@@ -1205,7 +1280,10 @@ impl Component for App {
                 &sender,
                 move || AppMsg::Purge(trash),
             ),
-            AppMsg::Purge(trash) => match self.with_db(|db| db.purge(trash)) {
+            AppMsg::Purge(trash) => match self
+                .keep_safety_copy("before deleting from Trash")
+                .and_then(|()| self.with_db(|db| db.purge(trash)))
+            {
                 Ok(()) => self.show(root),
                 Err(why) => root.toast(&format!("Could not delete: {why}")),
             },
@@ -1217,7 +1295,10 @@ impl Component for App {
                 &sender,
                 || AppMsg::EmptyTrash,
             ),
-            AppMsg::EmptyTrash => match self.with_db(|db| db.empty_trash()) {
+            AppMsg::EmptyTrash => match self
+                .keep_safety_copy("before emptying Trash")
+                .and_then(|()| self.with_db(|db| db.empty_trash()))
+            {
                 Ok(()) => self.show(root),
                 Err(why) => root.toast(&format!("Could not empty Trash: {why}")),
             },
@@ -1265,6 +1346,7 @@ impl Component for App {
                 side,
                 loaded: Ok(loaded),
             } => {
+                root.end_working();
                 let title = match side {
                     Side::Front => "Edit Front Cover",
                     Side::Back => "Edit Back Cover",
@@ -1303,17 +1385,25 @@ impl Component for App {
                 root.toast(&format!("Imported \u{201c}{}\u{201d}", info.name));
             }
             CommandMsg::Imported(Err(why)) => root.toast(&format!("Could not import: {why}")),
-            CommandMsg::BooksFileRead { opened, .. } if opened != self.opened => {}
+            CommandMsg::BooksFileRead { opened, .. } if opened != self.opened => root.end_working(),
             CommandMsg::BooksFileRead {
                 name,
                 source: Ok(source),
                 ..
             } => {
+                root.end_working();
                 if let Some((_, db)) = &self.open {
                     let s = sender.clone();
-                    import_dialog::open(root, &name, *source, db, self.settings.photos, move |n| {
-                        s.input(AppMsg::BooksImported(n));
-                    });
+                    let keeper = self.safety_keeper();
+                    import_dialog::open(
+                        root,
+                        &name,
+                        *source,
+                        db,
+                        self.settings.photos,
+                        move || keeper("before importing books"),
+                        move |n| s.input(AppMsg::BooksImported(n)),
+                    );
                 }
             }
             CommandMsg::BooksFileRead {
@@ -1326,6 +1416,32 @@ impl Component for App {
 impl App {
     fn store(&self) -> Result<&CollectionStore, String> {
         self.store.as_ref().map_err(Clone::clone)
+    }
+
+    /// Keeps a copy of the open collection as it is, before a change
+    /// that would be hard to undo, unless the preferences say not to.
+    fn keep_safety_copy(&self, reason: &str) -> Result<(), String> {
+        self.safety_keeper()(reason)
+    }
+
+    /// What keeps a safety copy of the open collection, for work that
+    /// finishes later, such as an import.
+    fn safety_keeper(&self) -> impl Fn(&str) -> Result<(), String> + 'static {
+        let keeper = match (self.settings.safety_copies, self.store(), &self.open) {
+            (true, Ok(store), Some((name, db))) => {
+                Some((store.clone(), name.clone(), Rc::downgrade(db)))
+            }
+            _ => None,
+        };
+        move |reason| {
+            let Some((store, name, db)) = &keeper else {
+                return Ok(());
+            };
+            let db = db.upgrade().ok_or("the collection is no longer open")?;
+            store
+                .make_safety_copy(&db, name, reason)
+                .map_err(|e| format!("the safety copy could not be made: {e}"))
+        }
     }
 
     fn show_preferences(
@@ -1361,6 +1477,11 @@ impl App {
                     ActionGroupExt::activate_action(&root, name, None);
                 })
             },
+            backup_folder_chosen: {
+                let s = sender.clone();
+                Box::new(move |folder| s.input(AppMsg::BackupFolderChosen(folder)))
+            },
+            restore_safety: msg(AppMsg::RestoreSafetyCopy),
         };
         let state = prefs::State {
             settings: self.settings,
@@ -1368,6 +1489,11 @@ impl App {
             current: self.open.as_ref().map(|(n, _)| n.as_str()),
             db: self.open.as_ref().map(|(_, db)| db),
             show_rates,
+            backup_folder: settings::backup_folder(&settings::path()),
+            safety: self
+                .open
+                .as_ref()
+                .and_then(|(name, _)| self.store().ok()?.safety_copy(name)),
         };
         prefs::dialog(&state, hooks).present(Some(root));
     }
@@ -1705,10 +1831,10 @@ impl App {
         self.end_search(root);
         self.opened += 1;
         covers::set_database(std::rc::Weak::new());
-        match self
-            .store()
-            .and_then(|s| s.open(name).map_err(|e| e.to_string()))
-        {
+        match self.store().and_then(|s| {
+            s.open_keeping(name, self.settings.safety_copies)
+                .map_err(|e| e.to_string())
+        }) {
             Ok(db) => {
                 let db = Rc::new(db);
                 covers::set_database(Rc::downgrade(&db));
@@ -1731,6 +1857,7 @@ impl App {
             "export-shown-csv",
             "export-zip",
             "import-books",
+            "back-up",
             "add-comic",
             "add-magazine",
             "add-collected",
@@ -2071,6 +2198,22 @@ fn collection_filters() -> gio::ListStore {
     filters.append(&collections);
     filters.append(&all);
     filters
+}
+
+/// Asks for the folder backups are written to.
+fn pick_backup_folder(root: &MainWindow, sender: &ComponentSender<App>) {
+    let dialog = gtk::FileDialog::builder()
+        .title("Choose a Folder for Backups")
+        .modal(true)
+        .build();
+    let sender = sender.clone();
+    dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
+        if let Ok(folder) = result
+            && let Some(path) = folder.path()
+        {
+            sender.input(AppMsg::BackupFolderPicked(path));
+        }
+    });
 }
 
 /// Asks for a CSV file or a full export to add books from.

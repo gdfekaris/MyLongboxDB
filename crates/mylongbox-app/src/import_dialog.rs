@@ -243,6 +243,8 @@ struct Wizard {
     report: adw::Bin,
     stage: Cell<Stage>,
     cancelled: Cell<bool>,
+    /// Keeps a safety copy before an import starts, or says why not.
+    before_import: Box<dyn Fn() -> Result<(), String>>,
     /// Told how many books were added, once an import is kept.
     imported: Box<dyn Fn(usize)>,
 }
@@ -405,6 +407,13 @@ async fn run(wizard: Rc<Wizard>, keep: bool) {
         Stage::Checking
     });
     let doing = if keep { "Adding row" } else { "Checking row" };
+    if keep && let Err(why) = (wizard.before_import)() {
+        wizard.show(Stage::Columns);
+        let alert = adw::AlertDialog::new(Some("Nothing Was Imported"), Some(&why));
+        alert.add_response("close", "_Close");
+        alert.present(Some(&wizard.dialog));
+        return;
+    }
     let total = wizard.source.borrow().len();
     wizard.set_progress(doing, 0, total);
     let mut run = match db.start_import(&wizard.source.borrow()) {
@@ -507,14 +516,16 @@ async fn run(wizard: Rc<Wizard>, keep: bool) {
     }
 }
 
-/// Opens the wizard for a file read into `source`; `imported` is told
-/// how many books were added once an import is kept.
+/// Opens the wizard for a file read into `source`. `before_import` runs
+/// as an import starts, which stops if it fails; `imported` is told how
+/// many books were added once an import is kept.
 pub fn open(
     parent: &impl IsA<gtk::Widget>,
     file_name: &str,
     source: ImportSource,
     db: &Rc<Database>,
     output: Output,
+    before_import: impl Fn() -> Result<(), String> + 'static,
     imported: impl Fn(usize) + 'static,
 ) {
     let mapping = auto_mapping(source.headers());
@@ -650,6 +661,7 @@ pub fn open(
         report,
         stage: Cell::new(Stage::Columns),
         cancelled: Cell::new(false),
+        before_import: Box::new(before_import),
         imported: Box::new(imported),
     });
     for row in &wizard.columns {

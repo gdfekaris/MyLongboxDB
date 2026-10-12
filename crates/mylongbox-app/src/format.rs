@@ -313,6 +313,19 @@ pub fn local_date(timestamp: &str) -> Option<Date> {
 }
 
 /// Today's date on this computer.
+/// What a backup made at `now` is called, e.g.
+/// `mylongboxdb-Comics-2026-10-10-0930.sqlite`.
+pub fn backup_name(collection: &str, now: &glib::DateTime) -> String {
+    format!(
+        "mylongboxdb-{collection}-{:04}-{:02}-{:02}-{:02}{:02}.sqlite",
+        now.year(),
+        now.month(),
+        now.day_of_month(),
+        now.hour(),
+        now.minute()
+    )
+}
+
 pub fn today() -> Option<Date> {
     let now = glib::DateTime::now_local().ok()?;
     Date::new(
@@ -418,6 +431,15 @@ mod tests {
         assert!(date.days_until(utc).abs() <= 1, "{date}");
         assert_eq!(local_date("yesterday"), None);
         assert_eq!(local_date(""), None);
+    }
+
+    #[test]
+    fn backups_are_named_by_collection_and_time() {
+        let at = glib::DateTime::from_utc(2026, 3, 7, 9, 5, 30.0).unwrap();
+        assert_eq!(
+            backup_name("Main Comics", &at),
+            "mylongboxdb-Main Comics-2026-03-07-0905.sqlite"
+        );
     }
 
     #[test]
