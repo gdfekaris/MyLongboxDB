@@ -93,6 +93,10 @@ modules:
       - install -Dm644 data/io.github.gdfekaris.MyLongboxDB.desktop -t /app/share/applications/
       - install -Dm644 data/icons/hicolor/scalable/apps/io.github.gdfekaris.MyLongboxDB.svg
         -t /app/share/icons/hicolor/scalable/apps/
+      # Each translation listed in po/LINGUAS, checked and compiled.
+      - for lang in $(grep -v '^#' po/LINGUAS); do install -d /app/share/locale/$lang/LC_MESSAGES
+        && msgfmt --check -o /app/share/locale/$lang/LC_MESSAGES/mylongboxdb.mo po/$lang.po
+        || exit 1; done
     # Photo reading is tested here too, against the libheif built above,
     # so the decoder the app ships is the one tested.
     run-tests: true
