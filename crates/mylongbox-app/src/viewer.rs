@@ -9,6 +9,7 @@ use gtk::{gdk, glib};
 use mylongbox_core::Side;
 
 use crate::covers;
+use crate::i18n::gettext;
 
 /// The furthest the photo can be enlarged: four photo pixels a screen
 /// pixel is enough to judge spine ticks and corner wear.
@@ -87,9 +88,9 @@ impl Viewer {
         self.picture.set_paintable(texture.as_ref());
         self.across.set_visible(texture.is_some());
         self.missing.set_visible(texture.is_none());
-        self.missing_label().set_label(match self.side.get() {
-            Side::Front => "No Front Cover Image",
-            Side::Back => "No Back Cover Image",
+        self.missing_label().set_label(&match self.side.get() {
+            Side::Front => gettext("No Front Cover Image"),
+            Side::Back => gettext("No Back Cover Image"),
         });
         self.set_zoom(None, None);
     }
@@ -233,11 +234,12 @@ pub fn open(
     });
 
     let sides = adw::ToggleGroup::new();
-    for (name, label) in [("front", "_Front"), ("back", "_Back")] {
+    // Translators: the two sides of a comic's cover, front and back.
+    for (name, label) in [("front", gettext("_Front")), ("back", gettext("_Back"))] {
         sides.add(
             adw::Toggle::builder()
                 .name(name)
-                .label(label)
+                .label(&label)
                 .use_underline(true)
                 .build(),
         );
@@ -266,9 +268,9 @@ pub fn open(
             .css_classes(["flat"])
             .build()
     };
-    let out = button("zoom-out-symbolic", "Zoom Out");
-    let fit = button("zoom-fit-best-symbolic", "Fit to Window");
-    let into = button("zoom-in-symbolic", "Zoom In");
+    let out = button("zoom-out-symbolic", &gettext("Zoom Out"));
+    let fit = button("zoom-fit-best-symbolic", &gettext("Fit to Window"));
+    let into = button("zoom-in-symbolic", &gettext("Zoom In"));
     let actions: [(&gtk::Button, Action); 3] = [
         (&out, |v| v.zoom_by(1.0 / STEP, None)),
         (&fit, |v| v.set_zoom(None, None)),

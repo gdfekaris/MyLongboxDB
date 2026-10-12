@@ -19,6 +19,7 @@ use mylongbox_core::{
 };
 use mylongbox_media::Output;
 
+use crate::i18n::{gettext, gettext_f, gettext_noop, ngettext_f};
 use crate::{covers, format};
 
 /// How long a slice of rows may hold up the window.
@@ -30,10 +31,10 @@ const SAMPLED: usize = 50;
 
 /// What separates names in a list cell, as offered.
 const SEPARATORS: [(&str, char); 4] = [
-    ("Semicolons ( ; )", ';'),
-    ("Commas ( , )", ','),
-    ("Bars ( | )", '|'),
-    ("Slashes ( / )", '/'),
+    (gettext_noop("Semicolons ( ; )"), ';'),
+    (gettext_noop("Commas ( , )"), ','),
+    (gettext_noop("Bars ( | )"), '|'),
+    (gettext_noop("Slashes ( / )"), '/'),
 ];
 
 /// Columns that hold lists of names.
@@ -75,7 +76,7 @@ pub fn examples(rows: &[Vec<String>], column: usize) -> String {
         })
         .collect();
     if shortened.is_empty() {
-        "Empty in the first rows".to_owned()
+        gettext("Empty in the first rows")
     } else {
         shortened.join(" \u{b7} ")
     }
@@ -110,19 +111,18 @@ pub fn guess_separator(rows: &[Vec<String>], mapping: &[Option<&'static str>]) -
 pub fn mapping_problem(mapping: &[Option<&'static str>]) -> Option<String> {
     let mut seen = HashSet::new();
     if let Some(twice) = mapping.iter().flatten().find(|f| !seen.insert(**f)) {
-        return Some(format!(
-            "\u{201c}{twice}\u{201d} is chosen for more than one column"
+        return Some(gettext_f(
+            "\u{201c}{field}\u{201d} is chosen for more than one column",
+            &[("field", twice)],
         ));
     }
     (!seen.contains("Series"))
-        .then(|| "Choose the column that names each book\u{2019}s series".into())
+        .then(|| gettext("Choose the column that names each book\u{2019}s series"))
 }
 
-fn count(n: usize, one: &str, many: &str) -> String {
-    match n {
-        1 => format!("1 {one}"),
-        n => format!("{} {many}", format::grouped(&n.to_string())),
-    }
+/// A count as shown, with thousands grouped.
+fn grouped(n: usize) -> String {
+    format::grouped(&n.to_string())
 }
 
 /// One part of the report: a heading and the rows it lists.
@@ -152,39 +152,60 @@ pub fn report_parts(report: &ImportReport, done: bool) -> Vec<Part> {
             .iter()
             .filter_map(|r| {
                 let why = matches(&r.outcome)?;
-                Some((format!("Line {}: {}", r.line, r.label), why))
+                let line = gettext_f(
+                    "Line {line}: {book}",
+                    &[("line", &r.line.to_string()), ("book", &r.label)],
+                );
+                Some((line, why))
             })
             .collect::<Vec<_>>()
     };
     let added = report.added();
     let mut parts = Vec::new();
     if added > 0 {
+        let count = grouped(added);
+        let values = [("count", count.as_str())];
         let title = if done {
-            format!("{} added", count(added, "book", "books"))
+            ngettext_f("{count} book added", "{count} books added", added, &values)
         } else {
-            format!("{} to add", count(added, "book", "books"))
+            ngettext_f(
+                "{count} book to add",
+                "{count} books to add",
+                added,
+                &values,
+            )
         };
         parts.push(part(title, Vec::new()));
     }
     let duplicates = listed(&|o| match o {
         ImportOutcome::LikelyDuplicate { note, added } => Some(match (added, done) {
-            (true, true) => format!("Added, though {note}"),
-            (true, false) => format!("To be added, though {note}"),
-            (false, _) => format!("Left out, as {note}"),
+            (true, true) => gettext_f("Added, though {reason}", &[("reason", note)]),
+            (true, false) => gettext_f("To be added, though {reason}", &[("reason", note)]),
+            (false, _) => gettext_f("Left out, as {reason}", &[("reason", note)]),
         }),
         _ => None,
     });
     if !duplicates.is_empty() {
-        let title = count(duplicates.len(), "likely duplicate", "likely duplicates");
+        let n = duplicates.len();
+        let title = ngettext_f(
+            "{count} likely duplicate",
+            "{count} likely duplicates",
+            n,
+            &[("count", &grouped(n))],
+        );
         parts.push(part(title, duplicates));
     }
     let owned = listed(&|o| {
-        (*o == ImportOutcome::AlreadyOwned).then(|| "This copy is already in the collection".into())
+        (*o == ImportOutcome::AlreadyOwned)
+            .then(|| gettext("This copy is already in the collection"))
     });
     if !owned.is_empty() {
-        let title = format!(
-            "{} already in the collection",
-            count(owned.len(), "book", "books")
+        let n = owned.len();
+        let title = ngettext_f(
+            "{count} book already in the collection",
+            "{count} books already in the collection",
+            n,
+            &[("count", &grouped(n))],
         );
         parts.push(part(title, owned));
     }
@@ -193,7 +214,13 @@ pub fn report_parts(report: &ImportReport, done: bool) -> Vec<Part> {
         _ => None,
     });
     if !problems.is_empty() {
-        let title = format!("{} cannot be added", count(problems.len(), "row", "rows"));
+        let n = problems.len();
+        let title = ngettext_f(
+            "{count} row cannot be added",
+            "{count} rows cannot be added",
+            n,
+            &[("count", &grouped(n))],
+        );
         parts.push(part(title, problems));
     }
     if !report.photo_problems.is_empty() {
@@ -205,13 +232,31 @@ pub fn report_parts(report: &ImportReport, done: bool) -> Vec<Part> {
                 None => (p.clone(), String::new()),
             })
             .collect();
-        let title = format!(
-            "{} could not be added",
-            count(report.photo_problems.len(), "photo", "photos")
+        let n = report.photo_problems.len();
+        let title = ngettext_f(
+            "{count} photo could not be added",
+            "{count} photos could not be added",
+            n,
+            &[("count", &grouped(n))],
         );
         parts.push(part(title, rows));
     }
     parts
+}
+
+/// What a progress message says is being done.
+#[derive(Clone, Copy)]
+enum Doing {
+    CheckingRows,
+    AddingRows,
+    AddingPhotos,
+}
+
+/// Says something went wrong, over `parent`, with a button to close it.
+fn alert(parent: &adw::Dialog, heading: &str, body: &str) {
+    let alert = adw::AlertDialog::new(Some(heading), Some(body));
+    alert.add_response("close", &gettext("_Close"));
+    alert.present(Some(parent));
 }
 
 /// Where the wizard is.
@@ -281,21 +326,32 @@ impl Wizard {
     /// Shows a stage's page and buttons.
     fn show(&self, stage: Stage) {
         self.stage.set(stage);
-        let (page, back, next): (&str, Option<&str>, Option<String>) = match stage {
-            Stage::Columns => ("columns", Some("_Cancel"), Some("_Check".into())),
-            Stage::Checking | Stage::Importing => ("progress", Some("_Cancel"), None),
-            Stage::Checked(0) => ("report", Some("_Back"), Some("_Import".into())),
+        let (page, back, next): (&str, Option<String>, Option<String>) = match stage {
+            Stage::Columns => (
+                "columns",
+                Some(gettext("_Cancel")),
+                // Translators: checks every row of the file without
+                // saving anything.
+                Some(gettext("_Check")),
+            ),
+            Stage::Checking | Stage::Importing => ("progress", Some(gettext("_Cancel")), None),
+            Stage::Checked(0) => ("report", Some(gettext("_Back")), Some(gettext("_Import"))),
             Stage::Checked(n) => (
                 "report",
-                Some("_Back"),
-                Some(format!("_Import {}", count(n, "Book", "Books"))),
+                Some(gettext("_Back")),
+                Some(ngettext_f(
+                    "_Import {count} Book",
+                    "_Import {count} Books",
+                    n,
+                    &[("count", &grouped(n))],
+                )),
             ),
-            Stage::Done => ("report", None, Some("_Done".into())),
+            Stage::Done => ("report", None, Some(gettext("_Done"))),
         };
         self.stack.set_visible_child_name(page);
         self.back.set_visible(back.is_some());
         if let Some(label) = back {
-            self.back.set_label(label);
+            self.back.set_label(&label);
         }
         self.next.set_visible(next.is_some());
         if let Some(label) = next {
@@ -308,7 +364,7 @@ impl Wizard {
     fn update_next(&self) {
         let problem = mapping_problem(&self.mapping());
         let description = problem.clone().unwrap_or_else(|| {
-            "Choose what each column holds. Columns left out are not imported.".into()
+            gettext("Choose what each column holds. Columns left out are not imported.")
         });
         self.columns_group.set_description(Some(&description));
         self.next.set_sensitive(match self.stage.get() {
@@ -318,12 +374,15 @@ impl Wizard {
         });
     }
 
-    fn set_progress(&self, doing: &str, done: usize, total: usize) {
-        self.progress_label.set_label(&format!(
-            "{doing} {} of {}\u{2026}",
-            format::grouped(&done.min(total).to_string()),
-            format::grouped(&total.to_string())
-        ));
+    fn set_progress(&self, doing: Doing, done: usize, total: usize) {
+        let (done_text, total_text) = (grouped(done.min(total)), grouped(total));
+        let values = [("done", done_text.as_str()), ("total", total_text.as_str())];
+        let text = match doing {
+            Doing::CheckingRows => gettext_f("Checking row {done} of {total}\u{2026}", &values),
+            Doing::AddingRows => gettext_f("Adding row {done} of {total}\u{2026}", &values),
+            Doing::AddingPhotos => gettext_f("Adding photo {done} of {total}\u{2026}", &values),
+        };
+        self.progress_label.set_label(&text);
         self.progress.set_fraction(if total == 0 {
             1.0
         } else {
@@ -338,7 +397,7 @@ impl Wizard {
             let group = adw::PreferencesGroup::new();
             group.add(
                 &adw::ActionRow::builder()
-                    .title("The file has no books")
+                    .title(gettext("The file has no books"))
                     .build(),
             );
             page.add(&group);
@@ -347,7 +406,7 @@ impl Wizard {
             let group = adw::PreferencesGroup::builder().title(&part.title).build();
             if !part.rows.is_empty() {
                 let expander = adw::ExpanderRow::builder()
-                    .title("Show Each Row")
+                    .title(gettext("Show Each Row"))
                     .expanded(part.rows.len() <= 5)
                     .build();
                 for (title, why) in &part.rows {
@@ -361,9 +420,11 @@ impl Wizard {
                 }
                 if part.more > 0 {
                     let more = adw::ActionRow::builder()
-                        .title(format!(
-                            "And {} more",
-                            format::grouped(&part.more.to_string())
+                        .title(ngettext_f(
+                            "And {count} more",
+                            "And {count} more",
+                            part.more,
+                            &[("count", &grouped(part.more))],
                         ))
                         .build();
                     expander.add_row(&more);
@@ -387,9 +448,7 @@ impl Wizard {
 
     fn fail(&self, run: ImportRun, db: &Database, why: &str) {
         let _ = db.abandon_import(run);
-        let alert = adw::AlertDialog::new(Some("Nothing Was Imported"), Some(why));
-        alert.add_response("close", "_Close");
-        alert.present(Some(&self.dialog));
+        alert(&self.dialog, &gettext("Nothing Was Imported"), why);
         self.show(Stage::Columns);
     }
 }
@@ -406,12 +465,14 @@ async fn run(wizard: Rc<Wizard>, keep: bool) {
     } else {
         Stage::Checking
     });
-    let doing = if keep { "Adding row" } else { "Checking row" };
+    let doing = if keep {
+        Doing::AddingRows
+    } else {
+        Doing::CheckingRows
+    };
     if keep && let Err(why) = (wizard.before_import)() {
         wizard.show(Stage::Columns);
-        let alert = adw::AlertDialog::new(Some("Nothing Was Imported"), Some(&why));
-        alert.add_response("close", "_Close");
-        alert.present(Some(&wizard.dialog));
+        alert(&wizard.dialog, &gettext("Nothing Was Imported"), &why);
         return;
     }
     let total = wizard.source.borrow().len();
@@ -420,9 +481,11 @@ async fn run(wizard: Rc<Wizard>, keep: bool) {
         Ok(run) => run,
         Err(e) => {
             wizard.show(Stage::Columns);
-            let alert = adw::AlertDialog::new(Some("Nothing Was Imported"), Some(&e.to_string()));
-            alert.add_response("close", "_Close");
-            alert.present(Some(&wizard.dialog));
+            alert(
+                &wizard.dialog,
+                &gettext("Nothing Was Imported"),
+                &e.to_string(),
+            );
             return;
         }
     };
@@ -460,9 +523,7 @@ async fn run(wizard: Rc<Wizard>, keep: bool) {
             }
             Err(e) => {
                 wizard.show(Stage::Columns);
-                let alert = adw::AlertDialog::new(Some("The Check Failed"), Some(&e.to_string()));
-                alert.add_response("close", "_Close");
-                alert.present(Some(&wizard.dialog));
+                alert(&wizard.dialog, &gettext("The Check Failed"), &e.to_string());
             }
         }
         return;
@@ -471,7 +532,7 @@ async fn run(wizard: Rc<Wizard>, keep: bool) {
     let photos = run.photos().to_vec();
     let workers = std::thread::available_parallelism().map_or(2, |n| n.get().clamp(1, 4));
     for (done, batch) in photos.chunks(workers).enumerate() {
-        wizard.set_progress("Adding photo", done * workers, photos.len());
+        wizard.set_progress(Doing::AddingPhotos, done * workers, photos.len());
         if wizard.cancelled.get() {
             let _ = db.abandon_import(run);
             wizard.show(Stage::Columns);
@@ -490,7 +551,7 @@ async fn run(wizard: Rc<Wizard>, keep: bool) {
         for (photo, job) in jobs {
             let prepared = job
                 .await
-                .unwrap_or_else(|_| Err("the photo could not be read".into()));
+                .unwrap_or_else(|_| Err(gettext("the photo could not be read")));
             if let Err(e) = db.import_photo(&mut run, photo, prepared) {
                 wizard.fail(run, &db, &e.to_string());
                 return;
@@ -509,9 +570,11 @@ async fn run(wizard: Rc<Wizard>, keep: bool) {
         }
         Err(e) => {
             wizard.show(Stage::Columns);
-            let alert = adw::AlertDialog::new(Some("Nothing Was Imported"), Some(&e.to_string()));
-            alert.add_response("close", "_Close");
-            alert.present(Some(&wizard.dialog));
+            alert(
+                &wizard.dialog,
+                &gettext("Nothing Was Imported"),
+                &e.to_string(),
+            );
         }
     }
 }
@@ -533,32 +596,51 @@ pub fn open(
 
     let file = adw::PreferencesGroup::builder()
         .title(file_name)
-        .description(if source.is_own_format() {
-            format!(
-                "{} from MyLongboxDB, so every column is matched already.",
-                count(source.len(), "book", "books")
-            )
-        } else {
-            count(source.len(), "book", "books")
+        .description({
+            let n = source.len();
+            let count = grouped(n);
+            let values = [("count", count.as_str())];
+            if source.is_own_format() {
+                ngettext_f(
+                    "{count} book from MyLongboxDB, so every column is matched already.",
+                    "{count} books from MyLongboxDB, so every column is matched already.",
+                    n,
+                    &values,
+                )
+            } else {
+                ngettext_f("{count} book", "{count} books", n, &values)
+            }
         })
         .build();
     let separator = adw::ComboRow::builder()
-        .title("Names in a Cell Are Separated By")
-        .subtitle("As in \u{201c}Len Wein; Bernie Wrightson\u{201d}")
-        .model(&gtk::StringList::new(&SEPARATORS.map(|s| s.0)))
+        .title(gettext("Names in a Cell Are Separated By"))
+        .subtitle(gettext("As in \u{201c}Len Wein; Bernie Wrightson\u{201d}"))
+        .model(&gtk::StringList::new(
+            &SEPARATORS
+                .map(|s| gettext(s.0))
+                .each_ref()
+                .map(String::as_str),
+        ))
         .build();
     let guessed = guess_separator(&samples, &mapping);
     let at = SEPARATORS.iter().position(|s| s.1 == guessed).unwrap_or(0);
     separator.set_selected(u32::try_from(at).unwrap_or(0));
     let skip = adw::SwitchRow::builder()
-        .title("Leave Out Likely Duplicates")
-        .subtitle("Books whose issue, variant, and printing you already own")
+        .title(gettext("Leave Out Likely Duplicates"))
+        .subtitle(gettext(
+            "Books whose issue, variant, and printing you already own",
+        ))
         .build();
     file.add(&separator);
     file.add(&skip);
 
-    let columns_group = adw::PreferencesGroup::builder().title("Columns").build();
-    let mut choices = vec!["Leave Out"];
+    let columns_group = adw::PreferencesGroup::builder()
+        .title(gettext("Columns"))
+        .build();
+    // Field names stay as the columns of MyLongboxDB's own files are
+    // named, so they match what an export writes.
+    let leave_out = gettext("Leave Out");
+    let mut choices = vec![leave_out.as_str()];
     choices.extend(CSV_COLUMNS.iter().copied());
     let model = gtk::StringList::new(&choices);
     let columns: Vec<adw::ComboRow> = source
@@ -568,9 +650,9 @@ pub fn open(
         .map(|(i, header)| {
             let row = adw::ComboRow::builder()
                 .title(if header.is_empty() {
-                    "(no heading)"
+                    gettext("(no heading)")
                 } else {
-                    header
+                    header.clone()
                 })
                 .subtitle(examples(&samples, i))
                 .use_markup(false)
@@ -607,7 +689,9 @@ pub fn open(
     progress_box.append(&progress);
     progress_box.append(
         &gtk::Label::builder()
-            .label("Nothing is saved until the end, so cancelling leaves the collection as it was.")
+            .label(gettext(
+                "Nothing is saved until the end, so cancelling leaves the collection as it was.",
+            ))
             .wrap(true)
             .justify(gtk::Justification::Center)
             .css_classes(["dim-label"])
@@ -622,7 +706,7 @@ pub fn open(
     stack.add_named(&progress_box, Some("progress"));
     stack.add_named(&report, Some("report"));
 
-    let back = gtk::Button::with_mnemonic("_Cancel");
+    let back = gtk::Button::with_mnemonic(&gettext("_Cancel"));
     let next = gtk::Button::builder()
         .use_underline(true)
         .css_classes(["suggested-action"])
@@ -637,7 +721,7 @@ pub fn open(
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&stack));
     let dialog = adw::Dialog::builder()
-        .title("Import Books")
+        .title(gettext("Import Books"))
         .content_width(640)
         .content_height(720)
         .child(&toolbar)

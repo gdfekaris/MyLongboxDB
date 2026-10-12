@@ -13,6 +13,7 @@ mod filter_panel;
 mod form;
 mod format;
 mod gaps_page;
+mod i18n;
 mod import_dialog;
 mod issue_page;
 mod photo_editor;
@@ -27,8 +28,23 @@ mod window;
 const APP_ID: &str = "io.github.gdfekaris.MyLongboxDB";
 
 fn main() {
+    use_translations();
     restrict_self();
     relm4::RelmApp::new(APP_ID).run::<app::App>(());
+}
+
+/// Points gettext at the translations installed beside the app, in
+/// `share/locale` next to the `bin` folder that holds it: `/app` in the
+/// Flatpak. Without them the app is in English.
+fn use_translations() {
+    let dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| Some(exe.parent()?.parent()?.join("share/locale")));
+    if let Some(dir) = dir
+        && let Err(why) = mylongbox_sandbox::locale::use_translations(i18n::DOMAIN, &dir)
+    {
+        eprintln!("mylongboxdb: {why}");
+    }
 }
 
 /// Locks the app down before GTK or anything else starts a thread or

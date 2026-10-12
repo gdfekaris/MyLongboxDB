@@ -7,6 +7,7 @@ use adw::prelude::*;
 use mylongbox_core::{Category, SeriesGaps, SeriesId};
 
 use crate::form::series_label;
+use crate::i18n::{gettext, gettext_f, ngettext_f};
 
 /// The most ranges listed for one series before the rest are counted.
 const LISTED: usize = 30;
@@ -34,31 +35,51 @@ pub fn missing_text(missing: &[(u32, u32)]) -> String {
         .collect();
     let rest: u32 = missing.iter().skip(LISTED).map(|(a, b)| b - a + 1).sum();
     if rest > 0 {
-        parts.push(format!("and {rest} more"));
+        let rest = usize::try_from(rest).unwrap_or(usize::MAX);
+        parts.push(ngettext_f(
+            "and {count} more",
+            "and {count} more",
+            rest,
+            &[("count", &rest.to_string())],
+        ));
     }
     parts.join(", ")
 }
 
 /// How much of the run is owned, e.g. `Own 14 of 20, #1–20`.
 fn summary(g: &SeriesGaps) -> String {
-    let unit = match g.category {
-        Category::CollectedEdition => "volumes",
-        Category::Comic | Category::Magazine => "issues",
-    };
-    format!(
-        "Own {} of {} {unit}, #{}\u{2013}{}",
-        g.owned,
-        g.last - g.first + 1,
-        g.first,
-        g.last
-    )
+    let total = g.last - g.first + 1;
+    let values = [
+        ("owned", g.owned.to_string()),
+        ("total", total.to_string()),
+        ("first", g.first.to_string()),
+        ("last", g.last.to_string()),
+    ];
+    let values: Vec<(&str, &str)> = values.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let total = usize::try_from(total).unwrap_or(usize::MAX);
+    match g.category {
+        Category::CollectedEdition => ngettext_f(
+            "Own {owned} of {total} volume, #{first}\u{2013}{last}",
+            "Own {owned} of {total} volumes, #{first}\u{2013}{last}",
+            total,
+            &values,
+        ),
+        Category::Comic | Category::Magazine => ngettext_f(
+            "Own {owned} of {total} issue, #{first}\u{2013}{last}",
+            "Own {owned} of {total} issues, #{first}\u{2013}{last}",
+            total,
+            &values,
+        ),
+    }
 }
 
 pub fn page(gaps: &[SeriesGaps], count_collected: bool, hooks: &Hooks) -> adw::PreferencesPage {
     let options = adw::PreferencesGroup::new();
     let collected = adw::SwitchRow::builder()
-        .title("Count Issues in Collected Editions")
-        .subtitle("An issue reprinted in a book you own fills its gap")
+        .title(gettext("Count Issues in Collected Editions"))
+        .subtitle(gettext(
+            "An issue reprinted in a book you own fills its gap",
+        ))
         .active(count_collected)
         .build();
     {
@@ -68,15 +89,15 @@ pub fn page(gaps: &[SeriesGaps], count_collected: bool, hooks: &Hooks) -> adw::P
     options.add(&collected);
 
     let runs = adw::PreferencesGroup::builder()
-        .title("Missing Numbers")
-        .description(
+        .title(gettext("Missing Numbers"))
+        .description(gettext(
             "Runs go from the lowest number you own to the highest, or to the \
              series\u{2019} known issue count when it is set.",
-        )
+        ))
         .build();
     if gaps.is_empty() {
         let none = adw::ActionRow::builder()
-            .title("No gaps: every run you own is complete")
+            .title(gettext("No gaps: every run you own is complete"))
             .build();
         runs.add(&none);
     }
@@ -85,10 +106,12 @@ pub fn page(gaps: &[SeriesGaps], count_collected: bool, hooks: &Hooks) -> adw::P
         let row = adw::ActionRow::new();
         row.set_use_markup(false);
         row.set_title(&label);
-        row.set_subtitle(&format!(
-            "Missing {}\n{}",
-            missing_text(&g.missing),
-            summary(g)
+        row.set_subtitle(&gettext_f(
+            "Missing {numbers}\n{owned}",
+            &[
+                ("numbers", &missing_text(&g.missing)),
+                ("owned", &summary(g)),
+            ],
         ));
         row.set_subtitle_lines(4);
         row.set_activatable(true);

@@ -18,6 +18,7 @@ use relm4::{Component, ComponentParts, ComponentSender};
 use crate::books::{self, Book, Name};
 use crate::filter_panel::FilterPanel;
 use crate::form::{Focus, Form, Hooks};
+use crate::i18n::{gettext, gettext_f, gettext_noop, ngettext_f};
 use crate::issue_page::{self, Links};
 use crate::settings::{self, Settings};
 use crate::sorting::SortBy;
@@ -72,100 +73,102 @@ const fn names(
 const SECTIONS: &[&[Section]] = &[
     &[
         books(
-            "Everything",
+            gettext_noop("Everything"),
             Shelf::Everything,
-            "Nothing Here Yet",
-            "Comics, magazines, and collected editions you add will appear here.",
+            gettext_noop("Nothing Here Yet"),
+            gettext_noop("Comics, magazines, and collected editions you add will appear here."),
         ),
         books(
-            "Comics",
+            gettext_noop("Comics"),
             Shelf::Category(Category::Comic),
-            "No Comics",
-            "Comics you add will appear here.",
+            gettext_noop("No Comics"),
+            gettext_noop("Comics you add will appear here."),
         ),
         books(
-            "Magazines",
+            gettext_noop("Magazines"),
             Shelf::Category(Category::Magazine),
-            "No Magazines",
-            "Magazines you add will appear here.",
+            gettext_noop("No Magazines"),
+            gettext_noop("Magazines you add will appear here."),
         ),
         books(
-            "Collected Editions",
+            gettext_noop("Collected Editions"),
             Shelf::Category(Category::CollectedEdition),
-            "No Collected Editions",
-            "Trades, omnibuses, and other books you add will appear here.",
+            gettext_noop("No Collected Editions"),
+            gettext_noop("Trades, omnibuses, and other books you add will appear here."),
         ),
     ],
     &[
         names(
-            "Series",
+            gettext_noop("Series"),
             ShelfList::Series,
-            "No Series",
-            "Series appear here as you add books.",
+            gettext_noop("No Series"),
+            gettext_noop("Series appear here as you add books."),
         ),
         names(
-            "Publishers",
+            gettext_noop("Publishers"),
             ShelfList::Publishers,
-            "No Publishers",
-            "Publishers appear here as you add them to series.",
+            gettext_noop("No Publishers"),
+            gettext_noop("Publishers appear here as you add them to series."),
         ),
         names(
-            "Creators",
+            gettext_noop("Creators"),
             ShelfList::Creators,
-            "No Creators",
-            "Writers, artists, and editors appear here as you credit them.",
+            gettext_noop("No Creators"),
+            gettext_noop("Writers, artists, and editors appear here as you credit them."),
         ),
         names(
-            "Characters",
+            gettext_noop("Characters"),
             ShelfList::Characters,
-            "No Characters",
-            "Characters appear here as you add them to issues.",
+            gettext_noop("No Characters"),
+            gettext_noop("Characters appear here as you add them to issues."),
         ),
         names(
-            "Teams",
+            gettext_noop("Teams"),
             ShelfList::Teams,
-            "No Teams",
-            "Teams appear here as you add them to issues.",
+            gettext_noop("No Teams"),
+            gettext_noop("Teams appear here as you add them to issues."),
         ),
         names(
-            "Story Arcs",
+            gettext_noop("Story Arcs"),
             ShelfList::StoryArcs,
-            "No Story Arcs",
-            "Story arcs appear here as you add them to issues.",
+            gettext_noop("No Story Arcs"),
+            gettext_noop("Story arcs appear here as you add them to issues."),
         ),
         names(
-            "Storage Locations",
+            gettext_noop("Storage Locations"),
             ShelfList::StorageBoxes,
-            "No Storage Locations",
-            "Boxes appear here as you file books in them.",
+            gettext_noop("No Storage Locations"),
+            gettext_noop("Boxes appear here as you file books in them."),
         ),
     ],
     &[
         books(
-            "Key Issues",
+            gettext_noop("Key Issues"),
             Shelf::KeyIssues,
-            "No Key Issues",
-            "Issues you mark as key will appear here.",
+            gettext_noop("No Key Issues"),
+            gettext_noop("Issues you mark as key will appear here."),
         ),
         Section {
-            name: "Gaps",
+            name: gettext_noop("Gaps"),
             content: Content::Gaps,
         },
         books(
-            "Duplicates",
+            gettext_noop("Duplicates"),
             Shelf::Duplicates,
-            "No Duplicates",
-            "Editions you own more than one copy of appear here.",
+            gettext_noop("No Duplicates"),
+            gettext_noop("Editions you own more than one copy of appear here."),
         ),
         books(
-            "Needs Attention",
+            gettext_noop("Needs Attention"),
             Shelf::NeedsAttention,
-            "Nothing Needs Attention",
-            "Books missing a front cover photo, a grade, a storage box, or a value appear here.",
+            gettext_noop("Nothing Needs Attention"),
+            gettext_noop(
+                "Books missing a front cover photo, a grade, a storage box, or a value appear here.",
+            ),
         ),
     ],
     &[Section {
-        name: "Trash",
+        name: gettext_noop("Trash"),
         content: Content::Trash,
     }],
 ];
@@ -605,7 +608,10 @@ impl Component for App {
                 .last_opened()
                 .or_else(|| store.list().ok()?.into_iter().next().map(|c| c.name)),
             Err(why) => {
-                root.toast(&format!("Collections cannot be stored: {why}"));
+                root.toast(&gettext_f(
+                    "Collections cannot be stored: {reason}",
+                    &[("reason", why.as_str())],
+                ));
                 None
             }
         };
@@ -630,7 +636,7 @@ impl Component for App {
             AppMsg::ImportPicked(path) => match self.store() {
                 Ok(store) => {
                     let store = store.clone();
-                    root.toast_working("Importing…");
+                    root.toast_working(&gettext("Importing…"));
                     sender.spawn_oneshot_command(move || {
                         CommandMsg::Imported(store.import(&path).map_err(|e| e.to_string()))
                     });
@@ -639,7 +645,7 @@ impl Component for App {
             },
             AppMsg::ExportCollection => match &self.open {
                 Some((name, _)) => pick_export_file(root, &sender, name),
-                None => root.toast("Open a collection first"),
+                None => root.toast(&gettext("Open a collection first")),
             },
             AppMsg::ExportPicked(path) => {
                 let result = match (self.store(), &self.open) {
@@ -647,16 +653,19 @@ impl Component for App {
                         store.export(db, &path).map_err(|e| e.to_string())
                     }
                     (Err(why), _) => Err(why),
-                    (_, None) => Err("Open a collection first".into()),
+                    (_, None) => Err(gettext("Open a collection first")),
                 };
                 match result {
-                    Ok(()) => root.toast("Copy saved"),
-                    Err(why) => root.toast(&format!("Could not save a copy: {why}")),
+                    Ok(()) => root.toast(&gettext("Copy saved")),
+                    Err(why) => root.toast(&gettext_f(
+                        "Could not save a copy: {reason}",
+                        &[("reason", &why)],
+                    )),
                 }
             }
             AppMsg::ExportCsv(shown) => {
                 let Some((name, _)) = &self.open else {
-                    root.toast("Open a collection first");
+                    root.toast(&gettext("Open a collection first"));
                     return;
                 };
                 let (copies, file) = if shown {
@@ -664,7 +673,7 @@ impl Component for App {
                         .filter_map(|i| self.grid.get(i).map(|b| b.borrow().0.copy))
                         .collect();
                     if ids.is_empty() || !root.is_showing_books() {
-                        root.toast("No books are shown to export");
+                        root.toast(&gettext("No books are shown to export"));
                         return;
                     }
                     (
@@ -685,17 +694,24 @@ impl Component for App {
                     Ok(count)
                 });
                 match result {
-                    Ok(1) => root.toast("Exported 1 book"),
-                    Ok(n) => root.toast(&format!("Exported {n} books")),
-                    Err(why) => root.toast(&format!("Could not export: {why}")),
+                    Ok(n) => root.toast(&ngettext_f(
+                        "Exported {count} book",
+                        "Exported {count} books",
+                        n,
+                        &[("count", &n.to_string())],
+                    )),
+                    Err(why) => root.toast(&gettext_f(
+                        "Could not export: {reason}",
+                        &[("reason", &why)],
+                    )),
                 }
             }
             AppMsg::ExportZip => match &self.open {
                 Some((name, _)) => pick_zip_file(root, &sender, &format!("{name}.zip")),
-                None => root.toast("Open a collection first"),
+                None => root.toast(&gettext("Open a collection first")),
             },
             AppMsg::ZipPicked(path) => {
-                root.toast_working("Exporting\u{2026}");
+                root.toast_working(&gettext("Exporting\u{2026}"));
                 let sender = sender.clone();
                 glib::timeout_add_local_once(std::time::Duration::from_millis(100), move || {
                     sender.input(AppMsg::WriteZip(path));
@@ -717,17 +733,24 @@ impl Component for App {
                 });
                 let _ = std::fs::remove_file(&staging);
                 match result {
-                    Ok(1) => root.toast("Exported 1 book with its photos"),
-                    Ok(n) => root.toast(&format!("Exported {n} books with their photos")),
-                    Err(why) => root.toast(&format!("Could not export: {why}")),
+                    Ok(n) => root.toast(&ngettext_f(
+                        "Exported {count} book with its photos",
+                        "Exported {count} books with their photos",
+                        n,
+                        &[("count", &n.to_string())],
+                    )),
+                    Err(why) => root.toast(&gettext_f(
+                        "Could not export: {reason}",
+                        &[("reason", &why)],
+                    )),
                 }
             }
             AppMsg::ImportBooks => match &self.open {
                 Some(_) => pick_books_file(root, &sender),
-                None => root.toast("Open a collection first"),
+                None => root.toast(&gettext("Open a collection first")),
             },
             AppMsg::BooksFilePicked(path) => {
-                root.toast_working("Reading the file\u{2026}");
+                root.toast_working(&gettext("Reading the file\u{2026}"));
                 let opened = self.opened;
                 let name = path
                     .file_name()
@@ -743,14 +766,18 @@ impl Component for App {
             AppMsg::BooksImported(added) => {
                 self.show(root);
                 root.toast(&match added {
-                    0 => "No books were added".to_owned(),
-                    1 => "Imported 1 book".to_owned(),
-                    n => format!("Imported {} books", format::grouped(&n.to_string())),
+                    0 => gettext("No books were added"),
+                    n => ngettext_f(
+                        "Imported {count} book",
+                        "Imported {count} books",
+                        n,
+                        &[("count", &format::grouped(&n.to_string()))],
+                    ),
                 });
             }
             AppMsg::BackUp => {
                 if self.open.is_none() {
-                    root.toast("Open a collection first");
+                    root.toast(&gettext("Open a collection first"));
                     return;
                 }
                 match settings::backup_folder(&settings::path()) {
@@ -763,9 +790,12 @@ impl Component for App {
             }
             AppMsg::BackupFolderPicked(folder) => {
                 if let Err(why) = settings::set_backup_folder(&settings::path(), &folder) {
-                    root.toast(&format!("Could not remember the backup folder: {why}"));
+                    root.toast(&gettext_f(
+                        "Could not remember the backup folder: {reason}",
+                        &[("reason", &why.to_string())],
+                    ));
                 }
-                root.toast_working("Backing up\u{2026}");
+                root.toast_working(&gettext("Backing up\u{2026}"));
                 let sender = sender.clone();
                 glib::timeout_add_local_once(std::time::Duration::from_millis(100), move || {
                     sender.input(AppMsg::WriteBackup(folder));
@@ -773,7 +803,10 @@ impl Component for App {
             }
             AppMsg::BackupFolderChosen(folder) => {
                 if let Err(why) = settings::set_backup_folder(&settings::path(), &folder) {
-                    root.toast(&format!("Could not remember the backup folder: {why}"));
+                    root.toast(&gettext_f(
+                        "Could not remember the backup folder: {reason}",
+                        &[("reason", &why.to_string())],
+                    ));
                 }
             }
             AppMsg::WriteBackup(folder) => {
@@ -782,17 +815,26 @@ impl Component for App {
                         .back_up(db, &folder, &format::backup_name(name, &now))
                         .map_err(|e| e.to_string()),
                     (Err(why), _, _) => Err(why),
-                    (_, None, _) => Err("no collection is open".into()),
-                    (_, _, Err(_)) => Err("the clock could not be read".into()),
+                    (_, None, _) => Err(gettext("no collection is open")),
+                    (_, _, Err(_)) => Err(gettext("the clock could not be read")),
                 };
                 match result {
-                    Ok((path, size)) => root.toast(&format!(
-                        "Backed up to \u{201c}{}\u{201d} ({})",
-                        path.file_name()
-                            .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
-                        glib::format_size(size)
+                    Ok((path, size)) => root.toast(&gettext_f(
+                        "Backed up to \u{201c}{file}\u{201d} ({size})",
+                        &[
+                            (
+                                "file",
+                                &path
+                                    .file_name()
+                                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
+                            ),
+                            ("size", &glib::format_size(size)),
+                        ],
                     )),
-                    Err(why) => root.toast(&format!("Could not back up: {why}")),
+                    Err(why) => root.toast(&gettext_f(
+                        "Could not back up: {reason}",
+                        &[("reason", &why)],
+                    )),
                 }
             }
             AppMsg::RestoreSafetyCopy(name) => {
@@ -802,12 +844,15 @@ impl Component for App {
                 {
                     Ok(info) => {
                         self.open_collection(&info.name, root);
-                        root.toast(&format!(
-                            "Opened the safety copy as \u{201c}{}\u{201d}",
-                            info.name
+                        root.toast(&gettext_f(
+                            "Opened the safety copy as \u{201c}{name}\u{201d}",
+                            &[("name", &info.name)],
                         ));
                     }
-                    Err(why) => root.toast(&format!("Could not open the safety copy: {why}")),
+                    Err(why) => root.toast(&gettext_f(
+                        "Could not open the safety copy: {reason}",
+                        &[("reason", &why)],
+                    )),
                 }
             }
             AppMsg::SectionSelected(index) => {
@@ -843,7 +888,9 @@ impl Component for App {
                 Some(copy) => {
                     self.open_form(FormKind::From(copy, Prefill::NextIssue), root, &sender);
                 }
-                None => root.toast("Open or add a book first, then add the issue after it"),
+                None => root.toast(&gettext(
+                    "Open or add a book first, then add the issue after it",
+                )),
             },
             AppMsg::FormSave => self.save_form(root, &sender),
             AppMsg::FormCancel => match &self.form {
@@ -861,9 +908,12 @@ impl Component for App {
                 match self.with_db(|db| db.add_value(copy, date, value, &source)) {
                     Ok(_) => {
                         self.refresh_copy(copy, root, &sender);
-                        root.toast("Value added");
+                        root.toast(&gettext("Value added"));
                     }
-                    Err(why) => root.toast(&format!("Could not add the value: {why}")),
+                    Err(why) => root.toast(&gettext_f(
+                        "Could not add the value: {reason}",
+                        &[("reason", &why)],
+                    )),
                 }
             }
             AppMsg::DeleteValue(copy, entry) => {
@@ -871,7 +921,7 @@ impl Component for App {
                     Ok(()) => {
                         self.refresh_copy(copy, root, &sender);
                         let undo = sender.clone();
-                        root.toast_undo("Value deleted", move || {
+                        root.toast_undo(&gettext("Value deleted"), move || {
                             undo.input(AppMsg::SaveValue(
                                 copy,
                                 entry.date,
@@ -880,12 +930,15 @@ impl Component for App {
                             ));
                         });
                     }
-                    Err(why) => root.toast(&format!("Could not delete the value: {why}")),
+                    Err(why) => root.toast(&gettext_f(
+                        "Could not delete the value: {reason}",
+                        &[("reason", &why)],
+                    )),
                 }
             }
             AppMsg::AddPhoto(copy, side) => pick_photo(root, &sender, copy, side),
             AppMsg::PhotoPicked(copy, side, path) => {
-                root.toast_working("Opening the photo\u{2026}");
+                root.toast_working(&gettext("Opening the photo\u{2026}"));
                 let opened = self.opened;
                 sender.spawn_oneshot_command(move || CommandMsg::PhotoLoaded {
                     opened,
@@ -901,7 +954,7 @@ impl Component for App {
                 loaded,
                 edit,
             } => {
-                root.toast_working("Saving the photo\u{2026}");
+                root.toast_working(&gettext("Saving the photo\u{2026}"));
                 let output = self.settings.photos;
                 sender.spawn_oneshot_command(move || CommandMsg::PhotoReady {
                     opened,
@@ -917,22 +970,28 @@ impl Component for App {
                     self.refresh_copy(copy, root, &sender);
                     let undo = sender.clone();
                     let photo = Box::new(photo);
-                    root.toast_undo(&photo_message(side, "removed"), move || {
+                    root.toast_undo(&photo_message(side, PhotoDone::Removed), move || {
                         undo.input(AppMsg::RestorePhoto(copy, side, photo.clone()));
                     });
                 }
-                Err(why) => root.toast(&format!("Could not remove the photo: {why}")),
+                Err(why) => root.toast(&gettext_f(
+                    "Could not remove the photo: {reason}",
+                    &[("reason", &why)],
+                )),
             },
             AppMsg::RestorePhoto(copy, side, photo) => {
-                self.store_photo(copy, side, &photo, "put back", root, &sender);
+                self.store_photo(copy, side, &photo, PhotoDone::PutBack, root, &sender);
             }
             AppMsg::SwapPhotos(copy) => match self.with_db(|db| db.swap_photos(copy)) {
                 Ok(()) => {
                     covers::forget(copy);
                     self.refresh_copy(copy, root, &sender);
-                    root.toast("Front and back swapped");
+                    root.toast(&gettext("Front and back swapped"));
                 }
-                Err(why) => root.toast(&format!("Could not swap the photos: {why}")),
+                Err(why) => root.toast(&gettext_f(
+                    "Could not swap the photos: {reason}",
+                    &[("reason", &why)],
+                )),
             },
             AppMsg::ViewPhoto(copy, side) => self.view_photo(copy, side, root),
             AppMsg::SearchChanged(query) => {
@@ -982,7 +1041,10 @@ impl Component for App {
             AppMsg::SettingsChanged(settings) => {
                 self.settings = settings;
                 if let Err(why) = settings.save(&settings::path()) {
-                    root.toast(&format!("Could not save the preferences: {why}"));
+                    root.toast(&gettext_f(
+                        "Could not save the preferences: {reason}",
+                        &[("reason", &why.to_string())],
+                    ));
                 }
                 self.refresh_display(root);
                 root.pop_to_section();
@@ -1000,11 +1062,13 @@ impl Component for App {
                 prompt::ask_text(
                     root,
                     prompt::Ask {
-                        heading: "Rename Collection",
-                        body: "Only the name changes; everything in the collection stays.",
-                        field: "Name",
+                        heading: &gettext("Rename Collection"),
+                        body: &gettext(
+                            "Only the name changes; everything in the collection stays.",
+                        ),
+                        field: &gettext("Name"),
                         initial: &name,
-                        action: "_Rename",
+                        action: &gettext("_Rename"),
                         suggest: None,
                     },
                     move |new| s.input(AppMsg::DoRenameCollection(old.clone(), new)),
@@ -1027,13 +1091,19 @@ impl Component for App {
                         if was_open {
                             self.open_collection(&info.name, root);
                         }
-                        root.toast(&format!("Renamed to \u{201c}{}\u{201d}", info.name));
+                        root.toast(&gettext_f(
+                            "Renamed to \u{201c}{name}\u{201d}",
+                            &[("name", &info.name)],
+                        ));
                     }
                     Err(why) => {
                         if was_open {
                             self.open_collection(&old, root);
                         }
-                        root.toast(&format!("Could not rename: {why}"));
+                        root.toast(&gettext_f(
+                            "Could not rename: {reason}",
+                            &[("reason", &why)],
+                        ));
                     }
                 }
             }
@@ -1041,12 +1111,13 @@ impl Component for App {
                 let doomed = name.clone();
                 confirm(
                     root,
-                    "Delete Collection?",
-                    &format!(
+                    &gettext("Delete Collection?"),
+                    &gettext_f(
                         "\u{201c}{name}\u{201d} and everything in it will be deleted for good. \
-                         Export a copy first if you may want it back."
+                         Export a copy first if you may want it back.",
+                        &[("name", &name)],
                     ),
-                    "_Delete",
+                    &gettext("_Delete"),
                     &sender,
                     move || AppMsg::DoDeleteCollection(doomed.clone()),
                 );
@@ -1056,8 +1127,14 @@ impl Component for App {
                     .store()
                     .and_then(|s| s.delete(&name).map_err(|e| e.to_string()))
                 {
-                    Ok(()) => root.toast(&format!("Deleted \u{201c}{name}\u{201d}")),
-                    Err(why) => root.toast(&format!("Could not delete: {why}")),
+                    Ok(()) => root.toast(&gettext_f(
+                        "Deleted \u{201c}{name}\u{201d}",
+                        &[("name", &name)],
+                    )),
+                    Err(why) => root.toast(&gettext_f(
+                        "Could not delete: {reason}",
+                        &[("reason", &why)],
+                    )),
                 }
             }
             AppMsg::RenameEntry => {
@@ -1067,11 +1144,11 @@ impl Component for App {
                     prompt::ask_text(
                         root,
                         prompt::Ask {
-                            heading: "Rename",
-                            body: "The new name shows everywhere this one is used.",
-                            field: "Name",
+                            heading: &gettext("Rename"),
+                            body: &gettext("The new name shows everywhere this one is used."),
+                            field: &gettext("Name"),
                             initial: &initial,
-                            action: "_Rename",
+                            action: &gettext("_Rename"),
                             suggest: None,
                         },
                         move |name| s.input(AppMsg::DoRename(name)),
@@ -1084,7 +1161,10 @@ impl Component for App {
                 };
                 match self.with_db(|db| db.rename_shelf(shelf, &name)) {
                     Ok(()) => self.show_entry(shelf, root),
-                    Err(why) => root.toast(&format!("Could not rename: {why}")),
+                    Err(why) => root.toast(&gettext_f(
+                        "Could not rename: {reason}",
+                        &[("reason", &why)],
+                    )),
                 }
             }
             AppMsg::EntryAliases => {
@@ -1100,13 +1180,13 @@ impl Component for App {
                                 Some(db) => db
                                     .add_shelf_alias(shelf, alias)
                                     .map_err(|e| capitalized(&e.to_string())),
-                                None => Err("The collection is closed".into()),
+                                None => Err(gettext("The collection is closed")),
                             }),
                             remove: Box::new(move |alias| match remove_db.upgrade() {
                                 Some(db) => db
                                     .remove_shelf_alias(shelf, alias)
                                     .map_err(|e| capitalized(&e.to_string())),
-                                None => Err("The collection is closed".into()),
+                                None => Err(gettext("The collection is closed")),
                             }),
                         };
                         prompt::alternate_names(root, &entry.name, current, hooks);
@@ -1126,18 +1206,18 @@ impl Component for App {
                         .unwrap_or_default()
                 });
                 let s = sender.clone();
-                let body = format!(
-                    "Everything listed under \u{201c}{}\u{201d} moves to the entry you choose. Its name is kept as an alternate name where the list has them.",
-                    entry.name
+                let body = gettext_f(
+                    "Everything listed under \u{201c}{name}\u{201d} moves to the entry you choose. Its name is kept as an alternate name where the list has them.",
+                    &[("name", &entry.name)],
                 );
                 prompt::ask_text(
                     root,
                     prompt::Ask {
-                        heading: "Merge Into",
+                        heading: &gettext("Merge Into"),
                         body: &body,
-                        field: "Merge Into",
+                        field: &gettext("Merge Into"),
                         initial: "",
-                        action: "_Merge",
+                        action: &gettext("_Merge"),
                         suggest: Some(suggest),
                     },
                     move |into| s.input(AppMsg::DoMerge(into)),
@@ -1150,28 +1230,30 @@ impl Component for App {
                 match self.with_db(|db| db.merge_shelf(shelf, &into)) {
                     Ok(kept) => {
                         self.show_entry(kept, root);
-                        root.toast("Merged");
+                        root.toast(&gettext("Merged"));
                     }
-                    Err(why) => root.toast(&format!("Could not merge: {why}")),
+                    Err(why) => {
+                        root.toast(&gettext_f("Could not merge: {reason}", &[("reason", &why)]))
+                    }
                 }
             }
             AppMsg::ConfirmDeleteEntry => {
                 if let Some(entry) = &self.shelf {
                     let body = match entry.shelf {
-                        Shelf::Series(_) => format!(
-                            "\u{201c}{}\u{201d} and every book in it move to Trash.",
-                            entry.name
+                        Shelf::Series(_) => gettext_f(
+                            "\u{201c}{name}\u{201d} and every book in it move to Trash.",
+                            &[("name", &entry.name)],
                         ),
-                        _ => format!(
-                            "\u{201c}{}\u{201d} will be deleted. A name still in use cannot be deleted; merge it into another instead.",
-                            entry.name
+                        _ => gettext_f(
+                            "\u{201c}{name}\u{201d} will be deleted. A name still in use cannot be deleted; merge it into another instead.",
+                            &[("name", &entry.name)],
                         ),
                     };
                     let action = match entry.shelf {
-                        Shelf::Series(_) => "_Move to Trash",
-                        _ => "_Delete",
+                        Shelf::Series(_) => gettext("_Move to Trash"),
+                        _ => gettext("_Delete"),
                     };
-                    confirm(root, "Delete?", &body, action, &sender, || {
+                    confirm(root, &gettext("Delete?"), &body, &action, &sender, || {
                         AppMsg::DoDeleteEntry
                     });
                 }
@@ -1187,14 +1269,17 @@ impl Component for App {
                         match trash {
                             Some(trash) => {
                                 let undo = sender.clone();
-                                root.toast_undo("Moved to Trash", move || {
+                                root.toast_undo(&gettext("Moved to Trash"), move || {
                                     undo.input(AppMsg::Restore(trash));
                                 });
                             }
-                            None => root.toast("Deleted"),
+                            None => root.toast(&gettext("Deleted")),
                         }
                     }
-                    Err(why) => root.toast(&format!("Could not delete: {why}")),
+                    Err(why) => root.toast(&gettext_f(
+                        "Could not delete: {reason}",
+                        &[("reason", &why)],
+                    )),
                 }
             }
             AppMsg::Selecting(on) => {
@@ -1225,18 +1310,23 @@ impl Component for App {
             }
             AppMsg::ApplyBulk(copies, change) => {
                 match self
-                    .keep_safety_copy("before changing several books at once")
+                    .keep_safety_copy(&gettext("before changing several books at once"))
                     .and_then(|()| self.with_db(|db| db.bulk_edit(&copies, &change)))
                 {
                     Ok(()) => {
                         root.select_toggle().set_active(false);
                         self.show(root);
-                        root.toast(&match copies.len() {
-                            1 => "Changed 1 copy".to_owned(),
-                            n => format!("Changed {n} copies"),
-                        });
+                        root.toast(&ngettext_f(
+                            "Changed {count} copy",
+                            "Changed {count} copies",
+                            copies.len(),
+                            &[("count", &copies.len().to_string())],
+                        ));
                     }
-                    Err(why) => root.toast(&format!("Nothing was changed: {why}")),
+                    Err(why) => root.toast(&gettext_f(
+                        "Nothing was changed: {reason}",
+                        &[("reason", &why)],
+                    )),
                 }
             }
             AppMsg::TrashSelected => {
@@ -1265,42 +1355,52 @@ impl Component for App {
                 Ok(()) => {
                     root.pop_to_section();
                     self.show(root);
-                    root.toast("Restored");
+                    root.toast(&gettext("Restored"));
                 }
-                Err(why) => root.toast(&format!("Could not restore: {why}")),
+                Err(why) => root.toast(&gettext_f(
+                    "Could not restore: {reason}",
+                    &[("reason", &why)],
+                )),
             },
             AppMsg::ConfirmPurge(trash, label) => confirm(
                 root,
-                "Delete Forever?",
-                &format!(
-                    "\u{201c}{label}\u{201d} and everything in it will be deleted. \
-                     This cannot be undone."
+                &gettext("Delete Forever?"),
+                &gettext_f(
+                    "\u{201c}{name}\u{201d} and everything in it will be deleted. \
+                     This cannot be undone.",
+                    &[("name", &label)],
                 ),
-                "_Delete Forever",
+                &gettext("_Delete Forever"),
                 &sender,
                 move || AppMsg::Purge(trash),
             ),
             AppMsg::Purge(trash) => match self
-                .keep_safety_copy("before deleting from Trash")
+                .keep_safety_copy(&gettext("before deleting from Trash"))
                 .and_then(|()| self.with_db(|db| db.purge(trash)))
             {
                 Ok(()) => self.show(root),
-                Err(why) => root.toast(&format!("Could not delete: {why}")),
+                Err(why) => root.toast(&gettext_f(
+                    "Could not delete: {reason}",
+                    &[("reason", &why)],
+                )),
             },
             AppMsg::ConfirmEmpty => confirm(
                 root,
-                "Empty Trash?",
-                "Everything in Trash will be deleted. This cannot be undone.",
-                "_Empty Trash",
+                &gettext("Empty Trash?"),
+                &gettext("Everything in Trash will be deleted. This cannot be undone."),
+                &gettext("_Empty Trash"),
                 &sender,
                 || AppMsg::EmptyTrash,
             ),
             AppMsg::EmptyTrash => match self
-                .keep_safety_copy("before emptying Trash")
+                .keep_safety_copy(&gettext("before emptying Trash"))
                 .and_then(|()| self.with_db(|db| db.empty_trash()))
             {
                 Ok(()) => self.show(root),
-                Err(why) => root.toast(&format!("Could not empty Trash: {why}")),
+                Err(why) => root.toast(&gettext_f(
+                    "Could not empty Trash: {reason}",
+                    &[("reason", &why)],
+                )),
             },
             AppMsg::ShelfBack => {
                 // The form is left only through its Cancel, which asks
@@ -1338,7 +1438,9 @@ impl Component for App {
             CommandMsg::PhotoReady { opened, .. } | CommandMsg::PhotoLoaded { opened, .. }
                 if opened != self.opened =>
             {
-                root.toast("The photo was not added, as another collection is open now");
+                root.toast(&gettext(
+                    "The photo was not added, as another collection is open now",
+                ));
             }
             CommandMsg::PhotoLoaded {
                 opened,
@@ -1348,15 +1450,15 @@ impl Component for App {
             } => {
                 root.end_working();
                 let title = match side {
-                    Side::Front => "Edit Front Cover",
-                    Side::Back => "Edit Back Cover",
+                    Side::Front => gettext("Edit Front Cover"),
+                    Side::Back => gettext("Edit Back Cover"),
                 };
                 let (preview, proposal) = (loaded.preview.clone(), loaded.proposal);
                 // The full photo waits here for the edit; closing the
                 // editor without saving drops it.
                 let loaded = RefCell::new(Some(loaded));
                 let sender = sender.clone();
-                photo_editor::open(root, title, preview, proposal, move |edit| {
+                photo_editor::open(root, &title, preview, proposal, move |edit| {
                     if let Some(loaded) = loaded.borrow_mut().take() {
                         sender.input(AppMsg::PhotoEdited {
                             opened,
@@ -1370,21 +1472,33 @@ impl Component for App {
             }
             CommandMsg::PhotoLoaded {
                 loaded: Err(why), ..
-            } => root.toast(&format!("Could not open the photo: {why}")),
+            } => root.toast(&gettext_f(
+                "Could not open the photo: {reason}",
+                &[("reason", &why)],
+            )),
             CommandMsg::PhotoReady {
                 copy,
                 side,
                 photo: Ok(photo),
                 ..
-            } => self.store_photo(copy, side, &photo, "added", root, &sender),
+            } => self.store_photo(copy, side, &photo, PhotoDone::Added, root, &sender),
             CommandMsg::PhotoReady {
                 photo: Err(why), ..
-            } => root.toast(&format!("Could not add the photo: {why}")),
+            } => root.toast(&gettext_f(
+                "Could not add the photo: {reason}",
+                &[("reason", &why)],
+            )),
             CommandMsg::Imported(Ok(info)) => {
                 self.open_collection(&info.name, root);
-                root.toast(&format!("Imported \u{201c}{}\u{201d}", info.name));
+                root.toast(&gettext_f(
+                    "Imported \u{201c}{name}\u{201d}",
+                    &[("name", &info.name)],
+                ));
             }
-            CommandMsg::Imported(Err(why)) => root.toast(&format!("Could not import: {why}")),
+            CommandMsg::Imported(Err(why)) => root.toast(&gettext_f(
+                "Could not import: {reason}",
+                &[("reason", &why)],
+            )),
             CommandMsg::BooksFileRead { opened, .. } if opened != self.opened => root.end_working(),
             CommandMsg::BooksFileRead {
                 name,
@@ -1401,14 +1515,17 @@ impl Component for App {
                         *source,
                         db,
                         self.settings.photos,
-                        move || keeper("before importing books"),
+                        move || keeper(&gettext("before importing books")),
                         move |n| s.input(AppMsg::BooksImported(n)),
                     );
                 }
             }
             CommandMsg::BooksFileRead {
                 source: Err(why), ..
-            } => root.toast(&format!("Could not read the file: {why}")),
+            } => root.toast(&gettext_f(
+                "Could not read the file: {reason}",
+                &[("reason", &why)],
+            )),
         }
     }
 }
@@ -1437,10 +1554,15 @@ impl App {
             let Some((store, name, db)) = &keeper else {
                 return Ok(());
             };
-            let db = db.upgrade().ok_or("the collection is no longer open")?;
-            store
-                .make_safety_copy(&db, name, reason)
-                .map_err(|e| format!("the safety copy could not be made: {e}"))
+            let db = db
+                .upgrade()
+                .ok_or_else(|| gettext("the collection is no longer open"))?;
+            store.make_safety_copy(&db, name, reason).map_err(|e| {
+                gettext_f(
+                    "the safety copy could not be made: {reason}",
+                    &[("reason", &e.to_string())],
+                )
+            })
         }
     }
 
@@ -1506,18 +1628,24 @@ impl App {
         let reminder = self.open.as_ref().and_then(|_| {
             let today = format::today()?;
             match (rates.latest(), self.settings.currency) {
-                (None, Some(currency)) => Some(format!(
-                    "Add an exchange rate to show every amount in {}",
-                    match currency {
-                        Currency::Usd => "US dollars",
-                        Currency::Gold => "gold",
-                        Currency::Btc => "bitcoin",
+                (None, Some(currency)) => Some(match currency {
+                    Currency::Usd => {
+                        gettext("Add an exchange rate to show every amount in US dollars")
                     }
-                )),
-                (Some(latest), _) if rates.needs_update(today) => Some(format!(
-                    "Your newest exchange rate is {} days old",
-                    latest.date().days_until(today)
-                )),
+                    Currency::Gold => gettext("Add an exchange rate to show every amount in gold"),
+                    Currency::Btc => {
+                        gettext("Add an exchange rate to show every amount in bitcoin")
+                    }
+                }),
+                (Some(latest), _) if rates.needs_update(today) => {
+                    let days = latest.date().days_until(today);
+                    Some(ngettext_f(
+                        "Your newest exchange rate is {days} day old",
+                        "Your newest exchange rate is {days} days old",
+                        usize::try_from(days).unwrap_or(usize::MAX),
+                        &[("days", &days.to_string())],
+                    ))
+                }
                 _ => None,
             }
         });
@@ -1589,7 +1717,7 @@ impl App {
     ) -> Result<T, String> {
         match &self.open {
             Some((_, db)) => f(db).map_err(|e| e.to_string()),
-            None => Err("no collection is open".into()),
+            None => Err(gettext("no collection is open")),
         }
     }
 
@@ -1629,7 +1757,7 @@ impl App {
         copy: CopyId,
         side: Side,
         photo: &CoverPhoto,
-        done: &str,
+        done: PhotoDone,
         root: &MainWindow,
         sender: &ComponentSender<Self>,
     ) {
@@ -1639,7 +1767,10 @@ impl App {
                 self.refresh_copy(copy, root, sender);
                 root.toast(&photo_message(side, done));
             }
-            Err(why) => root.toast(&format!("Could not save the photo: {why}")),
+            Err(why) => root.toast(&gettext_f(
+                "Could not save the photo: {reason}",
+                &[("reason", &why)],
+            )),
         }
     }
 
@@ -1662,11 +1793,14 @@ impl App {
                     self.open_issue(issue, root, sender);
                 }
                 let undo = sender.clone();
-                root.toast_undo("Moved to Trash", move || {
+                root.toast_undo(&gettext("Moved to Trash"), move || {
                     undo.input(AppMsg::Restore(trash));
                 });
             }
-            Err(why) => root.toast(&format!("Could not move to Trash: {why}")),
+            Err(why) => root.toast(&gettext_f(
+                "Could not move to Trash: {reason}",
+                &[("reason", &why)],
+            )),
         }
     }
 
@@ -1760,11 +1894,11 @@ impl App {
         };
         let heading = match kind {
             FormKind::From(_, Prefill::NextIssue) if category == Category::CollectedEdition => {
-                Some("Add Next Volume")
+                Some(gettext("Add Next Volume"))
             }
-            FormKind::From(_, Prefill::NextIssue) => Some("Add Next Issue"),
-            FormKind::From(_, Prefill::AnotherCopy) => Some("Add Another Copy"),
-            FormKind::From(_, Prefill::Variant) => Some("Add Variant"),
+            FormKind::From(_, Prefill::NextIssue) => Some(gettext("Add Next Issue")),
+            FormKind::From(_, Prefill::AnotherCopy) => Some(gettext("Add Another Copy")),
+            FormKind::From(_, Prefill::Variant) => Some(gettext("Add Variant")),
             FormKind::New(_) | FormKind::Edit(_) => None,
         };
         let save = sender.clone();
@@ -1780,7 +1914,15 @@ impl App {
             FormKind::From(_, Prefill::Variant) => Focus::Variant,
             FormKind::From(_, Prefill::AnotherCopy) => Focus::Copy,
         };
-        let form = Form::new(db, category, target, entry.as_ref(), heading, focus, hooks);
+        let form = Form::new(
+            db,
+            category,
+            target,
+            entry.as_ref(),
+            heading.as_deref(),
+            focus,
+            hooks,
+        );
         root.push_page(&form.page);
         self.form = Some(form);
     }
@@ -1814,7 +1956,7 @@ impl App {
                 }
                 self.show(root);
                 self.open_issue(saved.issue, root, sender);
-                root.toast("Saved");
+                root.toast(&gettext("Saved"));
             }
             Err(why) => root.toast(&why.to_string()),
         }
@@ -1841,7 +1983,10 @@ impl App {
                 self.current_db.replace(Rc::downgrade(&db));
                 self.open = Some((name.to_owned(), db));
             }
-            Err(why) => root.toast(&format!("Could not open \u{201c}{name}\u{201d}: {why}")),
+            Err(why) => root.toast(&gettext_f(
+                "Could not open \u{201c}{name}\u{201d}: {reason}",
+                &[("name", name), ("reason", &why)],
+            )),
         }
         self.refresh_display(root);
         self.show(root);
@@ -1875,18 +2020,18 @@ impl App {
         self.show_header(root);
         if let Err(why) = self.load(root) {
             root.toast(&why.to_string());
-            root.show_empty("Could Not Read the Collection", &why.to_string());
+            root.show_empty(&gettext("Could Not Read the Collection"), &why.to_string());
         }
     }
 
     /// What the books shown are, for naming an export of them.
     fn shown_title(&self) -> String {
         if self.searching() {
-            "Search Results".to_owned()
+            gettext("Search Results")
         } else {
             match &self.shelf {
                 Some(entry) => entry.name.clone(),
-                None => self.section.name.to_owned(),
+                None => gettext(self.section.name),
             }
         }
     }
@@ -1932,9 +2077,11 @@ impl App {
         if rows.is_empty() {
             self.fill_books(Vec::new(), false, root);
             root.show_empty(
-                "No Books Found",
-                "Try other words, or fewer filters. Search looks at series, titles, \
-                 publishers, people, characters, teams, story arcs, tags, boxes, and notes.",
+                &gettext("No Books Found"),
+                &gettext(
+                    "Try other words, or fewer filters. Search looks at series, titles, \
+                     publishers, people, characters, teams, story arcs, tags, boxes, and notes.",
+                ),
             );
         } else {
             self.fill_books(rows, false, root);
@@ -1955,17 +2102,19 @@ impl App {
             return;
         };
         if self.searching() {
-            let found = match self.found {
-                1 => "1 book".to_owned(),
-                n => format!("{n} books"),
-            };
-            root.set_location(collection, "Search Results", &found);
+            let found = ngettext_f(
+                "{count} book",
+                "{count} books",
+                self.found,
+                &[("count", &self.found.to_string())],
+            );
+            root.set_location(collection, &gettext("Search Results"), &found);
             root.set_back_visible(false);
             return;
         }
         match &self.shelf {
-            Some(entry) => root.set_location(collection, &entry.name, self.section.name),
-            None => root.set_location(collection, self.section.name, collection),
+            Some(entry) => root.set_location(collection, &entry.name, &gettext(self.section.name)),
+            None => root.set_location(collection, &gettext(self.section.name), collection),
         }
         root.set_back_visible(self.shelf.is_some());
         // Only some lists keep alternate names.
@@ -1991,15 +2140,15 @@ impl App {
         let (shelf, empty, hint) = match (&self.shelf, self.section.content) {
             (Some(entry), _) => (
                 entry.shelf,
-                "No Books Here",
-                "You don\u{2019}t own any of these books.",
+                gettext_noop("No Books Here"),
+                gettext_noop("You don\u{2019}t own any of these books."),
             ),
             (None, Content::Books(shelf, empty, hint)) => (shelf, empty, hint),
             (None, Content::Names(list, empty, hint)) => {
                 let entries = db.shelf_list(list)?;
                 self.names.clear();
                 if entries.is_empty() {
-                    root.show_empty(empty, hint);
+                    root.show_empty(&gettext(empty), &gettext(hint));
                 } else {
                     self.names.extend_from_iter(entries.into_iter().map(Name));
                     root.show_names();
@@ -2010,8 +2159,8 @@ impl App {
                 let groups = db.trash_groups()?;
                 if groups.is_empty() {
                     root.show_empty(
-                        "Trash Is Empty",
-                        "Anything moved to Trash waits here until you empty it.",
+                        &gettext("Trash Is Empty"),
+                        &gettext("Anything moved to Trash waits here until you empty it."),
                     );
                 } else {
                     let (restore, purge, empty) = (
@@ -2046,7 +2195,7 @@ impl App {
         let rows = db.browse(shelf)?;
         if rows.is_empty() {
             self.fill_books(Vec::new(), false, root);
-            root.show_empty(empty, hint);
+            root.show_empty(&gettext(empty), &gettext(hint));
         } else {
             self.fill_books(rows, shelf == Shelf::NeedsAttention, root);
         }
@@ -2087,7 +2236,7 @@ fn fill_sidebar(root: &MainWindow, sender: &ComponentSender<App>) {
         group_starts.push(index);
         for section in *group {
             let label = gtk::Label::builder()
-                .label(section.name)
+                .label(gettext(section.name))
                 .xalign(0.0)
                 .margin_start(6)
                 .margin_end(6)
@@ -2113,18 +2262,23 @@ fn fill_sidebar(root: &MainWindow, sender: &ComponentSender<App>) {
 
 fn ask_for_name(root: &MainWindow, sender: &ComponentSender<App>) {
     let entry = gtk::Entry::builder()
-        .placeholder_text("My Comics")
+        .placeholder_text(gettext("My Comics"))
         .activates_default(true)
         .build();
     let dialog = adw::AlertDialog::builder()
-        .heading("New Collection")
-        .body("Choose a name. You can keep several collections and switch between them.")
+        .heading(gettext("New Collection"))
+        .body(gettext(
+            "Choose a name. You can keep several collections and switch between them.",
+        ))
         .extra_child(&entry)
         .focus_widget(&entry)
         .default_response("create")
         .close_response("cancel")
         .build();
-    dialog.add_responses(&[("cancel", "_Cancel"), ("create", "C_reate")]);
+    dialog.add_responses(&[
+        ("cancel", &gettext("_Cancel")),
+        ("create", &gettext("C_reate")),
+    ]);
     dialog.set_response_appearance("create", adw::ResponseAppearance::Suggested);
     dialog.set_response_enabled("create", false);
     let weak = dialog.downgrade();
@@ -2141,11 +2295,23 @@ fn ask_for_name(root: &MainWindow, sender: &ComponentSender<App>) {
     });
 }
 
+/// What happened to a cover photo, for the message saying so.
+#[derive(Clone, Copy)]
+enum PhotoDone {
+    Added,
+    Removed,
+    PutBack,
+}
+
 /// e.g. "Front cover removed".
-fn photo_message(side: Side, what: &str) -> String {
-    match side {
-        Side::Front => format!("Front cover {what}"),
-        Side::Back => format!("Back cover {what}"),
+fn photo_message(side: Side, done: PhotoDone) -> String {
+    match (side, done) {
+        (Side::Front, PhotoDone::Added) => gettext("Front cover added"),
+        (Side::Front, PhotoDone::Removed) => gettext("Front cover removed"),
+        (Side::Front, PhotoDone::PutBack) => gettext("Front cover put back"),
+        (Side::Back, PhotoDone::Added) => gettext("Back cover added"),
+        (Side::Back, PhotoDone::Removed) => gettext("Back cover removed"),
+        (Side::Back, PhotoDone::PutBack) => gettext("Back cover put back"),
     }
 }
 
@@ -2153,7 +2319,7 @@ fn photo_message(side: Side, what: &str) -> String {
 /// grants the app access to just that file.
 fn pick_photo(root: &MainWindow, sender: &ComponentSender<App>, copy: CopyId, side: Side) {
     let photos = gtk::FileFilter::new();
-    photos.set_name(Some("Photos"));
+    photos.set_name(Some(&gettext("Photos")));
     for mime in [
         "image/jpeg",
         "image/png",
@@ -2170,8 +2336,8 @@ fn pick_photo(root: &MainWindow, sender: &ComponentSender<App>, copy: CopyId, si
     filters.append(&photos);
     let dialog = gtk::FileDialog::builder()
         .title(match side {
-            Side::Front => "Choose a Front Cover Photo",
-            Side::Back => "Choose a Back Cover Photo",
+            Side::Front => gettext("Choose a Front Cover Photo"),
+            Side::Back => gettext("Choose a Back Cover Photo"),
         })
         .modal(true)
         .filters(&filters)
@@ -2189,10 +2355,10 @@ fn pick_photo(root: &MainWindow, sender: &ComponentSender<App>, copy: CopyId, si
 
 fn collection_filters() -> gio::ListStore {
     let collections = gtk::FileFilter::new();
-    collections.set_name(Some("MyLongboxDB collections"));
+    collections.set_name(Some(&gettext("MyLongboxDB collections")));
     collections.add_suffix("sqlite");
     let all = gtk::FileFilter::new();
-    all.set_name(Some("All files"));
+    all.set_name(Some(&gettext("All files")));
     all.add_pattern("*");
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     filters.append(&collections);
@@ -2203,7 +2369,7 @@ fn collection_filters() -> gio::ListStore {
 /// Asks for the folder backups are written to.
 fn pick_backup_folder(root: &MainWindow, sender: &ComponentSender<App>) {
     let dialog = gtk::FileDialog::builder()
-        .title("Choose a Folder for Backups")
+        .title(gettext("Choose a Folder for Backups"))
         .modal(true)
         .build();
     let sender = sender.clone();
@@ -2219,7 +2385,7 @@ fn pick_backup_folder(root: &MainWindow, sender: &ComponentSender<App>) {
 /// Asks for a CSV file or a full export to add books from.
 fn pick_books_file(root: &MainWindow, sender: &ComponentSender<App>) {
     let books = gtk::FileFilter::new();
-    books.set_name(Some("CSV files and full exports"));
+    books.set_name(Some(&gettext("CSV files and full exports")));
     for suffix in ["csv", "tsv", "txt", "zip"] {
         books.add_suffix(suffix);
     }
@@ -2229,7 +2395,7 @@ fn pick_books_file(root: &MainWindow, sender: &ComponentSender<App>) {
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     filters.append(&books);
     let dialog = gtk::FileDialog::builder()
-        .title("Import Books")
+        .title(gettext("Import Books"))
         .modal(true)
         .filters(&filters)
         .default_filter(&books)
@@ -2246,7 +2412,7 @@ fn pick_books_file(root: &MainWindow, sender: &ComponentSender<App>) {
 
 fn pick_file_to_import(root: &MainWindow, sender: &ComponentSender<App>) {
     let dialog = gtk::FileDialog::builder()
-        .title("Import Collection File")
+        .title(gettext("Import Collection File"))
         .modal(true)
         .filters(&collection_filters())
         .build();
@@ -2263,13 +2429,13 @@ fn pick_file_to_import(root: &MainWindow, sender: &ComponentSender<App>) {
 /// Asks where to save a full export, through the file chooser.
 fn pick_zip_file(root: &MainWindow, sender: &ComponentSender<App>, name: &str) {
     let zip = gtk::FileFilter::new();
-    zip.set_name(Some("Zip archives"));
+    zip.set_name(Some(&gettext("Zip archives")));
     zip.add_suffix("zip");
     zip.add_mime_type("application/zip");
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     filters.append(&zip);
     let dialog = gtk::FileDialog::builder()
-        .title("Full Export with Photos")
+        .title(gettext("Full Export with Photos"))
         .modal(true)
         .initial_name(name)
         .filters(&filters)
@@ -2292,13 +2458,13 @@ fn pick_csv_file(
     copies: Option<Vec<CopyId>>,
 ) {
     let csv = gtk::FileFilter::new();
-    csv.set_name(Some("CSV files"));
+    csv.set_name(Some(&gettext("CSV files")));
     csv.add_suffix("csv");
     csv.add_mime_type("text/csv");
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     filters.append(&csv);
     let dialog = gtk::FileDialog::builder()
-        .title("Export as CSV")
+        .title(gettext("Export as CSV"))
         .modal(true)
         .initial_name(name)
         .filters(&filters)
@@ -2315,7 +2481,7 @@ fn pick_csv_file(
 
 fn pick_export_file(root: &MainWindow, sender: &ComponentSender<App>, name: &str) {
     let dialog = gtk::FileDialog::builder()
-        .title("Export a Copy")
+        .title(gettext("Export a Copy"))
         .modal(true)
         .initial_name(format!("{name}.sqlite"))
         .filters(&collection_filters())
@@ -2333,14 +2499,18 @@ fn pick_export_file(root: &MainWindow, sender: &ComponentSender<App>, name: &str
 /// Asks for a copy's value on a date, with today filled in. Add is
 /// enabled only once the amount and date can be read.
 fn ask_value(root: &MainWindow, sender: &ComponentSender<App>, copy: CopyId) {
-    let amount = adw::EntryRow::builder().title("Value").build();
-    let currency = gtk::DropDown::from_strings(&["USD", "Gold (oz)", "Bitcoin"]);
+    // Translators: how much a copy is worth.
+    let amount = adw::EntryRow::builder().title(gettext("Value")).build();
+    let currencies = [gettext("USD"), gettext("Gold (oz)"), gettext("Bitcoin")];
+    let currency = gtk::DropDown::from_strings(&currencies.each_ref().map(String::as_str));
     currency.set_valign(gtk::Align::Center);
     amount.add_suffix(&currency);
-    let date = adw::EntryRow::builder().title("Date (YYYY-MM-DD)").build();
+    let date = adw::EntryRow::builder()
+        .title(gettext("Date (YYYY-MM-DD)"))
+        .build();
     date.set_text(&format::today().map(|d| d.to_string()).unwrap_or_default());
     let source = adw::EntryRow::builder()
-        .title("Source (e.g. GoCollect, eBay sold)")
+        .title(gettext("Source (e.g. GoCollect, eBay sold)"))
         .build();
     let fields = gtk::ListBox::builder()
         .selection_mode(gtk::SelectionMode::None)
@@ -2366,14 +2536,14 @@ fn ask_value(root: &MainWindow, sender: &ComponentSender<App>, copy: CopyId) {
         }
     };
     let dialog = adw::AlertDialog::builder()
-        .heading("Add Value")
-        .body("What this copy was worth, and when.")
+        .heading(gettext("Add Value"))
+        .body(gettext("What this copy was worth, and when."))
         .extra_child(&fields)
         .focus_widget(&amount)
         .default_response("add")
         .close_response("cancel")
         .build();
-    dialog.add_responses(&[("cancel", "_Cancel"), ("add", "_Add")]);
+    dialog.add_responses(&[("cancel", &gettext("_Cancel")), ("add", &gettext("_Add"))]);
     dialog.set_response_appearance("add", adw::ResponseAppearance::Suggested);
     dialog.set_response_enabled("add", false);
     {
@@ -2421,7 +2591,7 @@ fn confirm(
         .default_response("cancel")
         .close_response("cancel")
         .build();
-    dialog.add_responses(&[("cancel", "_Cancel"), ("go", action)]);
+    dialog.add_responses(&[("cancel", &gettext("_Cancel")), ("go", action)]);
     dialog.set_response_appearance("go", adw::ResponseAppearance::Destructive);
     let sender = sender.clone();
     dialog.choose(Some(root), None::<&gio::Cancellable>, move |response| {
@@ -2433,12 +2603,17 @@ fn confirm(
 
 fn confirm_discard(root: &MainWindow, sender: &ComponentSender<App>) {
     let dialog = adw::AlertDialog::builder()
-        .heading("Discard Changes?")
-        .body("The changes made in this form have not been saved.")
+        .heading(gettext("Discard Changes?"))
+        .body(gettext(
+            "The changes made in this form have not been saved.",
+        ))
         .default_response("keep")
         .close_response("keep")
         .build();
-    dialog.add_responses(&[("keep", "_Keep Editing"), ("discard", "_Discard")]);
+    dialog.add_responses(&[
+        ("keep", &gettext("_Keep Editing")),
+        ("discard", &gettext("_Discard")),
+    ]);
     dialog.set_response_appearance("discard", adw::ResponseAppearance::Destructive);
     let sender = sender.clone();
     dialog.choose(Some(root), None::<&gio::Cancellable>, move |response| {

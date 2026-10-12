@@ -10,6 +10,7 @@ use gtk::cairo;
 use mylongbox_media::{Crop, Edit, MAX_STRAIGHTEN, RgbImage, apply_edit, find_cover};
 
 use crate::covers;
+use crate::i18n::gettext;
 
 /// How close, in pixels, the pointer must be to grab an edge or corner.
 const REACH: f64 = 14.0;
@@ -188,9 +189,9 @@ impl Editor {
             Some(crop) => {
                 self.change(|e| e.crop = crop);
             }
-            None => self
-                .toasts
-                .add_toast(adw::Toast::new("No cover stands out from the background")),
+            None => self.toasts.add_toast(adw::Toast::new(&gettext(
+                "No cover stands out from the background",
+            ))),
         }
     }
 
@@ -267,7 +268,9 @@ pub fn open(
     straighten.set_draw_value(true);
     straighten.set_hexpand(true);
     straighten.add_mark(0.0, gtk::PositionType::Bottom, None);
-    straighten.update_property(&[gtk::accessible::Property::Label("Straighten")]);
+    // Translators: rotating the photo a few degrees so the cover is level.
+    let straighten_name = gettext("Straighten");
+    straighten.update_property(&[gtk::accessible::Property::Label(&straighten_name)]);
 
     let editor = Rc::new(Editor {
         preview,
@@ -360,14 +363,22 @@ pub fn open(
         }
         b
     };
-    let left = button(Some("object-rotate-left-symbolic"), None, "Turn Left");
-    let right = button(Some("object-rotate-right-symbolic"), None, "Turn Right");
+    let left = button(
+        Some("object-rotate-left-symbolic"),
+        None,
+        &gettext("Turn Left"),
+    );
+    let right = button(
+        Some("object-rotate-right-symbolic"),
+        None,
+        &gettext("Turn Right"),
+    );
     let fit = button(
         None,
-        Some("_Fit to Cover"),
-        "Crop to the cover, found by its edges",
+        Some(&gettext("_Fit to Cover")),
+        &gettext("Crop to the cover, found by its edges"),
     );
-    let reset = button(None, Some("_Reset"), "Undo All Changes");
+    let reset = button(None, Some(&gettext("_Reset")), &gettext("Undo All Changes"));
     let actions: [(&gtk::Button, Action); 4] = [
         (&left, |e| e.change(Edit::turn_left)),
         (&right, |e| e.change(Edit::turn_right)),
@@ -386,7 +397,7 @@ pub fn open(
         });
     }
     let straighten_label = gtk::Label::builder()
-        .label("Straighten")
+        .label(&straighten_name)
         .css_classes(["dim-label"])
         .build();
     let controls = gtk::Box::builder()
@@ -411,9 +422,9 @@ pub fn open(
     content.append(&controls);
     editor.toasts.set_child(Some(&content));
 
-    let cancel = gtk::Button::with_mnemonic("_Cancel");
+    let cancel = gtk::Button::with_mnemonic(&gettext("_Cancel"));
     let save = gtk::Button::builder()
-        .label("_Save")
+        .label(gettext("_Save"))
         .use_underline(true)
         .css_classes(["suggested-action"])
         .build();

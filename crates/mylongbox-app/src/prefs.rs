@@ -12,13 +12,14 @@ use mylongbox_core::{Amount, CollectionInfo, Currency, Database, ExchangeRate, S
 use mylongbox_media::{LONG_EDGES, QUALITIES};
 
 use crate::format;
+use crate::i18n::{gettext, gettext_f, gettext_noop, ngettext_f};
 use crate::settings::Settings;
 
 const CURRENCIES: [(&str, Option<Currency>); 4] = [
-    ("As entered", None),
-    ("US dollars", Some(Currency::Usd)),
-    ("Gold (troy ounces)", Some(Currency::Gold)),
-    ("Bitcoin", Some(Currency::Btc)),
+    (gettext_noop("As entered"), None),
+    (gettext_noop("US dollars"), Some(Currency::Usd)),
+    (gettext_noop("Gold (troy ounces)"), Some(Currency::Gold)),
+    (gettext_noop("Bitcoin"), Some(Currency::Btc)),
 ];
 
 /// What the window's controls ask the app to do.
@@ -52,7 +53,7 @@ pub fn dialog(state: &State<'_>, hooks: Hooks) -> adw::PreferencesDialog {
     let dialog = adw::PreferencesDialog::new();
     let hooks = Rc::new(hooks);
     let general = adw::PreferencesPage::builder()
-        .title("General")
+        .title(gettext("General"))
         .icon_name("preferences-system-symbolic")
         .build();
     // Each group changes its own part of the settings and reports them
@@ -64,7 +65,7 @@ pub fn dialog(state: &State<'_>, hooks: Hooks) -> adw::PreferencesDialog {
     dialog.add(&general);
 
     let backups = adw::PreferencesPage::builder()
-        .title("Backups")
+        .title(gettext("Backups"))
         .icon_name("drive-harddisk-symbolic")
         .build();
     backups.add(&backup_group(state, &hooks, &dialog));
@@ -75,7 +76,7 @@ pub fn dialog(state: &State<'_>, hooks: Hooks) -> adw::PreferencesDialog {
     dialog.add(&backups);
 
     let rates = adw::PreferencesPage::builder()
-        .title("Exchange Rates")
+        .title(gettext("Exchange Rates"))
         .icon_name("view-list-symbolic")
         .build();
     rates.add(&rates_group(state.db, &hooks));
@@ -88,11 +89,20 @@ pub fn dialog(state: &State<'_>, hooks: Hooks) -> adw::PreferencesDialog {
 
 fn display_group(current: &Rc<Cell<Settings>>, hooks: &Rc<Hooks>) -> adw::PreferencesGroup {
     let settings = current.get();
-    let group = adw::PreferencesGroup::builder().title("Display").build();
+    let group = adw::PreferencesGroup::builder()
+        .title(gettext("Display"))
+        .build();
     let currency = adw::ComboRow::builder()
-        .title("Show Amounts In")
-        .subtitle("Amounts in another currency are converted at your exchange rates")
-        .model(&gtk::StringList::new(&CURRENCIES.map(|(name, _)| name)))
+        .title(gettext("Show Amounts In"))
+        .subtitle(gettext(
+            "Amounts in another currency are converted at your exchange rates",
+        ))
+        .model(&gtk::StringList::new(
+            &CURRENCIES
+                .map(|(name, _)| gettext(name))
+                .each_ref()
+                .map(String::as_str),
+        ))
         .build();
     let index = CURRENCIES
         .iter()
@@ -100,8 +110,8 @@ fn display_group(current: &Rc<Cell<Settings>>, hooks: &Rc<Hooks>) -> adw::Prefer
         .unwrap_or(0);
     currency.set_selected(u32::try_from(index).unwrap_or(0));
     let names = adw::SwitchRow::builder()
-        .title("Show Grade Names")
-        .subtitle("For example 9.4 NM rather than 9.4")
+        .title(gettext("Show Grade Names"))
+        .subtitle(gettext("For example 9.4 NM rather than 9.4"))
         .active(settings.grade_names)
         .build();
     let changed = {
@@ -131,8 +141,8 @@ fn display_group(current: &Rc<Cell<Settings>>, hooks: &Rc<Hooks>) -> adw::Prefer
 fn images_group(current: &Rc<Cell<Settings>>, hooks: &Rc<Hooks>) -> adw::PreferencesGroup {
     let photos = current.get().photos;
     let group = adw::PreferencesGroup::builder()
-        .title("Cover Photos")
-        .description("Applies to photos added from now on.")
+        .title(gettext("Cover Photos"))
+        .description(gettext("Applies to photos added from now on."))
         .build();
     let spin = |title: &str, subtitle: &str, range: (f64, f64), step: f64, value: f64| {
         adw::SpinRow::builder()
@@ -144,15 +154,15 @@ fn images_group(current: &Rc<Cell<Settings>>, hooks: &Rc<Hooks>) -> adw::Prefere
             .build()
     };
     let edge = spin(
-        "Longest Edge",
-        "In pixels; larger photos show more detail but make the collection bigger",
+        &gettext("Longest Edge"),
+        &gettext("In pixels; larger photos show more detail but make the collection bigger"),
         (f64::from(*LONG_EDGES.start()), f64::from(*LONG_EDGES.end())),
         100.0,
         f64::from(photos.long_edge),
     );
     let quality = spin(
-        "JPEG Quality",
-        "Higher keeps more detail in larger files",
+        &gettext("JPEG Quality"),
+        &gettext("Higher keeps more detail in larger files"),
         (f64::from(*QUALITIES.start()), f64::from(*QUALITIES.end())),
         5.0,
         f64::from(photos.quality),
@@ -183,11 +193,11 @@ fn collections_group(
     dialog: &adw::PreferencesDialog,
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::builder()
-        .title("Collections")
-        .description(
+        .title(gettext("Collections"))
+        .description(gettext(
             "Collections are kept in this app\u{2019}s own folder. Import and export move \
              copies in and out.",
-        )
+        ))
         .build();
     for c in state.collections {
         let current = state.current == Some(c.name.as_str());
@@ -196,7 +206,7 @@ fn collections_group(
         row.set_title(&c.name);
         let size = glib::format_size(c.size_bytes);
         row.set_subtitle(&if current {
-            format!("Open now \u{b7} {size}")
+            gettext_f("Open now \u{b7} {size}", &[("size", &size)])
         } else {
             size.to_string()
         });
@@ -219,27 +229,31 @@ fn collections_group(
         };
         if !current {
             let open = gtk::Button::builder()
-                .label("_Open")
+                // Translators: opens this collection in the window.
+                .label(gettext("_Open"))
                 .use_underline(true)
                 .valign(gtk::Align::Center)
                 .build();
             wire(&open, |h, n| (h.open)(n));
             row.add_suffix(&open);
         }
-        let rename = button("document-edit-symbolic", "Rename");
+        let rename = button("document-edit-symbolic", &gettext("Rename"));
         wire(&rename, |h, n| (h.rename)(n));
         row.add_suffix(&rename);
         if !current {
-            let delete = button("user-trash-symbolic", "Delete");
+            let delete = button("user-trash-symbolic", &gettext("Delete"));
             wire(&delete, |h, n| (h.delete)(n));
             row.add_suffix(&delete);
         }
         group.add(&row);
     }
     for (title, action) in [
-        ("New Collection\u{2026}", "new-collection"),
-        ("Import Collection File\u{2026}", "import-collection"),
-        ("Export a Copy\u{2026}", "export-collection"),
+        (gettext("New Collection\u{2026}"), "new-collection"),
+        (
+            gettext("Import Collection File\u{2026}"),
+            "import-collection",
+        ),
+        (gettext("Export a Copy\u{2026}"), "export-collection"),
     ] {
         let row = adw::ButtonRow::builder().title(title).build();
         let (hooks, dialog) = (hooks.clone(), dialog.clone());
@@ -270,22 +284,22 @@ fn backup_group(
     dialog: &adw::PreferencesDialog,
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::builder()
-        .title("Back Up")
-        .description(
+        .title(gettext("Back Up"))
+        .description(gettext(
             "A backup is a complete copy of the open collection, checked before it is \
              written. Import it to use it. Old backups are never removed.",
-        )
+        ))
         .build();
     let folder = adw::ActionRow::builder()
-        .title("Backup Folder")
+        .title(gettext("Backup Folder"))
         .subtitle(state.backup_folder.as_deref().map_or_else(
-            || "Asked for the first time you back up".to_owned(),
+            || gettext("Asked for the first time you back up"),
             folder_name,
         ))
         .use_markup(false)
         .build();
     let choose = gtk::Button::builder()
-        .label("_Choose\u{2026}")
+        .label(gettext("_Choose\u{2026}"))
         .use_underline(true)
         .valign(gtk::Align::Center)
         .build();
@@ -293,7 +307,7 @@ fn backup_group(
         let (hooks, dialog, row) = (hooks.clone(), dialog.clone(), folder.clone());
         choose.connect_clicked(move |_| {
             let chooser = gtk::FileDialog::builder()
-                .title("Choose a Folder for Backups")
+                .title(gettext("Choose a Folder for Backups"))
                 .modal(true)
                 .build();
             let (hooks, row) = (hooks.clone(), row.clone());
@@ -311,7 +325,7 @@ fn backup_group(
     folder.add_suffix(&choose);
     group.add(&folder);
     let now = adw::ButtonRow::builder()
-        .title("Back _Up Now")
+        .title(gettext("Back _Up Now"))
         .use_underline(true)
         .build();
     now.set_sensitive(state.current.is_some());
@@ -342,18 +356,18 @@ fn safety_group(
     dialog: &adw::PreferencesDialog,
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::builder()
-        .title("Safety Copies")
-        .description(
+        .title(gettext("Safety Copies"))
+        .description(gettext(
             "Kept in this app\u{2019}s own folder, one for each collection, each replacing \
              the last.",
-        )
+        ))
         .build();
     let switch = adw::SwitchRow::builder()
-        .title("Keep a Safety Copy")
-        .subtitle(
+        .title(gettext("Keep a Safety Copy"))
+        .subtitle(gettext(
             "Before importing books, upgrading a collection, changing several books at \
              once, and deleting from Trash",
-        )
+        ))
         .active(current.get().safety_copies)
         .build();
     {
@@ -370,21 +384,29 @@ fn safety_group(
     group.add(&switch);
     if let Some(name) = state.current {
         let row = adw::ActionRow::builder()
-            .title(format!("Safety Copy of \u{201c}{name}\u{201d}"))
+            .title(gettext_f(
+                "Safety Copy of \u{201c}{collection}\u{201d}",
+                &[("collection", name)],
+            ))
             .use_markup(false)
             .build();
         match &state.safety {
             Some(copy) => {
-                row.set_subtitle(&format!(
-                    "Made {} {} \u{b7} {}",
-                    made_at(copy.made),
-                    copy.reason,
-                    glib::format_size(copy.size_bytes)
+                // Translators: {reason} says why the copy was made, such
+                // as "before emptying Trash".
+                row.set_subtitle(&gettext_f(
+                    "Made {time} {reason} \u{b7} {size}",
+                    &[
+                        ("time", &made_at(copy.made)),
+                        ("reason", &copy.reason),
+                        ("size", &glib::format_size(copy.size_bytes)),
+                    ],
                 ));
                 let open = gtk::Button::builder()
-                    .label("_Open")
+                    // Translators: opens the safety copy as a collection.
+                    .label(gettext("_Open"))
                     .use_underline(true)
-                    .tooltip_text("Open it as a collection of its own")
+                    .tooltip_text(gettext("Open it as a collection of its own"))
                     .valign(gtk::Align::Center)
                     .build();
                 let (hooks, dialog, name) = (hooks.clone(), dialog.clone(), name.to_owned());
@@ -394,7 +416,7 @@ fn safety_group(
                 });
                 row.add_suffix(&open);
             }
-            None => row.set_subtitle("None made yet"),
+            None => row.set_subtitle(&gettext("None made yet")),
         }
         group.add(&row);
     }
@@ -404,8 +426,10 @@ fn safety_group(
 /// Checking the open collection for damage, and compacting it.
 fn upkeep_group(db: &Rc<Database>, dialog: &adw::PreferencesDialog) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::builder()
-        .title("Upkeep")
-        .description("For the open collection. Both can take a while for a large one.")
+        .title(gettext("Upkeep"))
+        .description(gettext(
+            "For the open collection. Both can take a while for a large one.",
+        ))
         .build();
     let row = |title: &str, subtitle: &str, label: &str| {
         let row = adw::ActionRow::builder()
@@ -422,9 +446,10 @@ fn upkeep_group(db: &Rc<Database>, dialog: &adw::PreferencesDialog) -> adw::Pref
         button
     };
     let check = row(
-        "Check for Damage",
-        "Reads the whole collection, as a disk fault can harm files unnoticed",
-        "_Check",
+        &gettext("Check for Damage"),
+        &gettext("Reads the whole collection, as a disk fault can harm files unnoticed"),
+        // Translators: checks the collection for damage.
+        &gettext("_Check"),
     );
     {
         let (db, dialog) = (Rc::downgrade(db), dialog.clone());
@@ -434,10 +459,10 @@ fn upkeep_group(db: &Rc<Database>, dialog: &adw::PreferencesDialog) -> adw::Pref
             };
             match db.integrity_check() {
                 Ok(problems) if problems.is_empty() => {
-                    dialog.add_toast(adw::Toast::new("No damage found"));
+                    dialog.add_toast(adw::Toast::new(&gettext("No damage found")));
                 }
                 Ok(problems) => {
-                    let mut body = String::from(
+                    let mut body = gettext(
                         "Open a backup or the safety copy to get back to a sound copy. What was \
                          found:\n\n",
                     );
@@ -445,21 +470,32 @@ fn upkeep_group(db: &Rc<Database>, dialog: &adw::PreferencesDialog) -> adw::Pref
                         body.push_str(&format!("\u{2022} {p}\n"));
                     }
                     if problems.len() > 10 {
-                        body.push_str(&format!("and {} more", problems.len() - 10));
+                        let more = problems.len() - 10;
+                        body.push_str(&ngettext_f(
+                            "and {count} more",
+                            "and {count} more",
+                            more,
+                            &[("count", &more.to_string())],
+                        ));
                     }
-                    let alert =
-                        adw::AlertDialog::new(Some("The Collection Is Damaged"), Some(&body));
-                    alert.add_response("close", "_Close");
+                    let heading = gettext("The Collection Is Damaged");
+                    let alert = adw::AlertDialog::new(Some(&heading), Some(&body));
+                    alert.add_response("close", &gettext("_Close"));
                     alert.present(Some(&dialog));
                 }
-                Err(e) => dialog.add_toast(adw::Toast::new(&format!("Could not check: {e}"))),
+                Err(e) => dialog.add_toast(adw::Toast::new(&gettext_f(
+                    "Could not check: {reason}",
+                    &[("reason", &e.to_string())],
+                ))),
             }
         });
     }
     let compact = row(
-        "Compact",
-        "Gives back the space deleted books and photos leave behind",
-        "C_ompact",
+        // Translators: rewriting the collection file to take less space.
+        &gettext("Compact"),
+        &gettext("Gives back the space deleted books and photos leave behind"),
+        // Translators: a button that compacts the collection file.
+        &gettext("C_ompact"),
     );
     {
         let (db, dialog) = (Rc::downgrade(db), dialog.clone());
@@ -468,13 +504,18 @@ fn upkeep_group(db: &Rc<Database>, dialog: &adw::PreferencesDialog) -> adw::Pref
                 return;
             };
             let message = match db.compact() {
-                Ok((before, after)) if after < before => format!(
-                    "Compacted from {} to {}",
-                    glib::format_size(before),
-                    glib::format_size(after)
+                Ok((before, after)) if after < before => gettext_f(
+                    "Compacted from {before} to {after}",
+                    &[
+                        ("before", &glib::format_size(before)),
+                        ("after", &glib::format_size(after)),
+                    ],
                 ),
-                Ok((_, after)) => format!("Already compact at {}", glib::format_size(after)),
-                Err(e) => format!("Could not compact: {e}"),
+                Ok((_, after)) => gettext_f(
+                    "Already compact at {size}",
+                    &[("size", &glib::format_size(after))],
+                ),
+                Err(e) => gettext_f("Could not compact: {reason}", &[("reason", &e.to_string())]),
             };
             dialog.add_toast(adw::Toast::new(&message));
         });
@@ -484,16 +525,16 @@ fn upkeep_group(db: &Rc<Database>, dialog: &adw::PreferencesDialog) -> adw::Pref
 
 fn rates_group(db: Option<&Rc<Database>>, hooks: &Rc<Hooks>) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::builder()
-        .title("Exchange Rates")
-        .description(
+        .title(gettext("Exchange Rates"))
+        .description(gettext(
             "The app cannot look prices up. Enter what an ounce of gold and one bitcoin \
              cost in US dollars on a date; each amount is converted at the newest rate on \
              or before its own date. Rates are kept with the collection.",
-        )
+        ))
         .build();
     let Some(db) = db else {
         let none = adw::ActionRow::builder()
-            .title("Open a collection to edit its rates")
+            .title(gettext("Open a collection to edit its rates"))
             .build();
         group.add(&none);
         return group;
@@ -534,15 +575,20 @@ impl RateList {
         for rate in db.exchange_rates().unwrap_or_default() {
             let row = adw::ActionRow::builder()
                 .title(format::date(rate.date()))
-                .subtitle(format!(
-                    "Gold {} an ounce \u{b7} Bitcoin {}",
-                    format::grouped(&rate.usd_per_ounce().to_string()),
-                    format::grouped(&rate.usd_per_bitcoin().to_string())
+                .subtitle(gettext_f(
+                    "Gold {gold} an ounce \u{b7} Bitcoin {bitcoin}",
+                    &[
+                        ("gold", &format::grouped(&rate.usd_per_ounce().to_string())),
+                        (
+                            "bitcoin",
+                            &format::grouped(&rate.usd_per_bitcoin().to_string()),
+                        ),
+                    ],
                 ))
                 .build();
             let delete = gtk::Button::builder()
                 .icon_name("user-trash-symbolic")
-                .tooltip_text("Delete This Rate")
+                .tooltip_text(gettext("Delete This Rate"))
                 .valign(gtk::Align::Center)
                 .css_classes(["flat"])
                 .build();
@@ -556,7 +602,7 @@ impl RateList {
             self.rows.append(&row);
         }
         let add = adw::ButtonRow::builder()
-            .title("Add Rate\u{2026}")
+            .title(gettext("Add Rate\u{2026}"))
             .start_icon_name("list-add-symbolic")
             .build();
         let me = Rc::downgrade(self);
@@ -584,10 +630,10 @@ impl RateList {
 /// Asks for one day's rates; Add is enabled once all three read.
 fn ask_rate(parent: &impl IsA<gtk::Widget>, done: impl Fn(ExchangeRate) + 'static) {
     let entry = |title: &str| adw::EntryRow::builder().title(title).build();
-    let date = entry("Date (YYYY-MM-DD)");
+    let date = entry(&gettext("Date (YYYY-MM-DD)"));
     date.set_text(&format::today().map(|d| d.to_string()).unwrap_or_default());
-    let gold = entry("US Dollars per Ounce of Gold");
-    let bitcoin = entry("US Dollars per Bitcoin");
+    let gold = entry(&gettext("US Dollars per Ounce of Gold"));
+    let bitcoin = entry(&gettext("US Dollars per Bitcoin"));
     let list = gtk::ListBox::builder()
         .selection_mode(gtk::SelectionMode::None)
         .css_classes(["boxed-list"])
@@ -617,14 +663,16 @@ fn ask_rate(parent: &impl IsA<gtk::Widget>, done: impl Fn(ExchangeRate) + 'stati
         }
     };
     let dialog = adw::AlertDialog::builder()
-        .heading("Add Exchange Rate")
-        .body("A rate already entered for the same date is replaced.")
+        .heading(gettext("Add Exchange Rate"))
+        .body(gettext(
+            "A rate already entered for the same date is replaced.",
+        ))
         .extra_child(&list)
         .focus_widget(&gold)
         .default_response("add")
         .close_response("cancel")
         .build();
-    dialog.add_responses(&[("cancel", "_Cancel"), ("add", "_Add")]);
+    dialog.add_responses(&[("cancel", &gettext("_Cancel")), ("add", &gettext("_Add"))]);
     dialog.set_response_appearance("add", adw::ResponseAppearance::Suggested);
     dialog.set_response_enabled("add", false);
     {

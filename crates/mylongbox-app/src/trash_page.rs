@@ -7,6 +7,7 @@ use adw::prelude::*;
 use mylongbox_core::{TrashGroup, TrashId};
 
 use crate::format;
+use crate::i18n::{gettext, gettext_f};
 
 /// What the page's buttons do.
 pub struct Hooks {
@@ -19,11 +20,13 @@ pub struct Hooks {
 
 pub fn page(groups: &[TrashGroup], hooks: &Hooks) -> adw::PreferencesPage {
     let group = adw::PreferencesGroup::builder()
-        .title("In Trash")
-        .description("Restore what you need; the rest stays here until you empty Trash.")
+        .title(gettext("In Trash"))
+        .description(gettext(
+            "Restore what you need; the rest stays here until you empty Trash.",
+        ))
         .build();
     let empty = gtk::Button::builder()
-        .label("_Empty Trash")
+        .label(gettext("_Empty Trash"))
         .use_underline(true)
         .valign(gtk::Align::Center)
         .css_classes(["destructive-action"])
@@ -40,17 +43,17 @@ pub fn page(groups: &[TrashGroup], hooks: &Hooks) -> adw::PreferencesPage {
         row.set_title(&g.label);
         row.set_subtitle(
             &format::local_date(&g.trashed_at)
-                .map(|d| format!("Moved to Trash {}", format::date(d)))
+                .map(|d| gettext_f("Moved to Trash {date}", &[("date", &format::date(d))]))
                 .unwrap_or_default(),
         );
         let restore = gtk::Button::builder()
-            .label("_Restore")
+            .label(gettext("_Restore"))
             .use_underline(true)
             .valign(gtk::Align::Center)
             .build();
         let purge = gtk::Button::builder()
             .icon_name("user-trash-full-symbolic")
-            .tooltip_text("Delete Forever")
+            .tooltip_text(gettext("Delete Forever"))
             .valign(gtk::Align::Center)
             .css_classes(["flat"])
             .build();

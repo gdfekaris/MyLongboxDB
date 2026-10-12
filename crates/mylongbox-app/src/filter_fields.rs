@@ -11,6 +11,7 @@ use mylongbox_core::{
 };
 
 use crate::format;
+use crate::i18n::gettext_noop;
 
 /// The kinds of choice field, each with its own options.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,76 +52,161 @@ const fn field(label: &'static str, kind: Kind) -> Field {
     Field { label, kind }
 }
 
-/// Every field the panel offers, the most used first.
+/// Every field the panel offers, the most used first. Labels are
+/// translated where they are shown.
 pub const FIELDS: &[Field] = &[
-    field("Series", Kind::Text(TextField::SeriesName)),
-    field("Issue Number", Kind::IssueNumber),
-    field("Story Title", Kind::Text(TextField::Title)),
-    field("Publisher", Kind::Text(TextField::Publisher)),
-    field("Creator", Kind::Person),
-    field("Characters", Kind::List(ListField::Characters)),
-    field("Teams", Kind::List(ListField::Teams)),
-    field("Story Arcs", Kind::List(ListField::StoryArcs)),
-    field("Tags", Kind::List(ListField::Tags)),
-    field("Category", Kind::Choice(ChoiceKind::Category)),
-    field("Grade", Kind::Grade),
-    field("Grade Type", Kind::Choice(ChoiceKind::GradeType)),
-    field("Key Issue", Kind::Flag(Flag::KeyIssue)),
-    field("First Appearance", Kind::Flag(Flag::FirstAppearance)),
-    field("Cover Date", Kind::Date(DateField::CoverDate)),
-    field("Release Date", Kind::Date(DateField::ReleaseDate)),
-    field("Current Value", Kind::Money(MoneyField::CurrentValue)),
-    field("Purchase Price", Kind::Money(MoneyField::PurchasePrice)),
-    field("Purchase Date", Kind::Date(DateField::PurchaseDate)),
-    field("Cover Price", Kind::Money(MoneyField::CoverPrice)),
-    field("Storage Box", Kind::Text(TextField::StorageBox)),
-    field("Box Position", Kind::Number(NumberField::BoxPosition)),
-    field("Variant", Kind::Text(TextField::Variant)),
-    field("Printing", Kind::Number(NumberField::Printing)),
-    field("Distribution", Kind::Choice(ChoiceKind::Distribution)),
-    field("Cover Artists", Kind::List(ListField::CoverArtists)),
-    field("Signed", Kind::Flag(Flag::Signed)),
-    field("Signed By", Kind::List(ListField::SignedBy)),
+    field(gettext_noop("Series"), Kind::Text(TextField::SeriesName)),
+    field(gettext_noop("Issue Number"), Kind::IssueNumber),
+    field(gettext_noop("Story Title"), Kind::Text(TextField::Title)),
+    field(gettext_noop("Publisher"), Kind::Text(TextField::Publisher)),
+    field(gettext_noop("Creator"), Kind::Person),
     field(
-        "Signature Verification",
+        gettext_noop("Characters"),
+        Kind::List(ListField::Characters),
+    ),
+    field(gettext_noop("Teams"), Kind::List(ListField::Teams)),
+    field(gettext_noop("Story Arcs"), Kind::List(ListField::StoryArcs)),
+    field(gettext_noop("Tags"), Kind::List(ListField::Tags)),
+    field(gettext_noop("Category"), Kind::Choice(ChoiceKind::Category)),
+    field(gettext_noop("Grade"), Kind::Grade),
+    field(
+        gettext_noop("Grade Type"),
+        Kind::Choice(ChoiceKind::GradeType),
+    ),
+    field(gettext_noop("Key Issue"), Kind::Flag(Flag::KeyIssue)),
+    field(
+        gettext_noop("First Appearance"),
+        Kind::Flag(Flag::FirstAppearance),
+    ),
+    field(gettext_noop("Cover Date"), Kind::Date(DateField::CoverDate)),
+    field(
+        gettext_noop("Release Date"),
+        Kind::Date(DateField::ReleaseDate),
+    ),
+    field(
+        gettext_noop("Current Value"),
+        Kind::Money(MoneyField::CurrentValue),
+    ),
+    field(
+        gettext_noop("Purchase Price"),
+        Kind::Money(MoneyField::PurchasePrice),
+    ),
+    field(
+        gettext_noop("Purchase Date"),
+        Kind::Date(DateField::PurchaseDate),
+    ),
+    field(
+        gettext_noop("Cover Price"),
+        Kind::Money(MoneyField::CoverPrice),
+    ),
+    field(
+        gettext_noop("Storage Box"),
+        Kind::Text(TextField::StorageBox),
+    ),
+    field(
+        gettext_noop("Box Position"),
+        Kind::Number(NumberField::BoxPosition),
+    ),
+    field(gettext_noop("Variant"), Kind::Text(TextField::Variant)),
+    field(
+        gettext_noop("Printing"),
+        Kind::Number(NumberField::Printing),
+    ),
+    field(
+        gettext_noop("Distribution"),
+        Kind::Choice(ChoiceKind::Distribution),
+    ),
+    field(
+        gettext_noop("Cover Artists"),
+        Kind::List(ListField::CoverArtists),
+    ),
+    field(gettext_noop("Signed"), Kind::Flag(Flag::Signed)),
+    field(gettext_noop("Signed By"), Kind::List(ListField::SignedBy)),
+    field(
+        gettext_noop("Signature Verification"),
         Kind::Choice(ChoiceKind::Verification),
     ),
-    field("Sketch", Kind::Flag(Flag::Sketch)),
-    field("Certificate Number", Kind::Text(TextField::CertNumber)),
-    field("Label", Kind::Text(TextField::LabelType)),
-    field("Seller", Kind::Text(TextField::Seller)),
-    field("Notes", Kind::Text(TextField::Notes)),
-    field("Synopsis", Kind::Text(TextField::Synopsis)),
-    field("Key Reason", Kind::Text(TextField::KeyReason)),
-    field("Page Count", Kind::Number(NumberField::PageCount)),
-    field("Volume", Kind::Number(NumberField::Volume)),
-    field("Start Year", Kind::Number(NumberField::StartYear)),
-    field("Magazine Format", Kind::Choice(ChoiceKind::MagazineFormat)),
-    field("Black and White", Kind::Flag(Flag::BlackAndWhite)),
-    field("Binding", Kind::Choice(ChoiceKind::Binding)),
-    field("ISBN", Kind::Text(TextField::Isbn)),
-    field("Barcode", Kind::Text(TextField::Barcode)),
-    field("Book Condition", Kind::Choice(ChoiceKind::BookCondition)),
-    field("Dust Jacket", Kind::Flag(Flag::DustJacket)),
+    field(gettext_noop("Sketch"), Kind::Flag(Flag::Sketch)),
     field(
-        "Dust Jacket Condition",
+        gettext_noop("Certificate Number"),
+        Kind::Text(TextField::CertNumber),
+    ),
+    field(gettext_noop("Label"), Kind::Text(TextField::LabelType)),
+    field(gettext_noop("Seller"), Kind::Text(TextField::Seller)),
+    field(gettext_noop("Notes"), Kind::Text(TextField::Notes)),
+    field(gettext_noop("Synopsis"), Kind::Text(TextField::Synopsis)),
+    field(gettext_noop("Key Reason"), Kind::Text(TextField::KeyReason)),
+    field(
+        gettext_noop("Page Count"),
+        Kind::Number(NumberField::PageCount),
+    ),
+    field(gettext_noop("Volume"), Kind::Number(NumberField::Volume)),
+    field(
+        gettext_noop("Start Year"),
+        Kind::Number(NumberField::StartYear),
+    ),
+    field(
+        gettext_noop("Magazine Format"),
+        Kind::Choice(ChoiceKind::MagazineFormat),
+    ),
+    field(
+        gettext_noop("Black and White"),
+        Kind::Flag(Flag::BlackAndWhite),
+    ),
+    field(gettext_noop("Binding"), Kind::Choice(ChoiceKind::Binding)),
+    field(gettext_noop("ISBN"), Kind::Text(TextField::Isbn)),
+    field(gettext_noop("Barcode"), Kind::Text(TextField::Barcode)),
+    field(
+        gettext_noop("Book Condition"),
+        Kind::Choice(ChoiceKind::BookCondition),
+    ),
+    field(gettext_noop("Dust Jacket"), Kind::Flag(Flag::DustJacket)),
+    field(
+        gettext_noop("Dust Jacket Condition"),
         Kind::Choice(ChoiceKind::DustJacketCondition),
     ),
-    field("Slipcase", Kind::Flag(Flag::Slipcase)),
-    field("Collects", Kind::Collects),
-    field("Front Cover Photo", Kind::Has(Presence::FrontPhoto)),
-    field("Back Cover Photo", Kind::Has(Presence::BackPhoto)),
-    field("Value Entry", Kind::Has(Presence::Value)),
-    field("Grade or Condition", Kind::Has(Presence::Grade)),
-    field("Any Storage Box", Kind::Has(Presence::StorageBox)),
-    field("Any Purchase Price", Kind::Has(Presence::PurchasePrice)),
-    field("Any Purchase Date", Kind::Has(Presence::PurchaseDate)),
-    field("Any Cover Price", Kind::Has(Presence::CoverPrice)),
-    field("Any Cover Date", Kind::Has(Presence::CoverDate)),
-    field("Any Release Date", Kind::Has(Presence::ReleaseDate)),
-    field("Any Tags", Kind::Has(Presence::Tags)),
-    field("Any Notes", Kind::Has(Presence::Notes)),
-    field("Date Added", Kind::Date(DateField::Added)),
+    field(gettext_noop("Slipcase"), Kind::Flag(Flag::Slipcase)),
+    field(gettext_noop("Collects"), Kind::Collects),
+    field(
+        gettext_noop("Front Cover Photo"),
+        Kind::Has(Presence::FrontPhoto),
+    ),
+    field(
+        gettext_noop("Back Cover Photo"),
+        Kind::Has(Presence::BackPhoto),
+    ),
+    field(gettext_noop("Value Entry"), Kind::Has(Presence::Value)),
+    field(
+        gettext_noop("Grade or Condition"),
+        Kind::Has(Presence::Grade),
+    ),
+    field(
+        gettext_noop("Any Storage Box"),
+        Kind::Has(Presence::StorageBox),
+    ),
+    field(
+        gettext_noop("Any Purchase Price"),
+        Kind::Has(Presence::PurchasePrice),
+    ),
+    field(
+        gettext_noop("Any Purchase Date"),
+        Kind::Has(Presence::PurchaseDate),
+    ),
+    field(
+        gettext_noop("Any Cover Price"),
+        Kind::Has(Presence::CoverPrice),
+    ),
+    field(
+        gettext_noop("Any Cover Date"),
+        Kind::Has(Presence::CoverDate),
+    ),
+    field(
+        gettext_noop("Any Release Date"),
+        Kind::Has(Presence::ReleaseDate),
+    ),
+    field(gettext_noop("Any Tags"), Kind::Has(Presence::Tags)),
+    field(gettext_noop("Any Notes"), Kind::Has(Presence::Notes)),
+    field(gettext_noop("Date Added"), Kind::Date(DateField::Added)),
 ];
 
 /// The values a condition asks for.
@@ -138,25 +224,71 @@ pub enum Shape {
     Checks(Vec<&'static str>),
 }
 
-const COMPARE: &[&str] = &["is", "is at least", "is at most", "is between"];
+// Translators: conditions in a filter row, read as field, condition,
+// value: "Grade is at least 9.4".
+const COMPARE: &[&str] = &[
+    gettext_noop("is"),
+    gettext_noop("is at least"),
+    gettext_noop("is at most"),
+    gettext_noop("is between"),
+];
 const CURRENCIES: [(&str, Currency); 3] = [
     ("USD", Currency::Usd),
-    ("oz gold", Currency::Gold),
+    // Translators: the currency menu beside an amount: gold counted in
+    // troy ounces.
+    (gettext_noop("oz gold"), Currency::Gold),
     ("BTC", Currency::Btc),
 ];
 
 impl Kind {
+    /// The conditions offered, untranslated; they are translated where
+    /// they are shown.
     pub fn conditions(self) -> &'static [&'static str] {
         match self {
-            Self::Text(_) => &["contains", "is", "is similar to"],
-            Self::Person => &["is", "is, as"],
-            Self::List(_) => &["include any of", "include all of", "exclude"],
+            // Translators: conditions in a filter row, read as field,
+            // condition, value: "Series contains Thor".
+            Self::Text(_) => {
+                const {
+                    &[
+                        gettext_noop("contains"),
+                        gettext_noop("is"),
+                        gettext_noop("is similar to"),
+                    ]
+                }
+            }
+            // Translators: "Creator is, as" is followed by a name and a
+            // role: "Creator is, as Kirby, Penciller".
+            Self::Person => const { &[gettext_noop("is"), gettext_noop("is, as")] },
+            // Translators: conditions for lists of names: "Characters
+            // include any of Wolverine, Hulk".
+            Self::List(_) => {
+                const {
+                    &[
+                        gettext_noop("include any of"),
+                        gettext_noop("include all of"),
+                        gettext_noop("exclude"),
+                    ]
+                }
+            }
             Self::IssueNumber | Self::Grade | Self::Number(_) | Self::Money(_) => COMPARE,
-            Self::Date(_) => &["is before", "is after", "is between", "is in year"],
-            Self::Choice(_) => &["is one of"],
-            Self::Flag(_) => &["is"],
-            Self::Has(_) => &["is present", "is missing"],
-            Self::Collects => &["includes"],
+            Self::Date(_) => {
+                const {
+                    &[
+                        gettext_noop("is before"),
+                        gettext_noop("is after"),
+                        gettext_noop("is between"),
+                        gettext_noop("is in year"),
+                    ]
+                }
+            }
+            Self::Choice(_) => const { &[gettext_noop("is one of")] },
+            Self::Flag(_) => const { &[gettext_noop("is")] },
+            // Translators: whether a book has something at all, such as a
+            // back cover photo.
+            Self::Has(_) => const { &[gettext_noop("is present"), gettext_noop("is missing")] },
+            // Translators: "Collects includes" is followed by a series and
+            // a range of issue numbers.
+            Self::Collects => const { &[gettext_noop("includes")] },
         }
     }
 
@@ -165,37 +297,43 @@ impl Kind {
         // The last of the comparisons.
         let between = condition == 3;
         match self {
-            Self::Text(_) => entries(&["Text"]),
+            Self::Text(_) => entries(&[gettext_noop("Text")]),
             Self::Person if condition == 1 => Shape::EntriesAndMenu(
-                vec!["Name"],
+                vec![gettext_noop("Name")],
                 Role::ALL.iter().map(|r| format::role(*r)).collect(),
             ),
-            Self::Person => entries(&["Name"]),
-            Self::List(_) => entries(&["Names, separated by commas"]),
+            Self::Person => entries(&[gettext_noop("Name")]),
+            Self::List(_) => entries(&[gettext_noop("Names, separated by commas")]),
             Self::IssueNumber | Self::Grade | Self::Number(_) if between => {
-                entries(&["From", "To"])
+                entries(&[gettext_noop("From"), gettext_noop("To")])
             }
-            Self::IssueNumber => entries(&["Number"]),
-            Self::Grade => entries(&["Grade, e.g. 9.4"]),
-            Self::Number(_) => entries(&["Number"]),
+            Self::IssueNumber => entries(&[gettext_noop("Number")]),
+            Self::Grade => entries(&[gettext_noop("Grade, e.g. 9.4")]),
+            Self::Number(_) => entries(&[gettext_noop("Number")]),
             Self::Money(_) => Shape::EntriesAndMenu(
                 if between {
-                    vec!["From", "To"]
+                    vec![gettext_noop("From"), gettext_noop("To")]
                 } else {
-                    vec!["Amount"]
+                    vec![gettext_noop("Amount")]
                 },
                 CURRENCIES.iter().map(|(name, _)| *name).collect(),
             ),
             // Before, after, between, in year.
             Self::Date(_) => match condition {
-                2 => entries(&["From", "To"]),
-                3 => entries(&["Year"]),
-                _ => entries(&["YYYY-MM-DD, YYYY-MM, or YYYY"]),
+                2 => entries(&[gettext_noop("From"), gettext_noop("To")]),
+                3 => entries(&[gettext_noop("Year")]),
+                // Translators: how a date may be typed; the letters stand for
+                // year, month, and day digits.
+                _ => entries(&[gettext_noop("YYYY-MM-DD, YYYY-MM, or YYYY")]),
             },
             Self::Choice(kind) => Shape::Checks(kind.labels()),
-            Self::Flag(_) => Shape::Menu(vec!["Yes", "No"]),
+            Self::Flag(_) => Shape::Menu(vec![gettext_noop("Yes"), gettext_noop("No")]),
             Self::Has(_) => Shape::Nothing,
-            Self::Collects => entries(&["Series", "From number", "To number"]),
+            Self::Collects => entries(&[
+                gettext_noop("Series"),
+                gettext_noop("From number"),
+                gettext_noop("To number"),
+            ]),
         }
     }
 }
@@ -203,7 +341,11 @@ impl Kind {
 impl ChoiceKind {
     pub fn labels(self) -> Vec<&'static str> {
         match self {
-            Self::Category => vec!["Comic", "Magazine", "Collected Edition"],
+            Self::Category => vec![
+                gettext_noop("Comic"),
+                gettext_noop("Magazine"),
+                gettext_noop("Collected Edition"),
+            ],
             Self::MagazineFormat => MagazineFormat::ALL
                 .iter()
                 .map(|f| format::magazine_format(*f))
@@ -213,7 +355,9 @@ impl ChoiceKind {
                 .map(|d| format::distribution(*d))
                 .collect(),
             Self::Binding => Binding::ALL.iter().map(|b| format::binding(*b)).collect(),
-            Self::GradeType => vec!["Raw", "CGC", "CBCS", "PGX"],
+            // Translators: an ungraded book, as opposed to one graded by
+            // CGC, CBCS, or PGX.
+            Self::GradeType => vec![gettext_noop("Raw"), "CGC", "CBCS", "PGX"],
             Self::BookCondition | Self::DustJacketCondition => BookCondition::ALL
                 .iter()
                 .map(|c| format::condition(*c))

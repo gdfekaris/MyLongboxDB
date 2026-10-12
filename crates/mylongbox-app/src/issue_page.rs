@@ -12,6 +12,7 @@ use mylongbox_core::{
 };
 
 use crate::books::version;
+use crate::i18n::{gettext, gettext_f, gettext_noop, ngettext_f};
 use crate::{chart, covers, format};
 
 /// What the page's rows do when chosen.
@@ -43,7 +44,7 @@ pub fn page(d: &IssueDetail, links: &Links, open_copy: Option<CopyId>) -> adw::N
     let prefs = adw::PreferencesPage::new();
     prefs.add(&summary(d, open_copy, links));
     if !d.issue.fields.synopsis.is_empty() {
-        let group = group("Synopsis");
+        let group = group(&gettext("Synopsis"));
         group.add(&paragraph(&d.issue.fields.synopsis));
         prefs.add(&group);
     }
@@ -56,15 +57,20 @@ pub fn page(d: &IssueDetail, links: &Links, open_copy: Option<CopyId>) -> adw::N
     if !d.collects.is_empty() {
         // The compact form first, since a book can reprint dozens of
         // issues; each can still be opened from the list below it.
-        let group = group("Collects");
+        // Translators: the heading of the issues a collected edition
+        // reprints.
+        let group = group(&gettext("Collects"));
         let entries: Vec<_> = d.collects.iter().map(|c| c.entry.clone()).collect();
         group.add(&row(&format_collects(&entries), ""));
+        let count = d.collects.len();
         let issues = expander(
-            "Reprinted Issues",
-            &match d.collects.len() {
-                1 => "1 issue".to_owned(),
-                n => format!("{n} issues"),
-            },
+            &gettext("Reprinted Issues"),
+            &ngettext_f(
+                "{count} issue",
+                "{count} issues",
+                count,
+                &[("count", &count.to_string())],
+            ),
         );
         for c in &d.collects {
             let title = format!(
@@ -78,10 +84,14 @@ pub fn page(d: &IssueDetail, links: &Links, open_copy: Option<CopyId>) -> adw::N
         prefs.add(&group);
     }
     if !d.collected_in.is_empty() {
-        let group = group("Also Collected In");
+        let group = group(&gettext("Also Collected In"));
         for c in &d.collected_in {
-            let owned = if c.owned { "In your collection" } else { "" };
-            group.add(&link_row(&c.label, owned, c.collection, links));
+            let owned = if c.owned {
+                gettext("In your collection")
+            } else {
+                String::new()
+            };
+            group.add(&link_row(&c.label, &owned, c.collection, links));
         }
         prefs.add(&group);
     }
@@ -185,7 +195,7 @@ fn photo_or_placeholder(
     };
     let button = gtk::Button::builder()
         .child(&covers::picture(&texture, gtk::ContentFit::Contain))
-        .tooltip_text("View Full Size")
+        .tooltip_text(gettext("View Full Size"))
         .hexpand(true)
         .vexpand(true)
         .css_classes(["flat", "cover-button"])
@@ -206,12 +216,12 @@ fn summary_cover(d: &IssueDetail, open_copy: Option<CopyId>, links: &Links) -> g
         .css_classes(["card"])
         .build();
     let missing = |side| match side {
-        Side::Front => "No Front Cover Image for This Issue",
-        Side::Back => "No Back Cover Image for This Issue",
+        Side::Front => gettext("No Front Cover Image for This Issue"),
+        Side::Back => gettext("No Back Cover Image for This Issue"),
     };
     let Some(c) = cover_copy(d, open_copy) else {
         frame.set_valign(gtk::Align::Start);
-        frame.append(&covers::placeholder(missing(Side::Front), false));
+        frame.append(&covers::placeholder(&missing(Side::Front), false));
         return frame.upcast();
     };
     let (copy, sides, links) = (c.copy.id, c.photos.clone(), links.clone());
@@ -223,7 +233,7 @@ fn summary_cover(d: &IssueDetail, open_copy: Option<CopyId>, links: &Links) -> g
             copy,
             side,
             sides.contains(&side),
-            missing(side),
+            &missing(side),
             false,
             &links,
         ));
@@ -231,7 +241,7 @@ fn summary_cover(d: &IssueDetail, open_copy: Option<CopyId>, links: &Links) -> g
     show(&frame, Side::Front);
     let flip = gtk::Button::builder()
         .icon_name("object-flip-horizontal-symbolic")
-        .tooltip_text("Show the Back Cover")
+        .tooltip_text(gettext("Show the Back Cover"))
         .halign(gtk::Align::End)
         .valign(gtk::Align::End)
         .margin_end(8)
@@ -248,9 +258,9 @@ fn summary_cover(d: &IssueDetail, open_copy: Option<CopyId>, links: &Links) -> g
             };
             side.set(next);
             show(&frame, next);
-            b.set_tooltip_text(Some(match next {
-                Side::Front => "Show the Back Cover",
-                Side::Back => "Show the Front Cover",
+            b.set_tooltip_text(Some(&match next {
+                Side::Front => gettext("Show the Back Cover"),
+                Side::Back => gettext("Show the Front Cover"),
             }));
         });
     }
@@ -289,30 +299,47 @@ fn summary(d: &IssueDetail, open_copy: Option<CopyId>, links: &Links) -> adw::Pr
     let kind = match s.category {
         Category::Comic => String::new(),
         Category::Magazine => format::joined([
-            "Magazine",
+            gettext("Magazine"),
             s.magazine_format
                 .filter(|m| *m != MagazineFormat::Standard)
                 .map(format::magazine_format)
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .to_owned(),
             match s.black_and_white {
-                Some(true) => "Black and white",
-                _ => "",
+                Some(true) => gettext("Black and white"),
+                _ => String::new(),
             },
         ]),
-        Category::CollectedEdition => "Collected edition".to_owned(),
+        Category::CollectedEdition => gettext("Collected edition"),
     };
-    let volume = s.volume.map(|v| format!("Vol. {v}")).unwrap_or_default();
+    let volume = s
+        .volume
+        // Translators: a series' volume number, as in "Vol. 2".
+        .map(|v| gettext_f("Vol. {number}", &[("number", &v.to_string())]))
+        .unwrap_or_default();
     let facts = [
         format::joined([d.publisher.clone().unwrap_or_default(), volume, kind]),
         format::joined([
             f.cover_date
-                .map(|c| format!("Cover date {}", format::cover_date(Some(c))))
+                .map(|c| {
+                    gettext_f(
+                        "Cover date {date}",
+                        &[("date", &format::cover_date(Some(c)))],
+                    )
+                })
                 .unwrap_or_default(),
             f.release_date
-                .map(|r| format!("Released {}", format::date(r)))
+                .map(|r| gettext_f("Released {date}", &[("date", &format::date(r))]))
                 .unwrap_or_default(),
             f.page_count
-                .map(|p| format!("{p} pages"))
+                .map(|p| {
+                    ngettext_f(
+                        "{count} page",
+                        "{count} pages",
+                        usize::try_from(p).unwrap_or(usize::MAX),
+                        &[("count", &p.to_string())],
+                    )
+                })
                 .unwrap_or_default(),
         ]),
         ownership(d),
@@ -322,8 +349,10 @@ fn summary(d: &IssueDetail, open_copy: Option<CopyId>, links: &Links) -> adw::Pr
     }
     if f.is_key {
         let key = match f.key_reason.as_str() {
-            "" => "Key issue".to_owned(),
-            why => format!("Key issue: {why}"),
+            "" => gettext("Key issue"),
+            // Translators: {reason} says why the issue is a key one, such
+            // as "first appearance of Wolverine".
+            why => gettext_f("Key issue: {reason}", &[("reason", why)]),
         };
         text.append(&label(&key, &["accent", "heading"]));
     }
@@ -341,15 +370,23 @@ fn summary(d: &IssueDetail, open_copy: Option<CopyId>, links: &Links) -> adw::Pr
 fn ownership(d: &IssueDetail) -> String {
     let o = d.ownership;
     let singles = match (o.single_copies, d.series.fields.category) {
-        (0, Category::CollectedEdition) => "Not in your collection".to_owned(),
-        (0, _) => "No single copies".to_owned(),
-        (1, _) => "You own 1 copy".to_owned(),
-        (n, _) => format!("You own {n} copies"),
+        (0, Category::CollectedEdition) => gettext("Not in your collection"),
+        (0, _) => gettext("No single copies"),
+        (n, _) => ngettext_f(
+            "You own {count} copy",
+            "You own {count} copies",
+            usize::try_from(n).unwrap_or(usize::MAX),
+            &[("count", &n.to_string())],
+        ),
     };
     let collected = match o.collections_owned {
         0 => String::new(),
-        1 => "Reprinted in 1 book you own".to_owned(),
-        n => format!("Reprinted in {n} books you own"),
+        n => ngettext_f(
+            "Reprinted in {count} book you own",
+            "Reprinted in {count} books you own",
+            usize::try_from(n).unwrap_or(usize::MAX),
+            &[("count", &n.to_string())],
+        ),
     };
     format::joined([singles, collected])
 }
@@ -359,7 +396,7 @@ fn credits(d: &IssueDetail) -> Option<adw::PreferencesGroup> {
     if d.credits.is_empty() {
         return None;
     }
-    let group = group("Credits");
+    let group = group(&gettext("Credits"));
     for role in Role::ALL {
         let names: Vec<_> = d
             .credits
@@ -377,7 +414,7 @@ fn credits(d: &IssueDetail) -> Option<adw::PreferencesGroup> {
 fn appearances(d: &IssueDetail) -> Option<adw::PreferencesGroup> {
     let first = |name: &str, first: bool| {
         if first {
-            format!("{name} (first appearance)")
+            gettext_f("{name} (first appearance)", &[("name", name)])
         } else {
             name.to_owned()
         }
@@ -396,22 +433,25 @@ fn appearances(d: &IssueDetail) -> Option<adw::PreferencesGroup> {
         .story_arcs
         .iter()
         .map(|a| match a.part {
-            Some(part) => format!("{} (part {part})", a.name),
+            Some(part) => gettext_f(
+                "{arc} (part {part})",
+                &[("arc", &a.name), ("part", &part.to_string())],
+            ),
             None => a.name.clone(),
         })
         .collect();
     let rows = [
-        ("Characters", characters),
-        ("Teams", teams),
-        ("Story Arcs", arcs),
+        (gettext_noop("Characters"), characters),
+        (gettext_noop("Teams"), teams),
+        (gettext_noop("Story Arcs"), arcs),
     ];
     if rows.iter().all(|(_, names)| names.is_empty()) {
         return None;
     }
-    let group = group("In This Issue");
+    let group = group(&gettext("In This Issue"));
     for (label, names) in rows {
         if !names.is_empty() {
-            group.add(&property(label, &names.join(", ")));
+            group.add(&property(&gettext(label), &names.join(", ")));
         }
     }
     Some(group)
@@ -427,13 +467,13 @@ fn edition_group(
 ) -> adw::PreferencesGroup {
     let f = &e.edition.fields;
     let name = match version(&f.variant, f.printing) {
-        v if v.is_empty() && index == 0 => "Standard Edition".to_owned(),
-        v if v.is_empty() => "Edition".to_owned(),
+        v if v.is_empty() && index == 0 => gettext("Standard Edition"),
+        v if v.is_empty() => gettext("Edition"),
         v => v,
     };
     let artists: Vec<_> = e.cover_artists.iter().map(|a| a.name.as_str()).collect();
-    let flag = |value: Option<bool>, yes: &str| match value {
-        Some(true) => yes.to_owned(),
+    let flag = |value: Option<bool>, yes: String| match value {
+        Some(true) => yes,
         _ => String::new(),
     };
     let facts = format::joined([
@@ -445,10 +485,15 @@ fn edition_group(
             .map(format::binding)
             .unwrap_or_default()
             .to_owned(),
-        flag(f.has_dust_jacket, "Dust jacket"),
-        flag(f.has_slipcase, "Slipcase"),
+        flag(f.has_dust_jacket, gettext("Dust jacket")),
+        flag(f.has_slipcase, gettext("Slipcase")),
         f.cover_price
-            .map(|p| format!("Cover price {}", format::money(p, None)))
+            .map(|p| {
+                gettext_f(
+                    "Cover price {amount}",
+                    &[("amount", &format::money(p, None))],
+                )
+            })
             .unwrap_or_default(),
     ]);
 
@@ -462,7 +507,7 @@ fn edition_group(
     let trash = gtk::Button::builder()
         .icon_name("user-trash-symbolic")
         .valign(gtk::Align::Center)
-        .tooltip_text("Move Edition to Trash")
+        .tooltip_text(gettext("Move Edition to Trash"))
         .css_classes(["flat"])
         .build();
     {
@@ -473,16 +518,19 @@ fn edition_group(
     header.add_suffix(&trash);
     group.add(&header);
     if !artists.is_empty() {
-        group.add(&property("Cover Art", &artists.join(", ")));
+        group.add(&property(&gettext("Cover Art"), &artists.join(", ")));
     }
     if let Some(isbn) = &f.isbn {
-        group.add(&property("ISBN", isbn.as_str()));
+        group.add(&property(&gettext("ISBN"), isbn.as_str()));
     }
     if let Some(barcode) = &f.barcode {
-        group.add(&property("Barcode", barcode));
+        group.add(&property(&gettext("Barcode"), barcode));
     }
     if e.copies.is_empty() {
-        let none = row("No copies", "Listed in the catalog only");
+        let none = row(
+            &gettext("No copies"),
+            &gettext("Listed in the catalog only"),
+        );
         none.add_css_class("dim-label");
         group.add(&none);
     }
@@ -500,32 +548,45 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
         Category::CollectedEdition => f
             .book_condition
             .map(format::condition)
-            .unwrap_or("No condition noted")
-            .to_owned(),
+            .map_or_else(|| gettext("No condition noted"), str::to_owned),
         Category::Comic | Category::Magazine => match format::grade(f.grade, f.grade_type) {
-            g if g.is_empty() => "Ungraded".to_owned(),
+            g if g.is_empty() => gettext("Ungraded"),
             g => g,
         },
     };
     let location = match (&c.storage_box, f.box_position) {
-        (Some(name), Some(position)) => format!("{name}, position {position}"),
+        (Some(name), Some(position)) => gettext_f(
+            "{box}, position {position}",
+            &[("box", name), ("position", &position.to_string())],
+        ),
         (Some(name), None) => name.clone(),
         (None, _) => String::new(),
     };
     let value = c
         .values
         .last()
-        .map(|v| format!("Worth {}", format::money(v.value, None)))
+        .map(|v| {
+            gettext_f(
+                "Worth {amount}",
+                &[("amount", &format::money(v.value, None))],
+            )
+        })
         .unwrap_or_default();
 
     let row = expander(
         &format::joined([
-            format!("Copy {number}"),
+            // Translators: copies of one edition are numbered 1, 2, 3...
+            gettext_f("Copy {number}", &[("number", &number.to_string())]),
             condition,
             match c.signatures.len() {
                 0 => String::new(),
-                1 => "Signed".to_owned(),
-                n => format!("{n} signatures"),
+                1 => gettext("Signed"),
+                n => ngettext_f(
+                    "{count} signature",
+                    "{count} signatures",
+                    n,
+                    &[("count", &n.to_string())],
+                ),
             },
         ]),
         &format::joined([location.as_str(), value.as_str()]),
@@ -533,7 +594,7 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
     let edit = gtk::Button::builder()
         .icon_name("document-edit-symbolic")
         .valign(gtk::Align::Center)
-        .tooltip_text("Edit This Copy")
+        .tooltip_text(gettext("Edit This Copy"))
         .css_classes(["flat"])
         .build();
     let hook = links.edit.clone();
@@ -548,17 +609,17 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
         }
     };
     add(
-        "Grading",
+        &gettext("Grading"),
         format::joined([
             f.cert_number
                 .as_ref()
-                .map(|n| format!("Certificate {n}"))
+                .map(|n| gettext_f("Certificate {number}", &[("number", n)]))
                 .unwrap_or_default(),
             f.label_type.clone().unwrap_or_default(),
         ]),
     );
     add(
-        "Dust Jacket",
+        &gettext("Dust Jacket"),
         f.dust_jacket_condition
             .map(format::condition)
             .unwrap_or_default()
@@ -569,9 +630,9 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
         add(
             format::verification(sf.verification),
             format::joined([
-                format!("Signed by {}", s.name),
+                gettext_f("Signed by {name}", &[("name", &s.name)]),
                 if sf.sketch {
-                    "with a sketch".to_owned()
+                    gettext("with a sketch")
                 } else {
                     String::new()
                 },
@@ -579,14 +640,14 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
                 sf.signed_on.map(format::date).unwrap_or_default(),
                 sf.cert_number
                     .as_ref()
-                    .map(|n| format!("Certificate {n}"))
+                    .map(|n| gettext_f("Certificate {number}", &[("number", n)]))
                     .unwrap_or_default(),
             ]),
         );
     }
-    add("Location", location.clone());
+    add(&gettext("Location"), location.clone());
     add(
-        "Purchased",
+        &gettext("Purchased"),
         format::joined([
             f.purchase_price
                 .map(|p| format::money(p, f.purchase_date))
@@ -596,16 +657,17 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
         ]),
     );
     add(
-        "Tags",
+        &gettext("Tags"),
         c.tags
             .iter()
             .map(|t| t.name.as_str())
             .collect::<Vec<_>>()
             .join(", "),
     );
-    add("Notes", f.notes.clone());
+    add(&gettext("Notes"), f.notes.clone());
     add(
-        "Added",
+        // Translators: when the copy was added to the collection.
+        &gettext("Added"),
         format::local_date(&c.copy.added_at)
             .map(format::date)
             .unwrap_or_default(),
@@ -631,7 +693,7 @@ fn photo_row(c: &CopyDetail, links: &Links) -> gtk::ListBoxRow {
     if !c.photos.is_empty() {
         let swap = gtk::Button::builder()
             .icon_name("object-flip-horizontal-symbolic")
-            .tooltip_text("Swap Front and Back")
+            .tooltip_text(gettext("Swap Front and Back"))
             .valign(gtk::Align::Center)
             .css_classes(["flat", "circular"])
             .build();
@@ -647,9 +709,23 @@ fn photo_row(c: &CopyDetail, links: &Links) -> gtk::ListBoxRow {
 }
 
 fn photo_slot(copy: CopyId, side: Side, has_photo: bool, links: &Links) -> gtk::Box {
-    let (title, missing) = match side {
-        Side::Front => ("Front Cover", "No Front Cover Image"),
-        Side::Back => ("Back Cover", "No Back Cover Image"),
+    // Whole sentences for each side, since languages differ in how a
+    // side's name fits into them.
+    let (title, missing, replace_tip, remove_tip, add_tip) = match side {
+        Side::Front => (
+            gettext("Front Cover"),
+            gettext("No Front Cover Image"),
+            gettext("Replace the Front Cover Photo"),
+            gettext("Remove the Front Cover Photo"),
+            gettext("Add a Front Cover Photo"),
+        ),
+        Side::Back => (
+            gettext("Back Cover"),
+            gettext("No Back Cover Image"),
+            gettext("Replace the Back Cover Photo"),
+            gettext("Remove the Back Cover Photo"),
+            gettext("Add a Back Cover Photo"),
+        ),
     };
     let frame = gtk::Box::builder()
         .width_request(120)
@@ -661,10 +737,10 @@ fn photo_slot(copy: CopyId, side: Side, has_photo: bool, links: &Links) -> gtk::
         .css_classes(["card"])
         .build();
     frame.append(&photo_or_placeholder(
-        copy, side, has_photo, missing, true, links,
+        copy, side, has_photo, &missing, true, links,
     ));
     let caption = gtk::Label::builder()
-        .label(title)
+        .label(&title)
         .css_classes(["caption-heading"])
         .build();
     let buttons = gtk::Box::builder()
@@ -680,12 +756,12 @@ fn photo_slot(copy: CopyId, side: Side, has_photo: bool, links: &Links) -> gtk::
             .build()
     };
     if has_photo {
-        let replace = button("_Replace\u{2026}", &format!("Replace the {title} Photo"));
+        let replace = button(&gettext("_Replace\u{2026}"), &replace_tip);
         let hook = links.add_photo.clone();
         replace.connect_clicked(move |_| hook(copy, side));
         let remove = gtk::Button::builder()
             .icon_name("user-trash-symbolic")
-            .tooltip_text(format!("Remove the {title} Photo"))
+            .tooltip_text(&remove_tip)
             .css_classes(["flat"])
             .build();
         let hook = links.remove_photo.clone();
@@ -693,7 +769,7 @@ fn photo_slot(copy: CopyId, side: Side, has_photo: bool, links: &Links) -> gtk::
         buttons.append(&replace);
         buttons.append(&remove);
     } else {
-        let add = button("_Add Photo\u{2026}", &format!("Add a {title} Photo"));
+        let add = button(&gettext("_Add Photo\u{2026}"), &add_tip);
         let hook = links.add_photo.clone();
         add.connect_clicked(move |_| hook(copy, side));
         buttons.append(&add);
@@ -725,14 +801,14 @@ fn value_history(row: &adw::ExpanderRow, c: &CopyDetail, links: &Links) {
         let entry = plain_row(
             &format::money(v.value, Some(v.date)),
             &format::joined([
-                format!("Value as of {}", format::date(v.date)),
+                gettext_f("Value as of {date}", &[("date", &format::date(v.date))]),
                 v.source.clone(),
             ]),
         );
         let delete = gtk::Button::builder()
             .icon_name("user-trash-symbolic")
             .valign(gtk::Align::Center)
-            .tooltip_text("Delete This Value")
+            .tooltip_text(gettext("Delete This Value"))
             .css_classes(["flat"])
             .build();
         let hook = links.delete_value.clone();
@@ -742,7 +818,7 @@ fn value_history(row: &adw::ExpanderRow, c: &CopyDetail, links: &Links) {
         row.add_row(&entry);
     }
     let add = adw::ButtonRow::builder()
-        .title("Add Value")
+        .title(gettext("Add Value"))
         .start_icon_name("list-add-symbolic")
         .build();
     let hook = links.add_value.clone();
@@ -772,10 +848,10 @@ fn issue_menu(page: &adw::ToolbarView, issue: IssueId, links: &Links) -> gtk::Me
     actions.add_action(&trash);
     page.insert_action_group("issue", Some(&actions));
     let menu = gio::Menu::new();
-    menu.append(Some("Move Issue to _Trash"), Some("issue.trash"));
+    menu.append(Some(&gettext("Move Issue to _Trash")), Some("issue.trash"));
     gtk::MenuButton::builder()
         .icon_name("view-more-symbolic")
-        .tooltip_text("Issue Menu")
+        .tooltip_text(gettext("Issue Menu"))
         .menu_model(&menu)
         .build()
 }
@@ -789,21 +865,26 @@ fn more_menu(
     links: &Links,
 ) -> gtk::MenuButton {
     let next = match category {
-        Category::CollectedEdition => "Add _Next Volume",
-        Category::Comic | Category::Magazine => "Add _Next Issue",
+        Category::CollectedEdition => gettext("Add _Next Volume"),
+        Category::Comic | Category::Magazine => gettext("Add _Next Issue"),
     };
     let actions = gio::SimpleActionGroup::new();
     let menu = gio::Menu::new();
     for (name, label, kind) in [
-        ("another", "Add Another _Copy", Prefill::AnotherCopy),
-        ("variant", "Add _Variant", Prefill::Variant),
+        (
+            "another",
+            gettext("Add Another _Copy"),
+            Prefill::AnotherCopy,
+        ),
+        // Translators: a cover variant or another printing of the issue.
+        ("variant", gettext("Add _Variant"), Prefill::Variant),
         ("next", next, Prefill::NextIssue),
     ] {
         let action = gio::SimpleAction::new(name, None);
         let hook = links.prefill.clone();
         action.connect_activate(move |_, _| hook(copy, kind));
         actions.add_action(&action);
-        menu.append(Some(label), Some(&format!("copy.{name}")));
+        menu.append(Some(&label), Some(&format!("copy.{name}")));
     }
     let trash = gio::SimpleAction::new("trash", None);
     {
@@ -812,13 +893,13 @@ fn more_menu(
     }
     actions.add_action(&trash);
     let last = gio::Menu::new();
-    last.append(Some("Move to _Trash"), Some("copy.trash"));
+    last.append(Some(&gettext("Move to _Trash")), Some("copy.trash"));
     menu.append_section(None, &last);
     row.insert_action_group("copy", Some(&actions));
     gtk::MenuButton::builder()
         .icon_name("view-more-symbolic")
         .valign(gtk::Align::Center)
-        .tooltip_text("More Ways to Add")
+        .tooltip_text(gettext("More Ways to Add"))
         .css_classes(["flat"])
         .menu_model(&menu)
         .build()

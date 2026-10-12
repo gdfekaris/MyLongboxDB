@@ -6,12 +6,13 @@ use adw::prelude::*;
 use gtk::gio;
 use mylongbox_core::{Amount, BoxId, BulkChange, Currency, Database, GradeType};
 
+use crate::i18n::{gettext, gettext_noop, ngettext_f};
 use crate::{autocomplete, format};
 
 const GRADERS: [(&str, Option<Option<GradeType>>); 6] = [
-    ("Leave as they are", None),
-    ("Not graded", Some(None)),
-    ("My own estimate", Some(Some(GradeType::Raw))),
+    (gettext_noop("Leave as they are"), None),
+    (gettext_noop("Not graded"), Some(None)),
+    (gettext_noop("My own estimate"), Some(Some(GradeType::Raw))),
     ("CGC", Some(Some(GradeType::Cgc))),
     ("CBCS", Some(Some(GradeType::Cbcs))),
     ("PGX", Some(Some(GradeType::Pgx))),
@@ -84,7 +85,7 @@ pub fn ask(
 ) {
     let db: Weak<Database> = Rc::downgrade(db);
     let row = |title: &str| adw::EntryRow::builder().title(title).build();
-    let put_in = row("Put in Box");
+    let put_in = row(&gettext("Put in Box"));
     {
         let db = db.clone();
         autocomplete::attach(
@@ -101,25 +102,29 @@ pub fn ask(
         );
     }
     let take_out = adw::SwitchRow::builder()
-        .title("Take Out of Their Boxes")
+        .title(gettext("Take Out of Their Boxes"))
         .build();
     take_out
         .bind_property("active", &put_in, "sensitive")
         .invert_boolean()
         .sync_create()
         .build();
-    let tags = row("Add Tags (separate with commas)");
+    let tags = row(&gettext("Add Tags (separate with commas)"));
     let graded_by = adw::ComboRow::builder()
-        .title("Graded By")
-        .model(&gtk::StringList::new(&GRADERS.map(|(name, _)| name)))
+        .title(gettext("Graded By"))
+        .model(&{
+            let names: Vec<String> = GRADERS.iter().map(|(name, _)| gettext(name)).collect();
+            gtk::StringList::new(&names.iter().map(String::as_str).collect::<Vec<_>>())
+        })
         .build();
-    let value = row("Add a Value");
-    let currency = gtk::DropDown::from_strings(&["USD", "Gold (oz)", "Bitcoin"]);
+    let value = row(&gettext("Add a Value"));
+    let (gold, bitcoin) = (gettext("Gold (oz)"), gettext("Bitcoin"));
+    let currency = gtk::DropDown::from_strings(&["USD", &gold, &bitcoin]);
     currency.set_valign(gtk::Align::Center);
     value.add_suffix(&currency);
-    let date = row("Value Date (YYYY-MM-DD)");
+    let date = row(&gettext("Value Date (YYYY-MM-DD)"));
     date.set_text(&format::today().map(|d| d.to_string()).unwrap_or_default());
-    let source = row("Value Source");
+    let source = row(&gettext("Value Source"));
 
     let list = gtk::ListBox::builder()
         .selection_mode(gtk::SelectionMode::None)
@@ -143,23 +148,23 @@ pub fn ask(
         date,
         source,
     });
-    let body = match count {
-        1 => "Changes apply to the selected copy. Collected editions keep their condition \
-              when a grader is chosen."
-            .to_owned(),
-        n => format!(
-            "Changes apply to all {n} selected copies. Collected editions keep their \
-             condition when a grader is chosen."
-        ),
-    };
+    let body = ngettext_f(
+        "Changes apply to the selected copy. Collected editions keep their condition \
+         when a grader is chosen.",
+        "Changes apply to all {count} selected copies. Collected editions keep their \
+         condition when a grader is chosen.",
+        count,
+        &[("count", &count.to_string())],
+    );
     let dialog = adw::AlertDialog::builder()
-        .heading("Edit Selected")
+        .heading(gettext("Edit Selected"))
         .body(body)
         .extra_child(&list)
         .default_response("apply")
         .close_response("cancel")
         .build();
-    dialog.add_responses(&[("cancel", "_Cancel"), ("apply", "_Apply")]);
+    let (cancel_label, apply_label) = (gettext("_Cancel"), gettext("_Apply"));
+    dialog.add_responses(&[("cancel", &cancel_label), ("apply", &apply_label)]);
     dialog.set_response_appearance("apply", adw::ResponseAppearance::Suggested);
     dialog.set_response_enabled("apply", false);
     {

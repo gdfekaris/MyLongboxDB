@@ -1,6 +1,7 @@
 //! How catalog values read on screen.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use gtk::glib;
 use mylongbox_core::{
@@ -8,12 +9,27 @@ use mylongbox_core::{
     MagazineFormat, RateTable, Role, Verification,
 };
 
+use crate::i18n::{gettext, gettext_f, gettext_noop, ngettext_f, pgettext};
 use crate::settings::Settings;
 
 thread_local! {
     /// How amounts and grades are shown; the app updates it when the
     /// preferences or the exchange rates change. GTK runs on one thread.
     static DISPLAY: RefCell<Display> = RefCell::new(Display::default());
+
+    static LABELS: RefCell<HashMap<&'static str, &'static str>> = RefCell::new(HashMap::new());
+}
+
+/// A fixed label, such as a condition's name, in the reader's language.
+/// Each is looked up once and kept for the life of the app, so callers
+/// can hold it like the English text; there are only a few dozen.
+fn label(msgid: &'static str) -> &'static str {
+    LABELS.with(|labels| {
+        *labels
+            .borrow_mut()
+            .entry(msgid)
+            .or_insert_with(|| Box::leak(gettext(msgid).into_boxed_str()))
+    })
 }
 
 #[derive(Clone, Debug, Default)]
@@ -71,14 +87,20 @@ pub fn totals(rows: &[mylongbox_core::CopyRow]) -> String {
             false,
             show,
         );
-        let count = match rows.len() {
-            1 => "1 book".to_owned(),
-            n => format!("{} books", grouped(&n.to_string())),
-        };
+        let n = rows.len();
+        let count = ngettext_f(
+            "{count} book",
+            "{count} books",
+            n,
+            &[("count", &grouped(&n.to_string()))],
+        );
         joined([
             count,
-            worth.map(|w| format!("Worth {w}")).unwrap_or_default(),
-            cost.map(|c| format!("Cost {c}")).unwrap_or_default(),
+            worth
+                .map(|w| gettext_f("Worth {amount}", &[("amount", &w)]))
+                .unwrap_or_default(),
+            cost.map(|c| gettext_f("Cost {amount}", &[("amount", &c)]))
+                .unwrap_or_default(),
         ])
     })
 }
@@ -115,9 +137,29 @@ pub fn grouped(text: &str) -> String {
     format!("{}{whole}{}", &text[..start], &text[end..])
 }
 
+/// The English month abbreviations, which cover dates are read in.
 const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
+/// A month's short name, as shown, for months numbered 1 to 12.
+fn month_name(month: u8) -> String {
+    let context = "month abbreviation";
+    match month {
+        1 => pgettext(context, "Jan"),
+        2 => pgettext(context, "Feb"),
+        3 => pgettext(context, "Mar"),
+        4 => pgettext(context, "Apr"),
+        5 => pgettext(context, "May"),
+        6 => pgettext(context, "Jun"),
+        7 => pgettext(context, "Jul"),
+        8 => pgettext(context, "Aug"),
+        9 => pgettext(context, "Sep"),
+        10 => pgettext(context, "Oct"),
+        11 => pgettext(context, "Nov"),
+        _ => pgettext(context, "Dec"),
+    }
+}
 
 /// e.g. `CGC 9.8`, or `9.4` for the owner's own estimate, with the
 /// grade's letters added when the preferences ask for them.
@@ -140,86 +182,91 @@ pub fn grade(grade: Option<Grade>, grade_type: Option<GradeType>) -> String {
 
 pub fn condition(condition: BookCondition) -> &'static str {
     match condition {
-        BookCondition::Sealed => "Sealed",
-        BookCondition::New => "New",
-        BookCondition::LikeNew => "Like New",
-        BookCondition::VeryGood => "Very Good",
-        BookCondition::Good => "Good",
-        BookCondition::Fair => "Fair",
-        BookCondition::Poor => "Poor",
+        BookCondition::Sealed => label(gettext_noop("Sealed")),
+        BookCondition::New => label(gettext_noop("New")),
+        BookCondition::LikeNew => label(gettext_noop("Like New")),
+        BookCondition::VeryGood => label(gettext_noop("Very Good")),
+        BookCondition::Good => label(gettext_noop("Good")),
+        BookCondition::Fair => label(gettext_noop("Fair")),
+        BookCondition::Poor => label(gettext_noop("Poor")),
     }
 }
 
 pub fn verification(verification: Verification) -> &'static str {
     match verification {
-        Verification::Unverified => "Unverified",
-        Verification::Witnessed => "Witnessed by me",
-        Verification::Certificate => "Certificate of authenticity",
-        Verification::Jsa => "JSA authenticated",
-        Verification::CgcSignatureSeries => "CGC Signature Series",
-        Verification::CgcJsa => "CGC Signature Verified (JSA)",
-        Verification::CbcsVerified => "CBCS Verified Signature",
-        Verification::PgxVerified => "PGX Signature Verified",
+        Verification::Unverified => label(gettext_noop("Unverified")),
+        Verification::Witnessed => label(gettext_noop("Witnessed by me")),
+        Verification::Certificate => label(gettext_noop("Certificate of authenticity")),
+        Verification::Jsa => label(gettext_noop("JSA authenticated")),
+        Verification::CgcSignatureSeries => label(gettext_noop("CGC Signature Series")),
+        Verification::CgcJsa => label(gettext_noop("CGC Signature Verified (JSA)")),
+        Verification::CbcsVerified => label(gettext_noop("CBCS Verified Signature")),
+        Verification::PgxVerified => label(gettext_noop("PGX Signature Verified")),
     }
 }
 
 /// The short form printed on spines and in listings.
 pub fn binding_badge(binding: Binding) -> &'static str {
     match binding {
-        Binding::Hardcover => "HC",
-        Binding::Softcover => "TPB",
-        Binding::OversizedHardcover => "OHC",
+        // Translators: short forms of hardcover, trade paperback, and
+        // oversized hardcover, as collectors abbreviate them.
+        Binding::Hardcover => label(gettext_noop("HC")),
+        Binding::Softcover => label(gettext_noop("TPB")),
+        Binding::OversizedHardcover => label(gettext_noop("OHC")),
     }
 }
 
 pub fn binding(binding: Binding) -> &'static str {
     match binding {
-        Binding::Hardcover => "Hardcover",
-        Binding::Softcover => "Softcover",
-        Binding::OversizedHardcover => "Oversized hardcover",
+        Binding::Hardcover => label(gettext_noop("Hardcover")),
+        Binding::Softcover => label(gettext_noop("Softcover")),
+        Binding::OversizedHardcover => label(gettext_noop("Oversized hardcover")),
     }
 }
 
 pub fn distribution(distribution: Distribution) -> &'static str {
     match distribution {
-        Distribution::Direct => "Direct edition",
-        Distribution::Newsstand => "Newsstand edition",
+        Distribution::Direct => label(gettext_noop("Direct edition")),
+        Distribution::Newsstand => label(gettext_noop("Newsstand edition")),
     }
 }
 
 pub fn magazine_format(format: MagazineFormat) -> &'static str {
     match format {
-        MagazineFormat::Standard => "Standard size",
-        MagazineFormat::Treasury => "Treasury size",
-        MagazineFormat::Digest => "Digest size",
+        MagazineFormat::Standard => label(gettext_noop("Standard size")),
+        MagazineFormat::Treasury => label(gettext_noop("Treasury size")),
+        MagazineFormat::Digest => label(gettext_noop("Digest size")),
     }
 }
 
 /// Plural, as a heading over the people credited.
 pub fn role(role: Role) -> &'static str {
     match role {
-        Role::Writer => "Writers",
-        Role::Penciller => "Pencillers",
-        Role::Inker => "Inkers",
-        Role::Colorist => "Colorists",
-        Role::Letterer => "Letterers",
-        Role::CoverArtist => "Cover Artists",
-        Role::Editor => "Editors",
-        Role::Article => "Articles",
-        Role::Interview => "Interviews",
+        Role::Writer => label(gettext_noop("Writers")),
+        Role::Penciller => label(gettext_noop("Pencillers")),
+        Role::Inker => label(gettext_noop("Inkers")),
+        Role::Colorist => label(gettext_noop("Colorists")),
+        Role::Letterer => label(gettext_noop("Letterers")),
+        Role::CoverArtist => label(gettext_noop("Cover Artists")),
+        Role::Editor => label(gettext_noop("Editors")),
+        Role::Article => label(gettext_noop("Articles")),
+        Role::Interview => label(gettext_noop("Interviews")),
     }
 }
 
 /// e.g. `2nd printing`.
 pub fn printing(printing: u32) -> String {
-    let suffix = match (printing % 10, printing % 100) {
-        (_, 11..=13) => "th",
-        (1, _) => "st",
-        (2, _) => "nd",
-        (3, _) => "rd",
-        _ => "th",
-    };
-    format!("{printing}{suffix} printing")
+    let number = printing.to_string();
+    let values = [("number", number.as_str())];
+    match (printing % 10, printing % 100) {
+        // Translators: English ordinals differ by their last digit; use
+        // the same form for all four if your language needs no difference.
+        (_, 11..=13) => gettext_f("{number}th printing", &values),
+        (1, _) => gettext_f("{number}st printing", &values),
+        (2, _) => gettext_f("{number}nd printing", &values),
+        (3, _) => gettext_f("{number}rd printing", &values),
+        _ => gettext_f("{number}th printing", &values),
+    }
 }
 
 /// e.g. `Mar 1975`, or `1975` when the month is unknown.
@@ -227,7 +274,11 @@ pub fn cover_date(date: Option<CoverDate>) -> String {
     match date {
         None => String::new(),
         Some(d) => match d.month() {
-            Some(m) => format!("{} {}", MONTHS[usize::from(m - 1)], d.year()),
+            // Translators: a cover date such as "Mar 1975".
+            Some(m) => gettext_f(
+                "{month} {year}",
+                &[("month", &month_name(m)), ("year", &d.year().to_string())],
+            ),
             None => d.year().to_string(),
         },
     }
@@ -290,11 +341,14 @@ pub fn parse_cover_date(text: &str) -> Result<Option<CoverDate>, ()> {
 
 /// e.g. `Mar 5, 1975`.
 pub fn date(date: Date) -> String {
-    format!(
-        "{} {}, {}",
-        MONTHS[usize::from(date.month() - 1)],
-        date.day(),
-        date.year()
+    // Translators: a date such as "Mar 5, 1975".
+    gettext_f(
+        "{month} {day}, {year}",
+        &[
+            ("month", &month_name(date.month())),
+            ("day", &date.day().to_string()),
+            ("year", &date.year().to_string()),
+        ],
     )
 }
 
@@ -312,7 +366,6 @@ pub fn local_date(timestamp: &str) -> Option<Date> {
     .ok()
 }
 
-/// Today's date on this computer.
 /// What a backup made at `now` is called, e.g.
 /// `mylongboxdb-Comics-2026-10-10-0930.sqlite`.
 pub fn backup_name(collection: &str, now: &glib::DateTime) -> String {
@@ -326,6 +379,7 @@ pub fn backup_name(collection: &str, now: &glib::DateTime) -> String {
     )
 }
 
+/// Today's date on this computer.
 pub fn today() -> Option<Date> {
     let now = glib::DateTime::now_local().ok()?;
     Date::new(

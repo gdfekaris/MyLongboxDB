@@ -2,6 +2,8 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::glib;
 
+use crate::i18n::{gettext, gettext_f, ngettext_f};
+
 // The template macro reads the Blueprint file without telling Cargo about
 // it; including the bytes makes edits to the file trigger a rebuild.
 const _: &[u8] = include_bytes!("../../../data/ui/window.blp");
@@ -160,7 +162,7 @@ impl MainWindow {
         let toast = adw::Toast::new("");
         toast.set_use_markup(false);
         toast.set_title(message);
-        toast.set_button_label(Some("_Undo"));
+        toast.set_button_label(Some(&gettext("_Undo")));
         toast.connect_button_clicked(move |_| undo());
         self.show_toast(toast);
     }
@@ -183,7 +185,11 @@ impl MainWindow {
         imp.window_title.set_subtitle(subtitle);
         imp.content_page.set_title(title);
         imp.section_page.set_title(title);
-        self.set_title(Some(&format!("{collection} — MyLongboxDB")));
+        // Translators: the window title; {collection} is the open collection's name.
+        self.set_title(Some(&gettext_f(
+            "{collection} — MyLongboxDB",
+            &[("collection", collection)],
+        )));
     }
 
     /// Opens a page, such as a book's details, over the section.
@@ -274,8 +280,9 @@ impl MainWindow {
         let banner = &self.imp().correction_banner;
         match corrected {
             Some(corrected) => {
-                banner.set_title(&format!(
-                    "Nothing matches \u{201c}{typed}\u{201d}. Showing results for \u{201c}{corrected}\u{201d}."
+                banner.set_title(&gettext_f(
+                    "Nothing matches \u{201c}{typed}\u{201d}. Showing results for \u{201c}{corrected}\u{201d}.",
+                    &[("typed", typed), ("corrected", corrected)],
                 ));
                 banner.set_revealed(true);
             }
@@ -302,9 +309,13 @@ impl MainWindow {
         let imp = self.imp();
         imp.selection_bar.set_revealed(selecting);
         imp.selection_label.set_label(&match count {
-            0 => "Select books to change".to_owned(),
-            1 => "1 selected".to_owned(),
-            n => format!("{n} selected"),
+            0 => gettext("Select books to change"),
+            n => ngettext_f(
+                "{count} selected",
+                "{count} selected",
+                usize::try_from(n).unwrap_or(usize::MAX),
+                &[("count", &n.to_string())],
+            ),
         });
     }
 

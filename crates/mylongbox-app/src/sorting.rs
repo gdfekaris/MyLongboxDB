@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use mylongbox_core::{Amount, CopyRow, Currency, Date, RateTable};
 
+use crate::i18n::{gettext_noop, ngettext_f};
 /// What results can be sorted by.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SortBy {
@@ -20,12 +21,16 @@ pub enum SortBy {
 
 /// Each way to sort, with the name its menu item's action carries.
 pub const SORTS: [(SortBy, &str, &str); 6] = [
-    (SortBy::Usual, "usual", "_Usual Order"),
-    (SortBy::CoverDate, "cover-date", "_Cover Date"),
-    (SortBy::Grade, "grade", "_Grade"),
-    (SortBy::Value, "value", "Current _Value"),
-    (SortBy::PurchaseDate, "purchase-date", "_Purchase Date"),
-    (SortBy::Added, "added", "Date _Added"),
+    (SortBy::Usual, "usual", gettext_noop("_Usual Order")),
+    (SortBy::CoverDate, "cover-date", gettext_noop("_Cover Date")),
+    (SortBy::Grade, "grade", gettext_noop("_Grade")),
+    (SortBy::Value, "value", gettext_noop("Current _Value")),
+    (
+        SortBy::PurchaseDate,
+        "purchase-date",
+        gettext_noop("_Purchase Date"),
+    ),
+    (SortBy::Added, "added", gettext_noop("Date _Added")),
 ];
 
 impl SortBy {
@@ -135,7 +140,13 @@ pub fn total(
     }
     let mut text = parts.join(" + ");
     if unconverted > 0 {
-        text.push_str(&format!(" ({unconverted} without a rate)"));
+        let note = ngettext_f(
+            "{count} without a rate",
+            "{count} without a rate",
+            unconverted,
+            &[("count", &unconverted.to_string())],
+        );
+        text.push_str(&format!(" ({note})"));
     }
     Some(text)
 }

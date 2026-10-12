@@ -3,6 +3,8 @@
 use adw::prelude::*;
 use mylongbox_core::{Amount, Currency, Date, ValueEntry};
 
+use crate::i18n::gettext;
+
 /// Space around the line, so dots at the edges are not cut off.
 const PAD: f64 = 8.0;
 
@@ -67,9 +69,9 @@ pub fn value_chart(values: &[ValueEntry]) -> gtk::DrawingArea {
         // Takes the accent color, which the line is drawn in.
         .css_classes(["accent"])
         .build();
-    area.update_property(&[gtk::accessible::Property::Label(
+    area.update_property(&[gtk::accessible::Property::Label(&gettext(
         "Chart of this copy's value over time",
-    )]);
+    ))]);
     area.set_draw_func(move |area, cr, width, height| {
         let spots = scale(&points, f64::from(width), f64::from(height));
         let color = area.color();

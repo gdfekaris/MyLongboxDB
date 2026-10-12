@@ -6,6 +6,7 @@ use adw::prelude::*;
 use gtk::gio;
 
 use crate::autocomplete;
+use crate::i18n::{gettext, gettext_f};
 
 /// Names to offer for what has been typed so far.
 pub type Suggest = Rc<dyn Fn(&str) -> Vec<String>>;
@@ -44,7 +45,8 @@ pub fn ask_text(parent: &impl IsA<gtk::Widget>, ask: Ask<'_>, done: impl Fn(Stri
         .default_response("go")
         .close_response("cancel")
         .build();
-    dialog.add_responses(&[("cancel", "_Cancel"), ("go", ask.action)]);
+    let cancel = gettext("_Cancel");
+    dialog.add_responses(&[("cancel", &cancel), ("go", ask.action)]);
     dialog.set_response_appearance("go", adw::ResponseAppearance::Suggested);
     dialog.set_response_enabled("go", !ask.initial.trim().is_empty());
     {
@@ -91,7 +93,7 @@ pub fn alternate_names(
         .visible(false)
         .build();
     let add = adw::EntryRow::builder()
-        .title("Add an Alternate Name")
+        .title(gettext("Add an Alternate Name"))
         .show_apply_button(true)
         .build();
     list.append(&add);
@@ -105,7 +107,7 @@ pub fn alternate_names(
             let remove = gtk::Button::builder()
                 .icon_name("user-trash-symbolic")
                 .valign(gtk::Align::Center)
-                .tooltip_text("Remove This Name")
+                .tooltip_text(gettext("Remove This Name"))
                 .css_classes(["flat"])
                 .build();
             let (owner, hooks, error, alias) =
@@ -156,15 +158,17 @@ pub fn alternate_names(
     content.append(&list);
     content.append(&error);
     let dialog = adw::AlertDialog::builder()
-        .heading("Alternate Names")
-        .body(format!(
+        .heading(gettext("Alternate Names"))
+        .body(gettext_f(
             "Other spellings that find \u{201c}{name}\u{201d} when typed, such as \
-             initials or a pen name."
+             initials or a pen name.",
+            &[("name", name)],
         ))
         .extra_child(&content)
         .default_response("close")
         .close_response("close")
         .build();
-    dialog.add_responses(&[("close", "_Close")]);
+    let close = gettext("_Close");
+    dialog.add_responses(&[("close", &close)]);
     dialog.present(Some(parent));
 }

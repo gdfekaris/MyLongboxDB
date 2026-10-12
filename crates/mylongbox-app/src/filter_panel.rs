@@ -8,16 +8,27 @@ use adw::prelude::*;
 use mylongbox_core::{FilterSet, OwnedAs, SeriesId};
 
 use crate::filter_fields::{FIELDS, Inputs, Kind, Shape, build};
+use crate::i18n::{gettext, gettext_noop};
 
 const OWNED_AS: [(&str, OwnedAs); 3] = [
-    ("Owned as Single Issues", OwnedAs::SingleIssue),
-    ("Owned in Collected Editions", OwnedAs::CollectedEdition),
-    ("Owned Either Way", OwnedAs::Either),
+    (gettext_noop("Owned as Single Issues"), OwnedAs::SingleIssue),
+    (
+        gettext_noop("Owned in Collected Editions"),
+        OwnedAs::CollectedEdition,
+    ),
+    (gettext_noop("Owned Either Way"), OwnedAs::Either),
 ];
 
-/// A searchable menu of `labels`.
+/// `labels` in the reader's language, for a menu or the like.
+fn translated(labels: &[&str]) -> Vec<String> {
+    labels.iter().map(|l| gettext(l)).collect()
+}
+
+/// A menu, searchable if asked, of `labels` in the reader's language.
 fn menu(labels: &[&str], searchable: bool) -> gtk::DropDown {
-    let dropdown = gtk::DropDown::from_strings(labels);
+    let shown = translated(labels);
+    let shown: Vec<&str> = shown.iter().map(String::as_str).collect();
+    let dropdown = gtk::DropDown::from_strings(&shown);
     if searchable {
         dropdown.set_enable_search(true);
         dropdown.set_expression(Some(gtk::PropertyExpression::new(
@@ -106,15 +117,15 @@ impl FilterPanel {
             .vexpand(false)
             .build();
         let add = gtk::Button::builder()
-            .label("_Add Filter")
+            .label(gettext("_Add Filter"))
             .use_underline(true)
             .build();
         let owned_as = menu(&OWNED_AS.map(|(label, _)| label), false);
-        owned_as.set_tooltip_text(Some(
+        owned_as.set_tooltip_text(Some(&gettext(
             "Whether issue fields find the issues themselves or books reprinting them",
-        ));
+        )));
         let clear = gtk::Button::builder()
-            .label("_Clear")
+            .label(gettext("_Clear"))
             .use_underline(true)
             .css_classes(["flat"])
             .build();
@@ -216,7 +227,7 @@ impl FilterPanel {
         let values = gtk::Box::builder().spacing(6).hexpand(true).build();
         let remove = gtk::Button::builder()
             .icon_name("list-remove-symbolic")
-            .tooltip_text("Remove This Filter")
+            .tooltip_text(gettext("Remove This Filter"))
             .valign(gtk::Align::Center)
             .css_classes(["flat", "circular"])
             .build();
@@ -248,8 +259,10 @@ impl FilterPanel {
             let kind = FIELDS
                 .get(selected(field))
                 .map_or(FIELDS[0].kind, |f| f.kind);
+            let conditions = translated(kind.conditions());
+            let conditions: Vec<&str> = conditions.iter().map(String::as_str).collect();
             row.condition
-                .set_model(Some(&gtk::StringList::new(kind.conditions())));
+                .set_model(Some(&gtk::StringList::new(&conditions)));
             row.condition.set_selected(0);
             rebuild_values(&row, &changed);
             changed();
@@ -288,7 +301,7 @@ fn rebuild_values(row: &Rc<Row>, changed: &Rc<dyn Fn()>) {
     row.checks.borrow_mut().clear();
     let entry = |placeholder: &str| {
         let entry = gtk::Entry::builder()
-            .placeholder_text(placeholder)
+            .placeholder_text(gettext(placeholder))
             .hexpand(true)
             .width_chars(8)
             .valign(gtk::Align::Center)
@@ -324,12 +337,12 @@ fn rebuild_values(row: &Rc<Row>, changed: &Rc<dyn Fn()>) {
                 .spacing(2)
                 .build();
             let button = gtk::MenuButton::builder()
-                .label("Choose\u{2026}")
+                .label(gettext("Choose\u{2026}"))
                 .popover(&gtk::Popover::builder().child(&choices).build())
                 .valign(gtk::Align::Center)
                 .build();
             for option in options {
-                let check = gtk::CheckButton::with_label(option);
+                let check = gtk::CheckButton::with_label(&gettext(option));
                 let (changed, weak, button) = (changed.clone(), Rc::downgrade(row), button.clone());
                 check.connect_toggled(move |_| {
                     if let Some(row) = weak.upgrade() {
@@ -355,7 +368,7 @@ fn checked_labels(row: &Row) -> String {
         .filter_map(|c| c.label().map(String::from))
         .collect();
     if picked.is_empty() {
-        "Choose\u{2026}".to_owned()
+        gettext("Choose\u{2026}")
     } else {
         picked.join(", ")
     }

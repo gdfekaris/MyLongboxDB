@@ -7,6 +7,7 @@ use relm4::typed_view::column::{RelmColumn, TypedColumnView};
 use relm4::typed_view::grid::RelmGridItem;
 use relm4::typed_view::list::RelmListItem;
 
+use crate::i18n::{gettext, gettext_f, gettext_noop, ngettext_f};
 use crate::{covers, format};
 
 /// One physical book in the cover grid or the list, and whether its card
@@ -32,7 +33,7 @@ impl RelmGridItem for Book {
     type Widgets = BookWidgets;
 
     fn setup(_: &gtk::ListItem) -> (gtk::Box, BookWidgets) {
-        let missing = covers::placeholder("No Cover Image", true);
+        let missing = covers::placeholder(&gettext("No Cover Image"), true);
         // Filling the tile keeps the grid even; the book's page shows the
         // whole photo.
         let photo = gtk::Picture::builder()
@@ -57,7 +58,7 @@ impl RelmGridItem for Book {
             .css_classes(["cover-badge"])
             .build();
         let signed = gtk::Label::builder()
-            .label("Signed")
+            .label(gettext("Signed"))
             .halign(gtk::Align::Start)
             .valign(gtk::Align::End)
             .margin_bottom(6)
@@ -141,22 +142,25 @@ impl RelmGridItem for Book {
 /// What a book still needs, e.g. `Needs back photo, value`, or nothing
 /// when it is complete.
 pub fn needs_line(row: &CopyRow) -> String {
-    let needs: Vec<&str> = row
+    let needs: Vec<String> = row
         .needs()
         .into_iter()
         .map(|need| match need {
-            Need::FrontPhoto => "front photo",
-            Need::BackPhoto => "back photo",
-            Need::Grade if row.category == Category::CollectedEdition => "condition",
-            Need::Grade => "grade",
-            Need::StorageBox => "box",
-            Need::Value => "value",
+            // Translators: these name what a book still lacks, listed
+            // after "Needs", as in "Needs back photo, value".
+            Need::FrontPhoto => gettext("front photo"),
+            Need::BackPhoto => gettext("back photo"),
+            Need::Grade if row.category == Category::CollectedEdition => gettext("condition"),
+            Need::Grade => gettext("grade"),
+            Need::StorageBox => gettext("box"),
+            Need::Value => gettext("value"),
         })
         .collect();
     if needs.is_empty() {
         String::new()
     } else {
-        format!("Needs {}", needs.join(", "))
+        // Translators: {missing} is a list such as "back photo, value".
+        gettext_f("Needs {missing}", &[("missing", &needs.join(", "))])
     }
 }
 
@@ -185,7 +189,7 @@ fn condition(row: &CopyRow) -> String {
     format::joined([
         condition,
         if row.signed {
-            "Signed".to_owned()
+            gettext("Signed")
         } else {
             String::new()
         },
@@ -224,7 +228,7 @@ fn location(row: &CopyRow) -> String {
 
 /// Declares a list column of one line of text.
 macro_rules! text_column {
-    ($name:ident, $title:literal, expand: $expand:literal, xalign: $xalign:literal, $text:expr) => {
+    ($name:ident, $title:expr, expand: $expand:literal, xalign: $xalign:literal, $text:expr) => {
         pub struct $name;
 
         impl RelmColumn for $name {
@@ -235,6 +239,10 @@ macro_rules! text_column {
             const COLUMN_NAME: &'static str = $title;
             const ENABLE_RESIZE: bool = true;
             const ENABLE_EXPAND: bool = $expand;
+
+            fn header_title() -> String {
+                gettext(Self::COLUMN_NAME)
+            }
 
             fn setup(_: &gtk::ListItem) -> (gtk::Label, ()) {
                 let label = gtk::Label::builder()
@@ -252,18 +260,20 @@ macro_rules! text_column {
     };
 }
 
-text_column!(SeriesColumn, "Series", expand: true, xalign: 0.0, |r| r.series.clone());
-text_column!(NumberColumn, "No.", expand: false, xalign: 0.0, number);
-text_column!(TitleColumn, "Title", expand: true, xalign: 0.0, |r| r.title.clone());
-text_column!(VersionColumn, "Variant", expand: false, xalign: 0.0, |r| {
+text_column!(SeriesColumn, gettext_noop("Series"), expand: true, xalign: 0.0, |r| r.series.clone());
+// Translators: the heading of the issue number column, short for
+// "number".
+text_column!(NumberColumn, gettext_noop("No."), expand: false, xalign: 0.0, number);
+text_column!(TitleColumn, gettext_noop("Title"), expand: true, xalign: 0.0, |r| r.title.clone());
+text_column!(VersionColumn, gettext_noop("Variant"), expand: false, xalign: 0.0, |r| {
     version(&r.variant, r.printing)
 });
-text_column!(DateColumn, "Cover Date", expand: false, xalign: 0.0, |r| {
+text_column!(DateColumn, gettext_noop("Cover Date"), expand: false, xalign: 0.0, |r| {
     format::cover_date(r.cover_date)
 });
-text_column!(GradeColumn, "Grade", expand: false, xalign: 0.0, condition);
-text_column!(LocationColumn, "Location", expand: false, xalign: 0.0, location);
-text_column!(ValueColumn, "Value", expand: false, xalign: 1.0, |r| {
+text_column!(GradeColumn, gettext_noop("Grade"), expand: false, xalign: 0.0, condition);
+text_column!(LocationColumn, gettext_noop("Location"), expand: false, xalign: 0.0, location);
+text_column!(ValueColumn, gettext_noop("Value"), expand: false, xalign: 1.0, |r| {
     // What it is worth now, so at the newest rate.
     r.value.map(|v| format::money(v, None)).unwrap_or_default()
 });
@@ -339,9 +349,13 @@ impl RelmListItem for Name {
         widgets.detail.set_label(&entry.detail);
         widgets.detail.set_visible(!entry.detail.is_empty());
         widgets.count.set_label(&match entry.copies {
-            0 => "None owned".to_owned(),
-            1 => "1 book".to_owned(),
-            n => format!("{n} books"),
+            0 => gettext("None owned"),
+            n => ngettext_f(
+                "{count} book",
+                "{count} books",
+                usize::try_from(n).unwrap_or(usize::MAX),
+                &[("count", &n.to_string())],
+            ),
         });
     }
 }
