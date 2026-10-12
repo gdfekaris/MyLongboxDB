@@ -13,6 +13,7 @@ crates/mylongbox-app/src/issue_page.rs
 crates/mylongbox-app/src/photo_editor.rs
 crates/mylongbox-app/src/prefs.rs
 crates/mylongbox-app/src/prompt.rs
+crates/mylongbox-app/src/shortcuts.rs
 crates/mylongbox-app/src/sorting.rs
 crates/mylongbox-app/src/trash_page.rs
 crates/mylongbox-app/src/viewer.rs
