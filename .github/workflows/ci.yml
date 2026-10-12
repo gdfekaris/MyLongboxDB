@@ -26,13 +26,16 @@ jobs:
           persist-credentials: false
       - name: Install the pinned toolchain
         run: rustup toolchain install
-      - name: Install cargo-deny and cargo-audit
+      - name: Install cargo-deny, cargo-audit, and cargo-vet
         uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
-          tool: cargo-deny,cargo-audit
+          tool: cargo-deny,cargo-audit,cargo-vet@0.10.2
       - run: cargo fmt --all --check
       - run: cargo deny check
       - run: cargo audit
+      # Every crate must be audited, by us or by an organisation whose
+      # audits are imported, or be listed as accepted as it was.
+      - run: cargo vet --locked
       - name: Test crates that need no GTK
         run: cargo test --locked -p mylongbox-core -p mylongbox-media -p mylongbox-sandbox
 
@@ -117,3 +120,4 @@ jobs:
           flatpak info --user --show-permissions "$APP_ID" | normalize > actual
           printf '%s\n' '[Context]' 'shared=ipc;' 'sockets=wayland;fallback-x11;' 'devices=dri;' | normalize > expected
           diff -u expected actual
+

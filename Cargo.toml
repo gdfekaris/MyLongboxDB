@@ -25,3 +25,7 @@ opt-level = 2
 
 [profile.dev.package.moxcms]
 opt-level = 2
+
+# cargo-vet's audit records live with the other build files.
+[workspace.metadata.vet]
+store = { path = "./build-aux/supply-chain" }
