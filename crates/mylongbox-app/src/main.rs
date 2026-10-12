@@ -20,6 +20,7 @@ mod photo_editor;
 mod prefs;
 mod prompt;
 mod settings;
+mod shortcuts;
 mod sorting;
 mod trash_page;
 mod viewer;

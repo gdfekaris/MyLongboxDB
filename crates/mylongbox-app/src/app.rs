@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 
@@ -25,7 +25,7 @@ use crate::sorting::SortBy;
 use crate::window::MainWindow;
 use crate::{
     bulk_dialog, covers, form, format, gaps_page, import_dialog, photo_editor, prefs, prompt,
-    sorting, trash_page, viewer, work,
+    shortcuts, sorting, trash_page, viewer, work,
 };
 
 /// What a sidebar section shows.
@@ -231,6 +231,8 @@ pub struct App {
     sort_reversed: bool,
     /// Whether work on the whole collection is under way.
     busy: work::Busy,
+    /// Set once quitting has been confirmed, so the window may close.
+    quitting: Rc<Cell<bool>>,
 }
 
 #[derive(Debug)]
@@ -270,6 +272,10 @@ pub enum AppMsg {
     CompactReady(Result<(PathBuf, u64, u64), String>),
     /// Show a message, from work that finished in the background.
     Notify(String),
+    ShowShortcuts,
+    /// Close the window, asking first if a form has unsaved changes.
+    Quit,
+    QuitNow,
     /// Bring back a collection's safety copy as a collection of its own.
     RestoreSafetyCopy(String),
     SectionSelected(usize),
@@ -493,6 +499,32 @@ impl Component for App {
                 .connect_activate(move |_, position| sender.input(AppMsg::BookActivated(position)));
         }
         root.set_views(&grid.view, &table.view, &names.view);
+        for (name, view, keys) in [
+            ("view-grid", "grid", "<Control>1"),
+            ("view-list", "list", "<Control>2"),
+        ] {
+            let action = gio::SimpleAction::new(name, None);
+            let toggle = root.view_toggle();
+            action.connect_activate(move |_, _| toggle.set_active_name(Some(view)));
+            root.add_action(&action);
+            relm4::main_application().set_accels_for_action(&format!("win.{name}"), &[keys]);
+        }
+        add_action(&root, "shortcuts", &sender, || AppMsg::ShowShortcuts);
+        relm4::main_application().set_accels_for_action("win.shortcuts", &["<Control>question"]);
+        add_action(&root, "quit", &sender, || AppMsg::Quit);
+        relm4::main_application().set_accels_for_action("win.quit", &["<Control>q"]);
+        // Closing the window asks about unsaved changes, as Cancel does.
+        let quitting: Rc<Cell<bool>> = Rc::default();
+        {
+            let (sender, quitting) = (sender.clone(), quitting.clone());
+            root.connect_close_request(move |_| {
+                if quitting.get() {
+                    return glib::Propagation::Proceed;
+                }
+                sender.input(AppMsg::Quit);
+                glib::Propagation::Stop
+            });
+        }
         {
             let sender = sender.clone();
             root.view_toggle()
@@ -616,6 +648,7 @@ impl Component for App {
             sort: SortBy::Usual,
             sort_reversed: false,
             busy: work::Busy::default(),
+            quitting: quitting.clone(),
         };
 
         let startup = match &model.store {
@@ -860,6 +893,17 @@ impl Component for App {
             AppMsg::Compact => self.compact(root, &sender),
             AppMsg::CompactReady(result) => self.finish_compact(result, root),
             AppMsg::Notify(message) => root.toast(&message),
+            AppMsg::ShowShortcuts => shortcuts::dialog().present(Some(root)),
+            AppMsg::Quit => match &self.form {
+                Some(form) if form.is_dirty() => {
+                    confirm_discard(root, &sender, Some(AppMsg::QuitNow));
+                }
+                _ => sender.input(AppMsg::QuitNow),
+            },
+            AppMsg::QuitNow => {
+                self.quitting.set(true);
+                root.close();
+            }
             AppMsg::RestoreSafetyCopy(name) => {
                 match self
                     .store()
@@ -917,7 +961,7 @@ impl Component for App {
             },
             AppMsg::FormSave => self.save_form(root, &sender),
             AppMsg::FormCancel => match &self.form {
-                Some(form) if form.is_dirty() => confirm_discard(root, &sender),
+                Some(form) if form.is_dirty() => confirm_discard(root, &sender, None),
                 Some(_) => sender.input(AppMsg::FormClose),
                 None => {}
             },
@@ -2871,7 +2915,9 @@ fn confirm(
     });
 }
 
-fn confirm_discard(root: &MainWindow, sender: &ComponentSender<App>) {
+/// Asks before throwing away a form's changes, then closes the form and
+/// goes on with `then`, if given.
+fn confirm_discard(root: &MainWindow, sender: &ComponentSender<App>, then: Option<AppMsg>) {
     let dialog = adw::AlertDialog::builder()
         .heading(gettext("Discard Changes?"))
         .body(gettext(
@@ -2886,9 +2932,13 @@ fn confirm_discard(root: &MainWindow, sender: &ComponentSender<App>) {
     ]);
     dialog.set_response_appearance("discard", adw::ResponseAppearance::Destructive);
     let sender = sender.clone();
+    let then = RefCell::new(then);
     dialog.choose(Some(root), None::<&gio::Cancellable>, move |response| {
         if response == "discard" {
             sender.input(AppMsg::FormClose);
+            if let Some(then) = then.borrow_mut().take() {
+                sender.input(then);
+            }
         }
     });
 }
