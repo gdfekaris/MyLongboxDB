@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.gdfekaris.MyLongboxDB</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>MyLongboxDB</name>
+  <summary>Catalog and search your comic book collection</summary>
+  <developer id="io.github.gdfekaris">
+    <name>gdfekaris</name>
+  </developer>
+
+  <description>
+    <p>
+      MyLongboxDB keeps track of a physical collection of comic books,
+      magazines, and collected editions, with photos of their covers, in one
+      file on your computer.
+    </p>
+    <ul>
+      <li>Record every detail: creators, characters, story arcs, grades and slab certificates, signatures, where each book is stored, and what you paid</li>
+      <li>Search every field at once, with tolerance for typos, or combine filters on any field</li>
+      <li>See the gaps in your runs, your key issues, and possible duplicates</li>
+      <li>Follow what each book is worth over time, in dollars, gold, or bitcoin</li>
+      <li>Add front and back cover photos, including iPhone HEIC photos, cropped and straightened in the app</li>
+      <li>Import from a spreadsheet, and export everything to CSV and JPEG at any time</li>
+      <li>Back up in one step, with a safety copy kept before any risky change</li>
+    </ul>
+    <p>
+      MyLongboxDB never connects to the internet. It has no networking code,
+      blocks itself from opening internet connections when it starts, and can
+      change files only in its own folders and in those you choose. Nothing
+      you record leaves your computer.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.gdfekaris.MyLongboxDB.desktop</launchable>
+
+  <url type="homepage">https://github.com/gdfekaris/MyLongboxDB</url>
+  <url type="bugtracker">https://github.com/gdfekaris/MyLongboxDB/issues</url>
+  <url type="vcs-browser">https://github.com/gdfekaris/MyLongboxDB</url>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#deb990</color>
+    <color type="primary" scheme_preference="dark">#63452c</color>
+  </branding>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Your collection, with cover photos</caption>
+      <image>https://raw.githubusercontent.com/gdfekaris/MyLongboxDB/main/data/screenshots/collection.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Everything about an issue</caption>
+      <image>https://raw.githubusercontent.com/gdfekaris/MyLongboxDB/main/data/screenshots/book.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>What each copy is worth over time</caption>
+      <image>https://raw.githubusercontent.com/gdfekaris/MyLongboxDB/main/data/screenshots/value.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The whole collection as a list</caption>
+      <image>https://raw.githubusercontent.com/gdfekaris/MyLongboxDB/main/data/screenshots/list.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Search every field</caption>
+      <image>https://raw.githubusercontent.com/gdfekaris/MyLongboxDB/main/data/screenshots/search.png</image>
+    </screenshot>
+  </screenshots>
+
+  <content_rating type="oars-1.1"/>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+
+  <releases>
+    <release version="0.1.0" date="2026-10-12">
+      <description>
+        <p>The first release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

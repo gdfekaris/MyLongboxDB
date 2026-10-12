@@ -91,6 +91,7 @@ modules:
       - cargo --offline build --release --locked -p mylongbox-app
       - install -Dm755 target/release/mylongboxdb -t /app/bin/
       - install -Dm644 data/io.github.gdfekaris.MyLongboxDB.desktop -t /app/share/applications/
+      - install -Dm644 data/io.github.gdfekaris.MyLongboxDB.metainfo.xml -t /app/share/metainfo/
       - install -Dm644 data/icons/hicolor/scalable/apps/io.github.gdfekaris.MyLongboxDB.svg
         -t /app/share/icons/hicolor/scalable/apps/
       # Each translation listed in po/LINGUAS, checked and compiled.
