@@ -8,6 +8,12 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::path::Path;
+
+use landlock::{
+    ABI, Access, AccessFs, AccessNet, Ruleset, RulesetAttr, RulesetCreatedAttr, RulesetStatus,
+    path_beneath_rules,
+};
 
 use seccompiler::{
     BpfProgram, SeccompAction, SeccompCmpArgLen, SeccompCmpOp, SeccompCondition, SeccompFilter,
@@ -81,4 +87,52 @@ pub fn block_internet() -> Result<(), Error> {
     let program = filter()?;
     seccompiler::apply_filter_all_threads(&program)
         .map_err(|e| error("the kernel refused the filter", e))
+}
+
+/// How much of the file-access limits the kernel enforces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Enforced {
+    Fully,
+    /// An older kernel enforces some of the limits.
+    Partly,
+    /// The kernel has no Landlock, or it is turned off.
+    Not,
+}
+
+/// The rights limited: every way of changing files, as of Landlock ABI
+/// 5. Later ABIs add checks on connecting to Unix sockets by path, which
+/// would cut the app off from the display and D-Bus, so they are left to
+/// the Flatpak.
+fn write_access() -> landlock::BitFlags<AccessFs> {
+    AccessFs::from_write(ABI::V5)
+}
+
+/// From now on, lets this thread and every thread it starts change
+/// files only beneath `writable`, and refuses TCP connections and
+/// listening outright, behind the socket filter. Reading is left to the
+/// Flatpak, which shows the app only its own folders and the system
+/// files GTK needs. Folders in `writable` that do not exist are skipped.
+///
+/// Call it before any other thread starts, since threads already running
+/// keep their old rights. Like the socket filter, it cannot be undone.
+pub fn limit_writes(writable: &[&Path]) -> Result<Enforced, Error> {
+    let access = write_access();
+    let fail = |e: landlock::RulesetError| error("the kernel refused the file limits", e);
+    let existing = writable.iter().filter(|p| p.exists());
+    let status = Ruleset::default()
+        .handle_access(access)
+        .map_err(fail)?
+        .handle_access(AccessNet::from_all(ABI::V5))
+        .map_err(fail)?
+        .create()
+        .map_err(fail)?
+        .add_rules(path_beneath_rules(existing, access))
+        .map_err(fail)?
+        .restrict_self()
+        .map_err(fail)?;
+    Ok(match status.ruleset {
+        RulesetStatus::FullyEnforced => Enforced::Fully,
+        RulesetStatus::PartiallyEnforced => Enforced::Partly,
+        RulesetStatus::NotEnforced => Enforced::Not,
+    })
 }
