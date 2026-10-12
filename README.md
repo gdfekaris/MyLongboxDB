@@ -57,6 +57,29 @@ sdk cargo clippy --workspace --all-targets --all-features -- -D warnings
 sdk cargo test --workspace
 ```
 
+### Translations
+
+Text shown in the app is marked in the Rust code with the functions in
+`crates/mylongbox-app/src/i18n.rs` and in the Blueprint files with
+`_()`. The template for translators, `po/mylongboxdb.pot`, is made from
+the files listed in `po/POTFILES`:
+
+```sh
+sdk "grep '\.rs\$' po/POTFILES | xgettext --files-from=- --language=Rust \
+    --from-code=UTF-8 --add-comments=Translators --keyword=gettext \
+    --keyword=ngettext:1,2 --keyword=pgettext:1c,2 --keyword=gettext_f \
+    --keyword=ngettext_f:1,2 --keyword=gettext_noop --package-name=mylongboxdb \
+    --msgid-bugs-address=https://github.com/gdfekaris/MyLongboxDB/issues \
+    --sort-by-file -o po/mylongboxdb.pot &&
+  grep '\.blp\$' po/POTFILES | xgettext --files-from=- --language=C \
+    --from-code=UTF-8 --add-comments=Translators --keyword=_ --keyword=C_:1c,2 \
+    --sort-by-file -j -o po/mylongboxdb.pot"
+```
+
+A translation is a `po/<language>.po` file made from the template, with
+its language code added to `po/LINGUAS`; the Flatpak build checks and
+compiles each one.
+
 ## Security model
 
 The app is designed so that each claim can be checked without trusting
