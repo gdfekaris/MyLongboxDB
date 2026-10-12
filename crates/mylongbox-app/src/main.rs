@@ -24,6 +24,7 @@ mod sorting;
 mod trash_page;
 mod viewer;
 mod window;
+mod work;
 
 const APP_ID: &str = "io.github.gdfekaris.MyLongboxDB";
 

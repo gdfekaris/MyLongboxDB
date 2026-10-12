@@ -12,7 +12,7 @@ use mylongbox_core::{Amount, CollectionInfo, Currency, Database, ExchangeRate, S
 use mylongbox_media::{LONG_EDGES, QUALITIES};
 
 use crate::format;
-use crate::i18n::{gettext, gettext_f, gettext_noop, ngettext_f};
+use crate::i18n::{gettext, gettext_f, gettext_noop};
 use crate::settings::Settings;
 
 const CURRENCIES: [(&str, Option<Currency>); 4] = [
@@ -34,6 +34,10 @@ pub struct Hooks {
     pub backup_folder_chosen: Box<dyn Fn(PathBuf)>,
     /// Brings back the named collection's safety copy.
     pub restore_safety: Box<dyn Fn(String)>,
+    /// Checks the open collection for damage.
+    pub check: Box<dyn Fn()>,
+    /// Compacts the open collection.
+    pub compact: Box<dyn Fn()>,
 }
 
 pub struct State<'a> {
@@ -70,8 +74,8 @@ pub fn dialog(state: &State<'_>, hooks: Hooks) -> adw::PreferencesDialog {
         .build();
     backups.add(&backup_group(state, &hooks, &dialog));
     backups.add(&safety_group(state, &settings, &hooks, &dialog));
-    if let Some(db) = state.db {
-        backups.add(&upkeep_group(db, &dialog));
+    if state.current.is_some() {
+        backups.add(&upkeep_group(&hooks, &dialog));
     }
     dialog.add(&backups);
 
@@ -424,7 +428,7 @@ fn safety_group(
 }
 
 /// Checking the open collection for damage, and compacting it.
-fn upkeep_group(db: &Rc<Database>, dialog: &adw::PreferencesDialog) -> adw::PreferencesGroup {
+fn upkeep_group(hooks: &Rc<Hooks>, dialog: &adw::PreferencesDialog) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::builder()
         .title(gettext("Upkeep"))
         .description(gettext(
@@ -452,42 +456,10 @@ fn upkeep_group(db: &Rc<Database>, dialog: &adw::PreferencesDialog) -> adw::Pref
         &gettext("_Check"),
     );
     {
-        let (db, dialog) = (Rc::downgrade(db), dialog.clone());
+        let (hooks, dialog) = (hooks.clone(), dialog.clone());
         check.connect_clicked(move |_| {
-            let Some(db) = db.upgrade() else {
-                return;
-            };
-            match db.integrity_check() {
-                Ok(problems) if problems.is_empty() => {
-                    dialog.add_toast(adw::Toast::new(&gettext("No damage found")));
-                }
-                Ok(problems) => {
-                    let mut body = gettext(
-                        "Open a backup or the safety copy to get back to a sound copy. What was \
-                         found:\n\n",
-                    );
-                    for p in problems.iter().take(10) {
-                        body.push_str(&format!("\u{2022} {p}\n"));
-                    }
-                    if problems.len() > 10 {
-                        let more = problems.len() - 10;
-                        body.push_str(&ngettext_f(
-                            "and {count} more",
-                            "and {count} more",
-                            more,
-                            &[("count", &more.to_string())],
-                        ));
-                    }
-                    let heading = gettext("The Collection Is Damaged");
-                    let alert = adw::AlertDialog::new(Some(&heading), Some(&body));
-                    alert.add_response("close", &gettext("_Close"));
-                    alert.present(Some(&dialog));
-                }
-                Err(e) => dialog.add_toast(adw::Toast::new(&gettext_f(
-                    "Could not check: {reason}",
-                    &[("reason", &e.to_string())],
-                ))),
-            }
+            dialog.close();
+            (hooks.check)();
         });
     }
     let compact = row(
@@ -498,26 +470,10 @@ fn upkeep_group(db: &Rc<Database>, dialog: &adw::PreferencesDialog) -> adw::Pref
         &gettext("C_ompact"),
     );
     {
-        let (db, dialog) = (Rc::downgrade(db), dialog.clone());
+        let (hooks, dialog) = (hooks.clone(), dialog.clone());
         compact.connect_clicked(move |_| {
-            let Some(db) = db.upgrade() else {
-                return;
-            };
-            let message = match db.compact() {
-                Ok((before, after)) if after < before => gettext_f(
-                    "Compacted from {before} to {after}",
-                    &[
-                        ("before", &glib::format_size(before)),
-                        ("after", &glib::format_size(after)),
-                    ],
-                ),
-                Ok((_, after)) => gettext_f(
-                    "Already compact at {size}",
-                    &[("size", &glib::format_size(after))],
-                ),
-                Err(e) => gettext_f("Could not compact: {reason}", &[("reason", &e.to_string())]),
-            };
-            dialog.add_toast(adw::Toast::new(&message));
+            dialog.close();
+            (hooks.compact)();
         });
     }
     group

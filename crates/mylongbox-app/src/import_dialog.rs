@@ -259,6 +259,11 @@ fn alert(parent: &adw::Dialog, heading: &str, body: &str) {
     alert.present(Some(parent));
 }
 
+/// What runs as an import starts, such as keeping a safety copy; the
+/// import stops if it fails.
+pub type BeforeImport =
+    Box<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>>;
+
 /// Where the wizard is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stage {
@@ -289,7 +294,7 @@ struct Wizard {
     stage: Cell<Stage>,
     cancelled: Cell<bool>,
     /// Keeps a safety copy before an import starts, or says why not.
-    before_import: Box<dyn Fn() -> Result<(), String>>,
+    before_import: BeforeImport,
     /// Told how many books were added, once an import is kept.
     imported: Box<dyn Fn(usize)>,
 }
@@ -470,7 +475,7 @@ async fn run(wizard: Rc<Wizard>, keep: bool) {
     } else {
         Doing::CheckingRows
     };
-    if keep && let Err(why) = (wizard.before_import)() {
+    if keep && let Err(why) = (wizard.before_import)().await {
         wizard.show(Stage::Columns);
         alert(&wizard.dialog, &gettext("Nothing Was Imported"), &why);
         return;
@@ -588,7 +593,7 @@ pub fn open(
     source: ImportSource,
     db: &Rc<Database>,
     output: Output,
-    before_import: impl Fn() -> Result<(), String> + 'static,
+    before_import: BeforeImport,
     imported: impl Fn(usize) + 'static,
 ) {
     let mapping = auto_mapping(source.headers());
@@ -745,7 +750,7 @@ pub fn open(
         report,
         stage: Cell::new(Stage::Columns),
         cancelled: Cell::new(false),
-        before_import: Box::new(before_import),
+        before_import,
         imported: Box::new(imported),
     });
     for row in &wizard.columns {

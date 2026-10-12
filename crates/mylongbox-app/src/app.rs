@@ -25,7 +25,7 @@ use crate::sorting::SortBy;
 use crate::window::MainWindow;
 use crate::{
     bulk_dialog, covers, form, format, gaps_page, import_dialog, photo_editor, prefs, prompt,
-    sorting, trash_page, viewer,
+    sorting, trash_page, viewer, work,
 };
 
 /// What a sidebar section shows.
@@ -229,6 +229,8 @@ pub struct App {
     gaps_collected: bool,
     sort: SortBy,
     sort_reversed: bool,
+    /// Whether work on the whole collection is under way.
+    busy: work::Busy,
 }
 
 #[derive(Debug)]
@@ -246,8 +248,8 @@ pub enum AppMsg {
     /// Ask where to save a full export.
     ExportZip,
     ZipPicked(PathBuf),
-    /// Write the full export, once the message saying so has shown.
-    WriteZip(PathBuf),
+    /// An export finished, of books with their photos or without.
+    ExportDone(Result<usize, String>, bool),
     /// Ask for a CSV file or full export to add books from.
     ImportBooks,
     BooksFilePicked(PathBuf),
@@ -258,8 +260,16 @@ pub enum AppMsg {
     BackupFolderPicked(PathBuf),
     /// Remember the folder chosen in Preferences.
     BackupFolderChosen(PathBuf),
-    /// Write the backup, once the message saying so has shown.
-    WriteBackup(PathBuf),
+    BackupDone(Result<(PathBuf, u64), String>),
+    /// Check the open collection for damage.
+    CheckDamage,
+    CheckDone(Result<Vec<String>, String>),
+    /// Compact the open collection.
+    Compact,
+    /// A compacted copy is ready to take the collection's place.
+    CompactReady(Result<(PathBuf, u64, u64), String>),
+    /// Show a message, from work that finished in the background.
+    Notify(String),
     /// Bring back a collection's safety copy as a collection of its own.
     RestoreSafetyCopy(String),
     SectionSelected(usize),
@@ -314,6 +324,8 @@ pub enum AppMsg {
     /// Ask what to change on the selected copies.
     BulkEdit,
     ApplyBulk(Vec<CopyId>, BulkChange),
+    /// Make the change, once a safety copy is kept.
+    DoBulk(Vec<CopyId>, BulkChange),
     TrashSelected,
     TrashCopy(CopyId),
     TrashEdition(EditionId),
@@ -322,8 +334,10 @@ pub enum AppMsg {
     /// Ask before deleting a group in Trash for good.
     ConfirmPurge(TrashId, String),
     Purge(TrashId),
+    DoPurge(TrashId),
     ConfirmEmpty,
     EmptyTrash,
+    DoEmptyTrash,
     FormSave,
     /// Leave the form, asking first if it has unsaved changes.
     FormCancel,
@@ -601,6 +615,7 @@ impl Component for App {
             gaps_collected: false,
             sort: SortBy::Usual,
             sort_reversed: false,
+            busy: work::Busy::default(),
         };
 
         let startup = match &model.store {
@@ -686,65 +701,55 @@ impl Component for App {
                 pick_csv_file(root, &sender, &file, copies);
             }
             AppMsg::CsvPicked(path, copies) => {
-                let result = self.with_db(|db| {
+                self.export(root, &sender, false, move |db| {
                     let file = std::fs::File::create(&path)?;
                     let mut out = std::io::BufWriter::new(file);
                     let count = db.export_csv(copies.as_deref(), &mut out, false)?;
                     std::io::Write::flush(&mut out)?;
                     Ok(count)
                 });
-                match result {
-                    Ok(n) => root.toast(&ngettext_f(
-                        "Exported {count} book",
-                        "Exported {count} books",
-                        n,
-                        &[("count", &n.to_string())],
-                    )),
-                    Err(why) => root.toast(&gettext_f(
-                        "Could not export: {reason}",
-                        &[("reason", &why)],
-                    )),
-                }
             }
             AppMsg::ExportZip => match &self.open {
                 Some((name, _)) => pick_zip_file(root, &sender, &format!("{name}.zip")),
                 None => root.toast(&gettext("Open a collection first")),
             },
             AppMsg::ZipPicked(path) => {
-                root.toast_working(&gettext("Exporting\u{2026}"));
-                let sender = sender.clone();
-                glib::timeout_add_local_once(std::time::Duration::from_millis(100), move || {
-                    sender.input(AppMsg::WriteZip(path));
-                });
-            }
-            AppMsg::WriteZip(path) => {
                 // Written whole in the app's own cache first, as a zip
                 // file is finished by going back to its start, then copied
                 // to where it was asked for.
                 let staging = glib::user_cache_dir().join("mylongboxdb-export.zip");
-                let result = self.with_db(|db| {
+                self.export(root, &sender, true, move |db| {
                     if let Some(dir) = staging.parent() {
                         std::fs::create_dir_all(dir)?;
                     }
-                    let file = std::fs::File::create(&staging)?;
-                    let count = db.export_zip(None, std::io::BufWriter::new(file))?;
-                    std::fs::copy(&staging, &path)?;
-                    Ok(count)
+                    let written = (|| {
+                        let file = std::fs::File::create(&staging)?;
+                        let count = db.export_zip(None, std::io::BufWriter::new(file))?;
+                        std::fs::copy(&staging, &path)?;
+                        Ok(count)
+                    })();
+                    let _ = std::fs::remove_file(&staging);
+                    written
                 });
-                let _ = std::fs::remove_file(&staging);
-                match result {
-                    Ok(n) => root.toast(&ngettext_f(
-                        "Exported {count} book with its photos",
-                        "Exported {count} books with their photos",
-                        n,
-                        &[("count", &n.to_string())],
-                    )),
-                    Err(why) => root.toast(&gettext_f(
-                        "Could not export: {reason}",
-                        &[("reason", &why)],
-                    )),
-                }
             }
+            AppMsg::ExportDone(result, photos) => match result {
+                Ok(n) if photos => root.toast(&ngettext_f(
+                    "Exported {count} book with its photos",
+                    "Exported {count} books with their photos",
+                    n,
+                    &[("count", &n.to_string())],
+                )),
+                Ok(n) => root.toast(&ngettext_f(
+                    "Exported {count} book",
+                    "Exported {count} books",
+                    n,
+                    &[("count", &n.to_string())],
+                )),
+                Err(why) => root.toast(&gettext_f(
+                    "Could not export: {reason}",
+                    &[("reason", &why)],
+                )),
+            },
             AppMsg::ImportBooks => match &self.open {
                 Some(_) => pick_books_file(root, &sender),
                 None => root.toast(&gettext("Open a collection first")),
@@ -795,11 +800,7 @@ impl Component for App {
                         &[("reason", &why.to_string())],
                     ));
                 }
-                root.toast_working(&gettext("Backing up\u{2026}"));
-                let sender = sender.clone();
-                glib::timeout_add_local_once(std::time::Duration::from_millis(100), move || {
-                    sender.input(AppMsg::WriteBackup(folder));
-                });
+                self.back_up(folder, root, &sender);
             }
             AppMsg::BackupFolderChosen(folder) => {
                 if let Err(why) = settings::set_backup_folder(&settings::path(), &folder) {
@@ -809,34 +810,56 @@ impl Component for App {
                     ));
                 }
             }
-            AppMsg::WriteBackup(folder) => {
-                let result = match (self.store(), &self.open, glib::DateTime::now_local()) {
-                    (Ok(store), Some((name, db)), Ok(now)) => store
-                        .back_up(db, &folder, &format::backup_name(name, &now))
-                        .map_err(|e| e.to_string()),
-                    (Err(why), _, _) => Err(why),
-                    (_, None, _) => Err(gettext("no collection is open")),
-                    (_, _, Err(_)) => Err(gettext("the clock could not be read")),
-                };
-                match result {
-                    Ok((path, size)) => root.toast(&gettext_f(
-                        "Backed up to \u{201c}{file}\u{201d} ({size})",
-                        &[
-                            (
-                                "file",
-                                &path
-                                    .file_name()
-                                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
-                            ),
-                            ("size", &glib::format_size(size)),
-                        ],
-                    )),
-                    Err(why) => root.toast(&gettext_f(
-                        "Could not back up: {reason}",
-                        &[("reason", &why)],
-                    )),
-                }
+            AppMsg::BackupDone(result) => match result {
+                Ok((path, size)) => root.toast(&gettext_f(
+                    "Backed up to \u{201c}{file}\u{201d} ({size})",
+                    &[
+                        (
+                            "file",
+                            &path
+                                .file_name()
+                                .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
+                        ),
+                        ("size", &glib::format_size(size)),
+                    ],
+                )),
+                Err(why) => root.toast(&gettext_f(
+                    "Could not back up: {reason}",
+                    &[("reason", &why)],
+                )),
+            },
+            AppMsg::CheckDamage => self.check_damage(root, &sender),
+            AppMsg::CheckDone(Ok(problems)) if problems.is_empty() => {
+                root.toast(&gettext("No damage found"));
             }
+            AppMsg::CheckDone(Ok(problems)) => {
+                let mut body = gettext(
+                    "Open a backup or the safety copy to get back to a sound copy. What was \
+                     found:\n\n",
+                );
+                for p in problems.iter().take(10) {
+                    body.push_str(&format!("\u{2022} {p}\n"));
+                }
+                if problems.len() > 10 {
+                    let more = problems.len() - 10;
+                    body.push_str(&ngettext_f(
+                        "and {count} more",
+                        "and {count} more",
+                        more,
+                        &[("count", &more.to_string())],
+                    ));
+                }
+                let heading = gettext("The Collection Is Damaged");
+                let alert = adw::AlertDialog::new(Some(&heading), Some(&body));
+                alert.add_response("close", &gettext("_Close"));
+                alert.present(Some(root));
+            }
+            AppMsg::CheckDone(Err(why)) => {
+                root.toast(&gettext_f("Could not check: {reason}", &[("reason", &why)]))
+            }
+            AppMsg::Compact => self.compact(root, &sender),
+            AppMsg::CompactReady(result) => self.finish_compact(result, root),
+            AppMsg::Notify(message) => root.toast(&message),
             AppMsg::RestoreSafetyCopy(name) => {
                 match self
                     .store()
@@ -1308,11 +1331,14 @@ impl Component for App {
                     });
                 }
             }
-            AppMsg::ApplyBulk(copies, change) => {
-                match self
-                    .keep_safety_copy(&gettext("before changing several books at once"))
-                    .and_then(|()| self.with_db(|db| db.bulk_edit(&copies, &change)))
-                {
+            AppMsg::ApplyBulk(copies, change) => self.guarded(
+                gettext("before changing several books at once"),
+                AppMsg::DoBulk(copies, change),
+                root,
+                &sender,
+            ),
+            AppMsg::DoBulk(copies, change) => {
+                match self.with_db(|db| db.bulk_edit(&copies, &change)) {
                     Ok(()) => {
                         root.select_toggle().set_active(false);
                         self.show(root);
@@ -1374,10 +1400,13 @@ impl Component for App {
                 &sender,
                 move || AppMsg::Purge(trash),
             ),
-            AppMsg::Purge(trash) => match self
-                .keep_safety_copy(&gettext("before deleting from Trash"))
-                .and_then(|()| self.with_db(|db| db.purge(trash)))
-            {
+            AppMsg::Purge(trash) => self.guarded(
+                gettext("before deleting from Trash"),
+                AppMsg::DoPurge(trash),
+                root,
+                &sender,
+            ),
+            AppMsg::DoPurge(trash) => match self.with_db(|db| db.purge(trash)) {
                 Ok(()) => self.show(root),
                 Err(why) => root.toast(&gettext_f(
                     "Could not delete: {reason}",
@@ -1392,10 +1421,13 @@ impl Component for App {
                 &sender,
                 || AppMsg::EmptyTrash,
             ),
-            AppMsg::EmptyTrash => match self
-                .keep_safety_copy(&gettext("before emptying Trash"))
-                .and_then(|()| self.with_db(|db| db.empty_trash()))
-            {
+            AppMsg::EmptyTrash => self.guarded(
+                gettext("before emptying Trash"),
+                AppMsg::DoEmptyTrash,
+                root,
+                &sender,
+            ),
+            AppMsg::DoEmptyTrash => match self.with_db(|db| db.empty_trash()) {
                 Ok(()) => self.show(root),
                 Err(why) => root.toast(&gettext_f(
                     "Could not empty Trash: {reason}",
@@ -1508,14 +1540,14 @@ impl Component for App {
                 root.end_working();
                 if let Some((_, db)) = &self.open {
                     let s = sender.clone();
-                    let keeper = self.safety_keeper();
+                    let keeper = self.import_keeper(root);
                     import_dialog::open(
                         root,
                         &name,
                         *source,
                         db,
                         self.settings.photos,
-                        move || keeper(&gettext("before importing books")),
+                        keeper,
                         move |n| s.input(AppMsg::BooksImported(n)),
                     );
                 }
@@ -1535,35 +1567,265 @@ impl App {
         self.store.as_ref().map_err(Clone::clone)
     }
 
-    /// Keeps a copy of the open collection as it is, before a change
-    /// that would be hard to undo, unless the preferences say not to.
-    fn keep_safety_copy(&self, reason: &str) -> Result<(), String> {
-        self.safety_keeper()(reason)
+    /// What work on the whole collection needs, if it can start now:
+    /// nothing else under way, and a collection open.
+    fn work_context(
+        &self,
+        root: &MainWindow,
+    ) -> Option<(work::BusyGuard, CollectionStore, String, Rc<Database>)> {
+        let Some(guard) = self.busy.begin() else {
+            root.toast(&gettext("Wait for the work under way to finish"));
+            return None;
+        };
+        match (self.store(), &self.open) {
+            (Ok(store), Some((name, db))) => Some((guard, store.clone(), name.clone(), db.clone())),
+            (Err(why), _) => {
+                root.toast(&why);
+                None
+            }
+            (_, None) => {
+                root.toast(&gettext("Open a collection first"));
+                None
+            }
+        }
     }
 
-    /// What keeps a safety copy of the open collection, for work that
-    /// finishes later, such as an import.
-    fn safety_keeper(&self) -> impl Fn(&str) -> Result<(), String> + 'static {
-        let keeper = match (self.settings.safety_copies, self.store(), &self.open) {
-            (true, Ok(store), Some((name, db))) => {
-                Some((store.clone(), name.clone(), Rc::downgrade(db)))
+    /// Keeps a safety copy before a change that would be hard to undo,
+    /// unless the preferences say not to, then makes the change with
+    /// `then`.
+    fn guarded(
+        &self,
+        reason: String,
+        then: AppMsg,
+        root: &MainWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        if !self.settings.safety_copies {
+            sender.input(then);
+            return;
+        }
+        let Some((guard, store, name, db)) = self.work_context(root) else {
+            return;
+        };
+        let (root, sender) = (root.clone(), sender.clone());
+        glib::spawn_future_local(async move {
+            let progress = work::Progress::start(&root, &gettext("Keeping a Safety Copy"), false);
+            let kept = work::safety_copy(&store, &name, &db, &reason, &progress).await;
+            progress.finish();
+            drop(guard);
+            match kept {
+                Ok(()) => sender.input(then),
+                Err(why) => sender.input(AppMsg::Notify(gettext_f(
+                    "Nothing was changed: {reason}",
+                    &[("reason", &why)],
+                ))),
             }
+        });
+    }
+
+    /// What keeps a safety copy as an import starts, if the preferences
+    /// ask for one.
+    fn import_keeper(&self, root: &MainWindow) -> import_dialog::BeforeImport {
+        let keeper = match (self.settings.safety_copies, self.store(), &self.open) {
+            (true, Ok(store), Some((name, db))) => Some((
+                store.clone(),
+                name.clone(),
+                Rc::downgrade(db),
+                self.busy.clone(),
+                root.clone(),
+            )),
             _ => None,
         };
-        move |reason| {
-            let Some((store, name, db)) = &keeper else {
-                return Ok(());
-            };
-            let db = db
-                .upgrade()
-                .ok_or_else(|| gettext("the collection is no longer open"))?;
-            store.make_safety_copy(&db, name, reason).map_err(|e| {
-                gettext_f(
-                    "the safety copy could not be made: {reason}",
-                    &[("reason", &e.to_string())],
-                )
+        let keeper = Rc::new(keeper);
+        Box::new(move || {
+            let keeper = keeper.clone();
+            Box::pin(async move {
+                let Some((store, name, db, busy, root)) = keeper.as_ref() else {
+                    return Ok(());
+                };
+                let db = db
+                    .upgrade()
+                    .ok_or_else(|| gettext("the collection is no longer open"))?;
+                let _guard = busy
+                    .begin()
+                    .ok_or_else(|| gettext("other work is under way"))?;
+                let progress =
+                    work::Progress::start(root, &gettext("Keeping a Safety Copy"), false);
+                let reason = gettext("before importing books");
+                let kept = work::safety_copy(store, name, &db, &reason, &progress).await;
+                progress.finish();
+                kept
             })
+        })
+    }
+
+    /// Exports from a copy of the open collection, on a worker thread;
+    /// `write` gets the copy, opened.
+    fn export(
+        &self,
+        root: &MainWindow,
+        sender: &ComponentSender<Self>,
+        photos: bool,
+        write: impl FnOnce(&Database) -> mylongbox_core::Result<usize> + Send + 'static,
+    ) {
+        let Some((guard, store, _, db)) = self.work_context(root) else {
+            return;
+        };
+        let (root, sender) = (root.clone(), sender.clone());
+        glib::spawn_future_local(async move {
+            let progress = work::Progress::start(&root, &gettext("Exporting"), false);
+            let result = async {
+                let staging = store.staging("export").map_err(|e| e.to_string())?;
+                let copy = work::copy(&db, &staging, &progress).await?;
+                let doing = gettext("Writing the export\u{2026}");
+                work::in_background(&progress, &doing, move || {
+                    let written = Database::open(&copy).and_then(|copy| write(&copy));
+                    store.discard(&copy);
+                    written.map_err(|e| e.to_string())
+                })
+                .await
+            }
+            .await;
+            progress.finish();
+            drop(guard);
+            sender.input(AppMsg::ExportDone(result, photos));
+        });
+    }
+
+    /// Backs up the open collection into `folder`, checking the copy on
+    /// a worker thread before it is written there.
+    fn back_up(&self, folder: PathBuf, root: &MainWindow, sender: &ComponentSender<Self>) {
+        let Ok(now) = glib::DateTime::now_local() else {
+            root.toast(&gettext_f(
+                "Could not back up: {reason}",
+                &[("reason", &gettext("the clock could not be read"))],
+            ));
+            return;
+        };
+        let Some((guard, store, name, db)) = self.work_context(root) else {
+            return;
+        };
+        let file_name = format::backup_name(&name, &now);
+        let (root, sender) = (root.clone(), sender.clone());
+        glib::spawn_future_local(async move {
+            let progress = work::Progress::start(&root, &gettext("Backing Up"), false);
+            let result = async {
+                let staging = store.staging("backup").map_err(|e| e.to_string())?;
+                let copy = work::copy(&db, &staging, &progress).await?;
+                let doing = gettext("Checking the backup\u{2026}");
+                work::in_background(&progress, &doing, move || {
+                    store
+                        .finish_backup(&copy, &folder, &file_name)
+                        .map_err(|e| e.to_string())
+                })
+                .await
+            }
+            .await;
+            progress.finish();
+            drop(guard);
+            sender.input(AppMsg::BackupDone(result));
+        });
+    }
+
+    /// Checks a copy of the open collection for damage, on a worker
+    /// thread.
+    fn check_damage(&self, root: &MainWindow, sender: &ComponentSender<Self>) {
+        let Some((guard, store, _, db)) = self.work_context(root) else {
+            return;
+        };
+        let (root, sender) = (root.clone(), sender.clone());
+        glib::spawn_future_local(async move {
+            let progress = work::Progress::start(&root, &gettext("Checking for Damage"), false);
+            let result = async {
+                let staging = store.staging("check").map_err(|e| e.to_string())?;
+                let copy = work::copy(&db, &staging, &progress).await?;
+                let doing = gettext("Reading every part of the collection\u{2026}");
+                work::in_background(&progress, &doing, move || {
+                    store.check_copy(&copy).map_err(|e| e.to_string())
+                })
+                .await
+            }
+            .await;
+            progress.finish();
+            drop(guard);
+            sender.input(AppMsg::CheckDone(result));
+        });
+    }
+
+    /// Compacts a copy of the open collection on a worker thread; the
+    /// copy then takes the collection's place in [`Self::finish_compact`].
+    /// The dialog shows from the start, since nothing may change the
+    /// collection until then.
+    fn compact(&self, root: &MainWindow, sender: &ComponentSender<Self>) {
+        let Some((guard, store, _, db)) = self.work_context(root) else {
+            return;
+        };
+        let (root, sender) = (root.clone(), sender.clone());
+        glib::spawn_future_local(async move {
+            let progress = work::Progress::start(&root, &gettext("Compacting"), true);
+            let result = async {
+                let staging = store.staging("compact").map_err(|e| e.to_string())?;
+                let copy = work::copy(&db, &staging, &progress).await?;
+                // The collection is closed and reopened to swap the file,
+                // so this reference must be gone by then.
+                drop(db);
+                let doing = gettext("Compacting the copy\u{2026}");
+                work::in_background(&progress, &doing, move || {
+                    store.compact_copy(&copy).map_err(|e| e.to_string())
+                })
+                .await
+            }
+            .await;
+            progress.finish();
+            drop(guard);
+            sender.input(AppMsg::CompactReady(result));
+        });
+    }
+
+    /// Puts a compacted copy in place of the open collection, closing and
+    /// reopening it, if it is smaller.
+    fn finish_compact(&mut self, result: Result<(PathBuf, u64, u64), String>, root: &MainWindow) {
+        let (copy, before, after) = match result {
+            Ok(done) => done,
+            Err(why) => {
+                root.toast(&gettext_f(
+                    "Could not compact: {reason}",
+                    &[("reason", &why)],
+                ));
+                return;
+            }
+        };
+        let (Ok(store), Some((name, _))) = (self.store().cloned(), self.open.clone()) else {
+            return;
+        };
+        if after >= before {
+            store.discard(&copy);
+            root.toast(&gettext_f(
+                "Already compact at {size}",
+                &[("size", &glib::format_size(before))],
+            ));
+            return;
         }
+        // Closing releases the collection's lock so its file can be
+        // swapped; reopening shows it afresh either way.
+        self.open = None;
+        covers::set_database(Weak::new());
+        self.current_db.replace(Weak::new());
+        let swapped = store.replace_with(&name, &copy);
+        if swapped.is_err() {
+            store.discard(&copy);
+        }
+        self.open_collection(&name, root);
+        root.toast(&match swapped {
+            Ok(()) => gettext_f(
+                "Compacted from {before} to {after}",
+                &[
+                    ("before", &glib::format_size(before)),
+                    ("after", &glib::format_size(after)),
+                ],
+            ),
+            Err(e) => gettext_f("Could not compact: {reason}", &[("reason", &e.to_string())]),
+        });
     }
 
     fn show_preferences(
@@ -1604,6 +1866,14 @@ impl App {
                 Box::new(move |folder| s.input(AppMsg::BackupFolderChosen(folder)))
             },
             restore_safety: msg(AppMsg::RestoreSafetyCopy),
+            check: {
+                let s = sender.clone();
+                Box::new(move || s.input(AppMsg::CheckDamage))
+            },
+            compact: {
+                let s = sender.clone();
+                Box::new(move || s.input(AppMsg::Compact))
+            },
         };
         let state = prefs::State {
             settings: self.settings,
