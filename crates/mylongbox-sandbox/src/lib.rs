@@ -1,10 +1,13 @@
-//! Runtime self-restrictions applied at startup: a seccomp filter that
-//! blocks internet sockets, and Landlock rules that limit file access.
+//! The app's small amount of system-level code, run at startup: a
+//! seccomp filter that blocks internet sockets, Landlock rules that limit
+//! file access, and pointing gettext at the app's translations.
 //!
 //! This is the only crate in the workspace that may use `unsafe`. Every
 //! `unsafe` block must carry a `SAFETY:` comment.
 
 #![deny(unsafe_op_in_unsafe_fn, clippy::undocumented_unsafe_blocks)]
+
+pub mod locale;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -22,7 +25,7 @@ use seccompiler::{
 
 /// Why the restrictions could not be applied.
 #[derive(Debug)]
-pub struct Error(String);
+pub struct Error(pub(crate) String);
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
