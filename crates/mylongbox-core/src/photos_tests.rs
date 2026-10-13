@@ -189,3 +189,19 @@ fn photos_follow_their_copy_into_and_out_of_trash() {
         .unwrap();
     assert_eq!(rows, 0, "deleting a copy for good deletes its photos");
 }
+
+#[test]
+fn photo_bytes_counts_full_photos_and_thumbnails() {
+    let db = db();
+    assert_eq!(db.photo_bytes().unwrap(), 0);
+    let c = copy(&db);
+    let front = photo(1);
+    let back = photo(2);
+    db.set_photo(c, Side::Front, &front).unwrap();
+    db.set_photo(c, Side::Back, &back).unwrap();
+    let expected = front.full_jpeg.len()
+        + front.thumb_jpeg.len()
+        + back.full_jpeg.len()
+        + back.thumb_jpeg.len();
+    assert_eq!(db.photo_bytes().unwrap(), expected as u64);
+}

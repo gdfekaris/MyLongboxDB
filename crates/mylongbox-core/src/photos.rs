@@ -99,6 +99,18 @@ impl Database {
             .optional()?)
     }
 
+    /// How many bytes the photos take up, full size and thumbnails
+    /// together, counting those of copies in Trash; most of a collection
+    /// file is its photos.
+    pub fn photo_bytes(&self) -> Result<u64> {
+        let bytes: i64 = self.conn.query_row(
+            "SELECT coalesce(sum(length(full_jpeg) + length(thumb_jpeg)), 0) FROM cover_photo",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(u64::try_from(bytes).unwrap_or(0))
+    }
+
     /// Which sides of a copy have photos, front first.
     pub fn photo_sides(&self, copy: CopyId) -> Result<Vec<Side>> {
         query_all(
