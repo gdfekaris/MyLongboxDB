@@ -180,6 +180,30 @@ code_enum! {
 }
 
 code_enum! {
+    /// How white a comic's or magazine's pages still are, on CGC's scale,
+    /// from best to worst.
+    pub enum PageQuality {
+        White = "white",
+        OffWhiteToWhite = "off_white_to_white",
+        OffWhite = "off_white",
+        CreamToOffWhite = "cream_to_off_white",
+        Cream = "cream",
+        LightTanToOffWhite = "light_tan_to_off_white",
+        LightTanToCream = "light_tan_to_cream",
+        LightTan = "light_tan",
+        TanToOffWhite = "tan_to_off_white",
+        TanToCream = "tan_to_cream",
+        Tan = "tan",
+        DarkTanToOffWhite = "dark_tan_to_off_white",
+        DarkTan = "dark_tan",
+        BrownToOffWhite = "brown_to_off_white",
+        BrownToTan = "brown_to_tan",
+        Brown = "brown",
+        BrownBrittle = "brown_brittle",
+    }
+}
+
+code_enum! {
     /// What a creator did on an issue. Listed in the order credits show.
     pub enum Role {
         Writer = "writer",
@@ -601,6 +625,8 @@ pub struct CopyFields {
     pub grade_type: Option<GradeType>,
     pub cert_number: Option<String>,
     pub label_type: Option<String>,
+    /// Comics and magazines only.
+    pub page_quality: Option<PageQuality>,
     /// Collected editions only.
     pub book_condition: Option<BookCondition>,
     /// Collected editions only.

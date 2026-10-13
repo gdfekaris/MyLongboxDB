@@ -337,7 +337,7 @@ mod tests {
         }
         let before = dir.join("before.sqlite");
         let db = Database::open_keeping(&path, Some(&before)).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 2);
+        assert_eq!(db.schema_version().unwrap(), 3);
         assert!(db.saved_shelves().unwrap().is_empty());
         db.add_saved_shelf("Everything", &crate::FilterSet::default())
             .unwrap();
@@ -351,6 +351,66 @@ mod tests {
         let kept = Connection::open(&before).unwrap();
         assert_eq!(migrate::schema_version(&kept).unwrap(), 1);
         drop(kept);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_version_2_collection_keeps_its_copies_and_gains_page_quality() {
+        use crate::model::{
+            Category, CopyFields, EditionFields, Grade, GradeType, IssueFields, PageQuality,
+            SeriesFields,
+        };
+        let dir = std::env::temp_dir().join(format!("mlbx-upgrade-3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("old.sqlite");
+        {
+            let mut conn = connect(Connection::open(&path).unwrap()).unwrap();
+            migrate::run(&mut conn, &MIGRATIONS[..2]).unwrap();
+            conn.execute_batch(
+                "INSERT INTO series (id, uuid, name, category)
+                     VALUES (1, '00000000-0000-4000-8000-000000000001', 'X-Men', 'comic');
+                 INSERT INTO issue (id, uuid, series_id, number, number_sort)
+                     VALUES (1, '00000000-0000-4000-8000-000000000002', 1, '1', '1');
+                 INSERT INTO edition (id, uuid, issue_id)
+                     VALUES (1, '00000000-0000-4000-8000-000000000003', 1);
+                 INSERT INTO copy (id, uuid, edition_id, grade, grade_type, notes)
+                     VALUES (1, '00000000-0000-4000-8000-000000000004', 1, 94, 'cgc', 'Slabbed');",
+            )
+            .unwrap();
+        }
+        let db = Database::open(&path).unwrap();
+        assert_eq!(db.schema_version().unwrap(), 3);
+        let copy = db.copy(crate::model::CopyId(1)).unwrap();
+        let mut fields = CopyFields {
+            grade: Grade::from_tenths(94),
+            grade_type: Some(GradeType::Cgc),
+            notes: "Slabbed".into(),
+            ..CopyFields::default()
+        };
+        assert_eq!(copy.fields, fields);
+        assert_eq!(
+            copy.uuid.to_string(),
+            "00000000-0000-4000-8000-000000000004"
+        );
+        fields.page_quality = Some(PageQuality::OffWhiteToWhite);
+        db.update_copy(copy.id, &fields).unwrap();
+        // A new copy made after the upgrade works like any other.
+        let series = db
+            .create_series(&SeriesFields::new("Hulk", Category::Comic))
+            .unwrap();
+        let issue = db
+            .create_issue(series, &IssueFields::new(crate::IssueNumber::new("1").ok()))
+            .unwrap();
+        let edition = db.create_edition(issue, &EditionFields::default()).unwrap();
+        db.create_copy(edition, &fields).unwrap();
+        drop(db);
+        let db = Database::open(&path).unwrap();
+        assert_eq!(
+            db.copy(copy.id).unwrap().fields.page_quality,
+            Some(PageQuality::OffWhiteToWhite)
+        );
+        drop(db);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

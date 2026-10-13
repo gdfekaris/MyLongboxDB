@@ -250,6 +250,56 @@ fn a_spreadsheet_from_elsewhere_is_read_leniently() {
 }
 
 #[test]
+fn page_quality_is_read_as_cgc_writes_it_or_abbreviated() {
+    let db = Database::open_in_memory().unwrap();
+    let text = "Series,Issue Number,Pages\n\
+                Thor,1,White Pages\n\
+                Thor,2,Off-White to White\n\
+                Thor,3,OW/W\n\
+                Thor,4,Brown / Brittle\n\
+                Thor,5,cream_to_off_white\n\
+                Thor,6,\n\
+                Thor,7,pinkish\n";
+    let report = import(&db, text);
+    assert_eq!(outcomes(&report)[..6], [&Outcome::Added; 6]);
+    let pages: Vec<Option<PageQuality>> = db
+        .browse(crate::Shelf::Everything)
+        .unwrap()
+        .iter()
+        .map(|row| db.copy(row.copy).unwrap().fields.page_quality)
+        .collect();
+    assert_eq!(
+        pages,
+        [
+            Some(PageQuality::White),
+            Some(PageQuality::OffWhiteToWhite),
+            Some(PageQuality::OffWhiteToWhite),
+            Some(PageQuality::BrownBrittle),
+            Some(PageQuality::CreamToOffWhite),
+            None,
+        ]
+    );
+    assert_eq!(
+        report.rows[6].outcome,
+        Outcome::Problem("Page Quality: \u{201c}pinkish\u{201d} cannot be read".into())
+    );
+}
+
+#[test]
+fn page_quality_on_a_collected_edition_is_a_problem() {
+    let db = Database::open_in_memory().unwrap();
+    let text = "Series,Issue Number,Category,Page Quality\n\
+                Omnibus,1,collected,white\n";
+    let report = import(&db, text);
+    assert!(
+        matches!(&report.rows[0].outcome, Outcome::Problem(_)),
+        "{:?}",
+        report.rows[0].outcome
+    );
+    assert_eq!(report.added(), 0);
+}
+
+#[test]
 fn each_problem_names_its_column() {
     let db = Database::open_in_memory().unwrap();
     let text = "Series,Issue Number,Grade,Purchase Date,Category,Signatures\n\

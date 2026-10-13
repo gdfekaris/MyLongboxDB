@@ -68,6 +68,7 @@ pub const COLUMNS: &[&str] = &[
     "Grade Type",
     "Certificate Number",
     "Label",
+    "Page Quality",
     "Book Condition",
     "Dust Jacket Condition",
     "Purchase Price",
@@ -384,6 +385,7 @@ impl Database {
             text(c.grade_type.map(|g| g.code())),
             c.cert_number.clone().unwrap_or_default(),
             c.label_type.clone().unwrap_or_default(),
+            text(c.page_quality.map(|p| p.code())),
             text(c.book_condition.map(|b| b.code())),
             text(c.dust_jacket_condition.map(|b| b.code())),
             paid,
@@ -448,6 +450,11 @@ collection.csv
   Fixed choices are written as codes:
     Category: comic, magazine, collected
     Grade Type: raw, cgc, cbcs, pgx
+    Page Quality, best to worst: white, off_white_to_white, off_white,
+      cream_to_off_white, cream, light_tan_to_off_white,
+      light_tan_to_cream, light_tan, tan_to_off_white, tan_to_cream,
+      tan, dark_tan_to_off_white, dark_tan, brown_to_off_white,
+      brown_to_tan, brown, brown_brittle
     Book and dust jacket condition: sealed, new, like_new, very_good,
       good, fair, poor
     Binding: hardcover, softcover, oversized_hardcover

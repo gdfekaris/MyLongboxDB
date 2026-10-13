@@ -81,6 +81,7 @@ fn sample() -> Sample {
     e.copy.grade_type = Some(GradeType::Cgc);
     e.copy.cert_number = Some("1234567001".into());
     e.copy.label_type = Some("Universal".into());
+    e.copy.page_quality = Some(PageQuality::White);
     e.copy.purchase_price = Some(usd("1500.00"));
     e.copy.purchase_date = Some(date("2020-09-15"));
     e.copy.seller = "eBay".into();
@@ -140,6 +141,7 @@ fn sample() -> Sample {
     e.cover_artists = vec!["Herb Trimpe".into()];
     e.copy.grade = Grade::parse("6.0");
     e.copy.grade_type = Some(GradeType::Cbcs);
+    e.copy.page_quality = Some(PageQuality::CreamToOffWhite);
     let c = db.add_book(&e).unwrap().copy;
 
     let mut e = BookEntry::new(
@@ -495,6 +497,18 @@ fn choices_flags_and_presence() {
             set(&[s.a, s.c]),
         ),
         (Filter::Choice(Choice::GradeType(vec![])), set(&[])),
+        (
+            Filter::Choice(Choice::PageQuality(vec![PageQuality::White])),
+            set(&[s.a]),
+        ),
+        (
+            Filter::Choice(Choice::PageQuality(vec![
+                PageQuality::White,
+                PageQuality::CreamToOffWhite,
+                PageQuality::Brown,
+            ])),
+            set(&[s.a, s.c]),
+        ),
         (
             Filter::Choice(Choice::MagazineFormat(vec![MagazineFormat::Standard])),
             set(&[s.d]),

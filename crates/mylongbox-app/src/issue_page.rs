@@ -681,6 +681,13 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
         ]),
     );
     add(
+        &gettext("Page Quality"),
+        f.page_quality
+            .map(format::page_quality)
+            .unwrap_or_default()
+            .to_owned(),
+    );
+    add(
         &gettext("Dust Jacket"),
         f.dust_jacket_condition
             .map(format::condition)

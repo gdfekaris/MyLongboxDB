@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use gtk::glib;
 use mylongbox_core::{
     Amount, Binding, BookCondition, CoverDate, Date, Distribution, Grade, GradeType,
-    MagazineFormat, RateTable, Role, Verification,
+    MagazineFormat, PageQuality, RateTable, Role, Verification,
 };
 
 use crate::i18n::{gettext, gettext_f, gettext_noop, ngettext_f, pgettext};
@@ -189,6 +189,32 @@ pub fn condition(condition: BookCondition) -> &'static str {
         BookCondition::Good => label(gettext_noop("Good")),
         BookCondition::Fair => label(gettext_noop("Fair")),
         BookCondition::Poor => label(gettext_noop("Poor")),
+    }
+}
+
+/// The colour of a book's pages as CGC names it, e.g. `Off-White to
+/// White`.
+pub fn page_quality(quality: PageQuality) -> &'static str {
+    match quality {
+        // Translators: this and the names after it are the colours of a
+        // comic's pages on CGC's page quality scale, from best to worst.
+        PageQuality::White => label(gettext_noop("White")),
+        PageQuality::OffWhiteToWhite => label(gettext_noop("Off-White to White")),
+        PageQuality::OffWhite => label(gettext_noop("Off-White")),
+        PageQuality::CreamToOffWhite => label(gettext_noop("Cream to Off-White")),
+        PageQuality::Cream => label(gettext_noop("Cream")),
+        PageQuality::LightTanToOffWhite => label(gettext_noop("Light Tan to Off-White")),
+        PageQuality::LightTanToCream => label(gettext_noop("Light Tan to Cream")),
+        PageQuality::LightTan => label(gettext_noop("Light Tan")),
+        PageQuality::TanToOffWhite => label(gettext_noop("Tan to Off-White")),
+        PageQuality::TanToCream => label(gettext_noop("Tan to Cream")),
+        PageQuality::Tan => label(gettext_noop("Tan")),
+        PageQuality::DarkTanToOffWhite => label(gettext_noop("Dark Tan to Off-White")),
+        PageQuality::DarkTan => label(gettext_noop("Dark Tan")),
+        PageQuality::BrownToOffWhite => label(gettext_noop("Brown to Off-White")),
+        PageQuality::BrownToTan => label(gettext_noop("Brown to Tan")),
+        PageQuality::Brown => label(gettext_noop("Brown")),
+        PageQuality::BrownBrittle => label(gettext_noop("Brown / Brittle")),
     }
 }
 

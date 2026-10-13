@@ -21,7 +21,7 @@ use crate::export::{COLUMNS, ROLE_COLUMNS, split, split_items, split_parts};
 use crate::issue_number::IssueNumber;
 use crate::model::{
     Binding, BookCondition, Category, CopyId, CoverDate, Distribution, Grade, GradeType, Isbn,
-    MagazineFormat, RowUuid, SeriesId, Side, SignatureFields, Verification,
+    MagazineFormat, PageQuality, RowUuid, SeriesId, Side, SignatureFields, Verification,
 };
 use crate::money::{Amount, Currency};
 use crate::photos::CoverPhoto;
@@ -287,6 +287,9 @@ const ALIASES: &[(&str, &str)] = &[
     ("cgc", "Certificate Number"),
     ("cert", "Certificate Number"),
     ("cert #", "Certificate Number"),
+    ("pages", "Page Quality"),
+    ("page color", "Page Quality"),
+    ("page colour", "Page Quality"),
     ("price paid", "Purchase Price"),
     ("paid", "Purchase Price"),
     ("cost", "Purchase Price"),
@@ -457,6 +460,43 @@ fn category(text: &str) -> Option<Category> {
         }
         _ => code(text, Category::from_code),
     }
+}
+
+/// A page quality as its code, as CGC writes it ("Off-White to White
+/// Pages", "Brown / Brittle"), or abbreviated as collectors do ("OW/W").
+fn page_quality(text: &str) -> Option<PageQuality> {
+    let words = text.trim().to_lowercase();
+    let words = words.strip_suffix("pages").unwrap_or(&words);
+    let mut normal = String::new();
+    for word in words
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+    {
+        if !normal.is_empty() {
+            normal.push('_');
+        }
+        normal.push_str(word);
+    }
+    let abbreviated = match normal.as_str() {
+        "w" => "white",
+        "ow_w" => "off_white_to_white",
+        "ow" => "off_white",
+        "c_ow" => "cream_to_off_white",
+        "c" => "cream",
+        "lt_ow" => "light_tan_to_off_white",
+        "lt_c" => "light_tan_to_cream",
+        "lt" => "light_tan",
+        "t_ow" => "tan_to_off_white",
+        "t_c" => "tan_to_cream",
+        "t" => "tan",
+        "dt_ow" => "dark_tan_to_off_white",
+        "dt" => "dark_tan",
+        "b_ow" => "brown_to_off_white",
+        "b_t" => "brown_to_tan",
+        "b" => "brown",
+        other => other,
+    };
+    PageQuality::from_code(abbreviated)
 }
 
 fn yes_no(text: &str) -> Option<bool> {
@@ -639,6 +679,7 @@ fn plan(cells: &Cells<'_>, today: Date) -> std::result::Result<Planned, String> 
     entry.copy.cert_number =
         Some(cells.get("Certificate Number").to_owned()).filter(|c| !c.is_empty());
     entry.copy.label_type = Some(cells.get("Label").to_owned()).filter(|l| !l.is_empty());
+    entry.copy.page_quality = cells.read("Page Quality", page_quality)?;
     entry.copy.book_condition =
         cells.read("Book Condition", |t| code(t, BookCondition::from_code))?;
     entry.copy.dust_jacket_condition = cells.read("Dust Jacket Condition", |t| {

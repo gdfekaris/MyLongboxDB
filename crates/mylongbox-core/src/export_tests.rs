@@ -102,6 +102,7 @@ fn every_field_is_written() {
     e.copy.grade_type = Some(GradeType::Cgc);
     e.copy.cert_number = Some("1234567001".into());
     e.copy.label_type = Some("Universal".into());
+    e.copy.page_quality = Some(PageQuality::OffWhiteToWhite);
     e.copy.purchase_price = Some(Amount::parse(Currency::Gold, "1").unwrap());
     e.copy.purchase_date = Some(date("2020-05-01"));
     e.copy.seller = "eBay".into();
@@ -177,6 +178,7 @@ fn every_field_is_written() {
     expect("Grade Type", "cgc");
     expect("Certificate Number", "1234567001");
     expect("Label", "Universal");
+    expect("Page Quality", "off_white_to_white");
     expect("Purchase Price", "1.0000");
     expect("Purchase Currency", "XAU");
     expect("Purchase Date", "2020-05-01");

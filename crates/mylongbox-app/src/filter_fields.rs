@@ -6,8 +6,8 @@
 use mylongbox_core::{
     Amount, Binding, BookCondition, Category, Choice, Compare, Currency, Date, DateCondition,
     DateField, Distribution, Filter, Flag, Grade, GradeType, IssueNumber, ListCondition, ListField,
-    MagazineFormat, MoneyField, NumberField, Presence, Role, SeriesId, TextCondition, TextField,
-    Verification,
+    MagazineFormat, MoneyField, NumberField, PageQuality, Presence, Role, SeriesId, TextCondition,
+    TextField, Verification,
 };
 
 use crate::format;
@@ -21,6 +21,7 @@ pub enum ChoiceKind {
     Distribution,
     Binding,
     GradeType,
+    PageQuality,
     BookCondition,
     DustJacketCondition,
     Verification,
@@ -72,6 +73,10 @@ pub const FIELDS: &[Field] = &[
     field(
         gettext_noop("Grade Type"),
         Kind::Choice(ChoiceKind::GradeType),
+    ),
+    field(
+        gettext_noop("Page Quality"),
+        Kind::Choice(ChoiceKind::PageQuality),
     ),
     field(gettext_noop("Key Issue"), Kind::Flag(Flag::KeyIssue)),
     field(
@@ -358,6 +363,10 @@ impl ChoiceKind {
             // Translators: an ungraded book, as opposed to one graded by
             // CGC, CBCS, or PGX.
             Self::GradeType => vec![gettext_noop("Raw"), "CGC", "CBCS", "PGX"],
+            Self::PageQuality => PageQuality::ALL
+                .iter()
+                .map(|q| format::page_quality(*q))
+                .collect(),
             Self::BookCondition | Self::DustJacketCondition => BookCondition::ALL
                 .iter()
                 .map(|c| format::condition(*c))
@@ -379,6 +388,7 @@ impl ChoiceKind {
             Self::Distribution => Choice::Distribution(pick(Distribution::ALL, picked)),
             Self::Binding => Choice::Binding(pick(Binding::ALL, picked)),
             Self::GradeType => Choice::GradeType(pick(GradeType::ALL, picked)),
+            Self::PageQuality => Choice::PageQuality(pick(PageQuality::ALL, picked)),
             Self::BookCondition => Choice::BookCondition(pick(BookCondition::ALL, picked)),
             Self::DustJacketCondition => {
                 Choice::DustJacketCondition(pick(BookCondition::ALL, picked))
@@ -680,6 +690,7 @@ pub fn unbuild(
                 Choice::Distribution(v) => (ChoiceKind::Distribution, picked(Distribution::ALL, v)),
                 Choice::Binding(v) => (ChoiceKind::Binding, picked(Binding::ALL, v)),
                 Choice::GradeType(v) => (ChoiceKind::GradeType, picked(GradeType::ALL, v)),
+                Choice::PageQuality(v) => (ChoiceKind::PageQuality, picked(PageQuality::ALL, v)),
                 Choice::BookCondition(v) => {
                     (ChoiceKind::BookCondition, picked(BookCondition::ALL, v))
                 }
@@ -795,6 +806,10 @@ mod tests {
                 Verification::CbcsVerified,
             ])),
             Filter::Choice(Choice::DustJacketCondition(vec![BookCondition::ALL[0]])),
+            Filter::Choice(Choice::PageQuality(vec![
+                PageQuality::White,
+                PageQuality::BrownBrittle,
+            ])),
             Filter::Flag {
                 flag: Flag::Sketch,
                 value: false,
@@ -969,6 +984,13 @@ mod tests {
             Some(Filter::Choice(Choice::GradeType(vec![
                 GradeType::Cgc,
                 GradeType::Cbcs
+            ])))
+        );
+        assert_eq!(
+            build(kind_of("Page Quality"), 0, &picked, &no_series),
+            Some(Filter::Choice(Choice::PageQuality(vec![
+                PageQuality::OffWhiteToWhite,
+                PageQuality::OffWhite
             ])))
         );
         let no = Inputs {

@@ -9,8 +9,8 @@ use gtk::glib;
 use mylongbox_core::{
     Amount, Binding, BookCondition, BookEntry, BoxId, Category, CharacterId, CopyId, CreatorId,
     Currency, Database, Distribution, Grade, GradeType, Isbn, IssueNumber, LookupId,
-    MagazineFormat, PublisherId, Role, SeriesChoice, SeriesId, SignatureFields, StoryArcId, TagId,
-    TeamId, Verification,
+    MagazineFormat, PageQuality, PublisherId, Role, SeriesChoice, SeriesId, SignatureFields,
+    StoryArcId, TagId, TeamId, Verification,
 };
 
 use crate::i18n::{gettext, gettext_f, gettext_noop, ngettext_f, pgettext};
@@ -101,6 +101,7 @@ pub struct Form {
     grade_type: adw::ComboRow,
     cert_number: adw::EntryRow,
     label_type: adw::EntryRow,
+    page_quality: adw::ComboRow,
     signatures: SignatureList,
     purchase_price: MoneyRow,
     purchase_date: adw::EntryRow,
@@ -448,6 +449,7 @@ impl Form {
         let cert_number = entry_row(&gettext("Certificate Number"));
         // Translators: the kind of label a grading company put on the slab.
         let label_type = entry_row(&gettext("Label"));
+        let page_quality = page_quality_row();
         let purchase_price = MoneyRow::new(&gettext("Purchase Price"));
         let purchase_date = entry_row(&gettext("Purchase Date (YYYY-MM-DD)"));
         let seller = entry_row(&gettext("Bought From"));
@@ -467,6 +469,7 @@ impl Form {
             copy.append(&grade_type);
             copy.append(&cert_number);
             copy.append(&label_type);
+            copy.append(&page_quality);
         }
         copy.append(&purchase_price.row);
         for row in [&purchase_date, &seller, &storage_box, &box_position] {
@@ -614,6 +617,7 @@ impl Form {
             grade_type,
             cert_number,
             label_type,
+            page_quality,
             signatures,
             purchase_price,
             purchase_date,
@@ -700,6 +704,7 @@ impl Form {
         for combo in [
             &self.distribution,
             &self.grade_type,
+            &self.page_quality,
             &self.magazine_format,
             &self.color,
             &self.binding,
@@ -780,6 +785,12 @@ impl Form {
             .set_text(c.cert_number.as_deref().unwrap_or(""));
         self.label_type
             .set_text(c.label_type.as_deref().unwrap_or(""));
+        let quality = c
+            .page_quality
+            .and_then(|q| PageQuality::ALL.iter().position(|&p| p == q))
+            .map_or(0, |i| i + 1);
+        self.page_quality
+            .set_selected(u32::try_from(quality).unwrap_or(0));
         for (name, fields) in &e.signatures {
             self.signatures.add(name, fields);
         }
@@ -952,6 +963,9 @@ impl Form {
             c.cert_number =
                 Some(self.cert_number.text().trim().to_owned()).filter(|t| !t.is_empty());
             c.label_type = Some(self.label_type.text().trim().to_owned()).filter(|t| !t.is_empty());
+            c.page_quality = selected(&self.page_quality)
+                .checked_sub(1)
+                .and_then(|i| PageQuality::ALL.get(i).copied());
         }
         c.purchase_price = self.purchase_price.amount()?;
         c.purchase_date = date(&self.purchase_date)?;
@@ -1230,6 +1244,21 @@ fn combo_row<const N: usize>(title: &str, names: [&str; N]) -> adw::ComboRow {
     adw::ComboRow::builder()
         .title(title)
         .model(&gtk::StringList::new(&names.each_ref().map(String::as_str)))
+        .build()
+}
+
+/// A choice of page quality on CGC's scale, or none, which comes first.
+fn page_quality_row() -> adw::ComboRow {
+    let mut names = vec![gettext("Not recorded")];
+    names.extend(
+        PageQuality::ALL
+            .iter()
+            .map(|&q| format::page_quality(q).to_owned()),
+    );
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    adw::ComboRow::builder()
+        .title(gettext("Page Quality"))
+        .model(&gtk::StringList::new(&names))
         .build()
 }
 

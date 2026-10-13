@@ -108,6 +108,7 @@ fn every_field_round_trips() {
         storage_box: Some(storage_box),
         box_position: Some(14),
         notes: "Slabbed".into(),
+        page_quality: Some(PageQuality::OffWhiteToWhite),
         ..CopyFields::default()
     };
     let copy_id = db.create_copy(edition_id, &copy).unwrap();
@@ -289,6 +290,11 @@ fn fields_must_suit_the_category() {
         ..CopyFields::default()
     };
     invalid(db.create_copy(book_edition, &graded));
+    let pages = CopyFields {
+        page_quality: Some(PageQuality::White),
+        ..CopyFields::default()
+    };
+    invalid(db.create_copy(book_edition, &pages));
     let book_condition = CopyFields {
         book_condition: Some(BookCondition::Good),
         ..CopyFields::default()
@@ -321,6 +327,38 @@ fn a_category_change_may_not_strand_fields() {
     invalid(db.update_series(series, &fields));
     fields.category = Category::Magazine;
     db.update_series(series, &fields).unwrap();
+}
+
+#[test]
+fn page_quality_alone_keeps_a_series_from_becoming_a_book_line() {
+    let db = db();
+    let series = comic_series(&db, "Amazing Spider-Man");
+    let (_, edition, _) = comic(&db, series, "1");
+    let pages = CopyFields {
+        page_quality: Some(PageQuality::Cream),
+        ..CopyFields::default()
+    };
+    db.create_copy(edition, &pages).unwrap();
+    let mut fields = db.series(series).unwrap().fields;
+    fields.category = Category::CollectedEdition;
+    invalid(db.update_series(series, &fields));
+}
+
+#[test]
+fn an_unknown_page_quality_is_refused_on_read() {
+    let db = db();
+    let series = comic_series(&db, "Amazing Spider-Man");
+    let (_, _, copy) = comic(&db, series, "1");
+    db.conn
+        .execute_batch("PRAGMA ignore_check_constraints = ON")
+        .unwrap();
+    db.conn
+        .execute(
+            "UPDATE copy SET page_quality = 'pink' WHERE id = ?1",
+            [copy],
+        )
+        .unwrap();
+    assert!(db.copy(copy).is_err());
 }
 
 // Trash --------------------------------------------------------------------

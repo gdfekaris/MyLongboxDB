@@ -56,7 +56,7 @@ macro_rules! select_copy {
             "SELECT id, uuid, edition_id, trash_id, added_at, grade, grade_type,
     cert_number, label_type, book_condition, dust_jacket_condition,
     purchase_price_units, purchase_price_currency, purchase_date, seller, box_id,
-    box_position, notes FROM copy",
+    box_position, notes, page_quality FROM copy",
             " ",
             $rest
         )
@@ -322,8 +322,9 @@ impl Database {
         self.conn.execute(
             "INSERT INTO copy (uuid, edition_id, grade, grade_type, cert_number, label_type,
                  book_condition, dust_jacket_condition, purchase_price_units,
-                 purchase_price_currency, purchase_date, seller, box_id, box_position, notes)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                 purchase_price_currency, purchase_date, seller, box_id, box_position, notes,
+                 page_quality)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 RowUuid::new_random(),
                 edition,
@@ -340,6 +341,7 @@ impl Database {
                 f.storage_box,
                 f.box_position,
                 f.notes,
+                f.page_quality,
             ],
         )?;
         Ok(CopyId(self.conn.last_insert_rowid()))
@@ -364,7 +366,8 @@ impl Database {
             "UPDATE copy SET grade = ?2, grade_type = ?3, cert_number = ?4, label_type = ?5,
                  book_condition = ?6, dust_jacket_condition = ?7,
                  purchase_price_units = ?8, purchase_price_currency = ?9, purchase_date = ?10,
-                 seller = ?11, box_id = ?12, box_position = ?13, notes = ?14
+                 seller = ?11, box_id = ?12, box_position = ?13, notes = ?14,
+                 page_quality = ?15
              WHERE id = ?1",
             params![
                 id,
@@ -381,6 +384,7 @@ impl Database {
                 f.storage_box,
                 f.box_position,
                 f.notes,
+                f.page_quality,
             ],
         )?;
         Ok(())
@@ -806,7 +810,8 @@ fn clean_copy(fields: &CopyFields, category: Category) -> Result<CopyFields> {
     let graded = f.grade.is_some()
         || f.grade_type.is_some()
         || f.cert_number.is_some()
-        || f.label_type.is_some();
+        || f.label_type.is_some()
+        || f.page_quality.is_some();
     let book = f.book_condition.is_some() || f.dust_jacket_condition.is_some();
     if category == Category::CollectedEdition && graded {
         return refuse("collected editions use book condition instead of a grade");
@@ -865,7 +870,8 @@ fn check_category_fits_children(
             "SELECT EXISTS (SELECT 1 FROM copy c JOIN edition e ON e.id = c.edition_id
                  JOIN issue i ON i.id = e.issue_id
                  WHERE i.series_id = ?1 AND (c.grade IS NOT NULL OR c.grade_type IS NOT NULL
-                     OR c.cert_number IS NOT NULL OR c.label_type IS NOT NULL))",
+                     OR c.cert_number IS NOT NULL OR c.label_type IS NOT NULL
+                     OR c.page_quality IS NOT NULL))",
         )? {
             return refuse("some copies have grades; clear them before making this a book line");
         }
@@ -999,6 +1005,7 @@ fn copy_from_row(row: &Row<'_>) -> rusqlite::Result<Copy> {
             grade_type: row.get(6)?,
             cert_number: row.get(7)?,
             label_type: row.get(8)?,
+            page_quality: row.get(18)?,
             book_condition: row.get(9)?,
             dust_jacket_condition: row.get(10)?,
             purchase_price: amount_at(row, 11, 12)?,

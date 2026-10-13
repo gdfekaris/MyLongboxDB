@@ -193,6 +193,17 @@ fn rules_are_saved_in_a_form_that_never_changes() {
 }
 
 #[test]
+fn page_quality_rules_are_saved_by_their_codes() {
+    let rules = set(vec![Filter::Choice(Choice::PageQuality(vec![
+        PageQuality::White,
+        PageQuality::OffWhiteToWhite,
+    ]))]);
+    let json = r#"{"rules":[{"choice":{"page_quality":["white","off_white_to_white"]}}],"owned_as":"single_issue"}"#;
+    assert_eq!(serde_json::to_string(&rules).unwrap(), json);
+    assert_eq!(serde_json::from_str::<FilterSet>(json).unwrap(), rules);
+}
+
+#[test]
 fn rules_from_a_newer_version_are_kept_but_not_read() {
     let db = db();
     db.conn

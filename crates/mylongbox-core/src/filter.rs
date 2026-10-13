@@ -24,7 +24,8 @@ use crate::issue_number::IssueNumber;
 use crate::lookup::LookupId;
 use crate::model::{
     Binding, BookCondition, Category, CharacterId, CopyId, CreatorId, Distribution, Grade,
-    GradeType, MagazineFormat, Role, SeriesId, StoryArcId, TagId, TeamId, Verification,
+    GradeType, MagazineFormat, PageQuality, Role, SeriesId, StoryArcId, TagId, TeamId,
+    Verification,
 };
 use crate::money::{Amount, Currency};
 use crate::search::{edits_allowed, fold, json_ids, like_escaped};
@@ -125,6 +126,7 @@ pub enum Choice {
     Distribution(Vec<Distribution>),
     Binding(Vec<Binding>),
     GradeType(Vec<GradeType>),
+    PageQuality(Vec<PageQuality>),
     BookCondition(Vec<BookCondition>),
     DustJacketCondition(Vec<BookCondition>),
     /// How any of the book's signatures is verified.
@@ -507,6 +509,7 @@ fn choice_sql(choice: &Choice) -> (&'static str, bool) {
             false,
         ),
         Choice::GradeType(_) => (within!("id", "copy", "grade_type"), false),
+        Choice::PageQuality(_) => (within!("id", "copy", "page_quality"), false),
         Choice::BookCondition(_) => (within!("id", "copy", "book_condition"), false),
         Choice::DustJacketCondition(_) => (within!("id", "copy", "dust_jacket_condition"), false),
         Choice::Verification(_) => (within!("copy_id", "signature", "verification"), false),
@@ -524,6 +527,7 @@ fn choice_codes(choice: &Choice) -> String {
         Choice::Distribution(v) => codes(v, Distribution::code),
         Choice::Binding(v) => codes(v, Binding::code),
         Choice::GradeType(v) => codes(v, GradeType::code),
+        Choice::PageQuality(v) => codes(v, PageQuality::code),
         Choice::BookCondition(v) | Choice::DustJacketCondition(v) => codes(v, BookCondition::code),
         Choice::Verification(v) => codes(v, Verification::code),
     };

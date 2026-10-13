@@ -423,6 +423,7 @@ fn copy_fields(
         });
         if f.grade_type == Some(GradeType::Cgc) {
             f.cert_number = Some(format!("{:010}", rng.below(10_000_000_000)));
+            f.page_quality = Some(*rng.pick(PageQuality::ALL));
         }
     }
     if rng.chance(85) {
