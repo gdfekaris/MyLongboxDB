@@ -148,6 +148,33 @@ fn every_word_must_be_found_somewhere() {
 }
 
 #[test]
+fn issue_numbers_are_found_as_whole_words() {
+    let db = db();
+    let three_hundred = add(&db, &entry("Amazing Spider-Man", 1963, "300"));
+    let thirty = add(&db, &entry("Amazing Spider-Man", 1963, "30"));
+    let three = add(&db, &entry("Amazing Spider-Man", 1963, "003"));
+    let annual = add(&db, &entry("Amazing Spider-Man", 1963, "Annual 15"));
+    let fifteen = add(&db, &entry("Amazing Spider-Man", 1963, "15"));
+    let hulk = add(&db, &entry("Incredible Hulk", 1968, "300"));
+
+    assert_eq!(found(&db, "amazing spider-man 300"), [three_hundred]);
+    assert_eq!(found(&db, "spider-man #300"), [three_hundred]);
+    assert_eq!(found(&db, "spider 30"), [thirty]);
+    // Leading zeros are not part of the number, either way round.
+    assert_eq!(found(&db, "spider 3"), [three]);
+    assert_eq!(found(&db, "spider #0003"), [three]);
+    let mut fifteens = found(&db, "spider 15");
+    fifteens.sort();
+    assert_eq!(fifteens, [annual, fifteen]);
+    assert_eq!(found(&db, "spider annual"), [annual]);
+    let mut every = found(&db, "300");
+    every.sort();
+    assert_eq!(every, [three_hundred, hulk]);
+    assert!(found(&db, "spider 3000").is_empty());
+    assert!(found(&db, "#").is_empty());
+}
+
+#[test]
 fn names_rank_above_notes_and_whole_matches_above_parts() {
     let db = db();
     let mut noted = entry("Avengers", 1963, "4");

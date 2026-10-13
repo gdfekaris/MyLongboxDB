@@ -2335,8 +2335,9 @@ impl App {
             root.show_empty(
                 &gettext("No Books Found"),
                 &gettext(
-                    "Try other words, or fewer filters. Search looks at series, titles, \
-                     publishers, people, characters, teams, story arcs, tags, boxes, and notes.",
+                    "Try other words, or fewer filters. Search looks at series, issue numbers, \
+                     titles, publishers, people, characters, teams, story arcs, tags, boxes, \
+                     and notes.",
                 ),
             );
         } else {

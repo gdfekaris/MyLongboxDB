@@ -1,6 +1,6 @@
-//! Quick search: one box that finds books by their series, titles,
-//! publishers, creators, characters, teams, story arcs, tags, notes, or
-//! storage boxes.
+//! Quick search: one box that finds books by their series, issue
+//! numbers, titles, publishers, creators, characters, teams, story arcs,
+//! tags, notes, or storage boxes.
 
 use std::collections::HashMap;
 
@@ -37,10 +37,13 @@ enum Kind {
     Tag = 12,
     StorageBox = 13,
     Notes = 14,
+    /// Never stored in the index: issue numbers are read from the issues
+    /// themselves, since a number matches only as a whole word.
+    IssueNumber = 15,
 }
 
 impl Kind {
-    const ALL: [Self; 14] = [
+    const ALL: [Self; 15] = [
         Self::Series,
         Self::Title,
         Self::Publisher,
@@ -55,6 +58,7 @@ impl Kind {
         Self::Tag,
         Self::StorageBox,
         Self::Notes,
+        Self::IssueNumber,
     ];
 
     fn from_code(code: i64) -> Option<Self> {
@@ -66,6 +70,7 @@ impl Kind {
     fn weight(self) -> f64 {
         match self {
             Self::Series => 100.0,
+            Self::IssueNumber => 90.0,
             Self::Title => 80.0,
             Self::Creator | Self::Character => 60.0,
             Self::CreatorAlias | Self::CharacterAlias => 55.0,
@@ -82,7 +87,7 @@ impl Kind {
     fn copies(self) -> &'static str {
         match self {
             Self::Series => found_through!(series),
-            Self::Title => {
+            Self::Title | Self::IssueNumber => {
                 "SELECT e.issue_id AS who, c.id AS copy FROM copy c
                  JOIN edition e ON e.id = c.edition_id
                  WHERE +c.trash_id IS NULL AND e.issue_id IN (SELECT value FROM json_each(?1))"
@@ -196,6 +201,18 @@ fn correction(vocabulary: &Vocabulary, term: &str) -> Option<String> {
         .filter(|(edits, ..)| (1..=allowed).contains(edits))
         .min_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)).then(a.2.cmp(b.2)))
         .map(|(.., written)| written.clone())
+}
+
+/// A word of an issue number as compared with a searched word: folded,
+/// and without leading zeros if it is all digits, so "003" and "3" are
+/// the same number.
+fn number_word(word: &str) -> String {
+    let folded = fold(word);
+    if !folded.is_empty() && folded.chars().all(|c| c.is_ascii_digit()) {
+        let trimmed = folded.trim_start_matches('0');
+        return if trimmed.is_empty() { "0" } else { trimmed }.to_owned();
+    }
+    folded
 }
 
 /// Lower case with accents taken off, for judging how well text matches.
@@ -435,6 +452,29 @@ impl Database {
             let score = kind.weight() * quality;
             let best = owners.entry(kind).or_default().entry(owner).or_insert(0.0);
             *best = best.max(score);
+        }
+        // A word finds an issue when it is the number or a word of it,
+        // so "300" finds #300 but not #30 or #3000, "#300" works as
+        // typed, and "annual" finds Annual 15.
+        let wanted = number_word(term.strip_prefix('#').unwrap_or(term));
+        if !wanted.is_empty() {
+            let numbers = query_all(
+                &self.conn,
+                "SELECT id, number FROM issue WHERE instr(lower(number), ?1) > 0",
+                [&wanted],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            )?;
+            let issues = owners.entry(Kind::IssueNumber).or_default();
+            for (issue, number) in numbers {
+                if number_word(&number) == wanted
+                    || number.split_whitespace().any(|w| number_word(w) == wanted)
+                {
+                    issues.insert(issue, Kind::IssueNumber.weight());
+                }
+            }
+            if issues.is_empty() {
+                owners.remove(&Kind::IssueNumber);
+            }
         }
         Ok(owners)
     }

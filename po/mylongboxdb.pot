@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-12 17:29-0700\n"
+"POT-Creation-Date: 2026-10-12 18:20-0700\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -710,7 +710,7 @@ msgstr ""
 msgid "Could Not Read the Collection"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2286 crates/mylongbox-app/src/app.rs:2367
+#: crates/mylongbox-app/src/app.rs:2286 crates/mylongbox-app/src/app.rs:2368
 msgid "Search Results"
 msgstr ""
 
@@ -720,11 +720,12 @@ msgstr ""
 
 #: crates/mylongbox-app/src/app.rs:2338
 msgid ""
-"Try other words, or fewer filters. Search looks at series, titles, "
-"publishers, people, characters, teams, story arcs, tags, boxes, and notes."
+"Try other words, or fewer filters. Search looks at series, issue numbers, "
+"titles, publishers, people, characters, teams, story arcs, tags, boxes, and "
+"notes."
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2362 crates/mylongbox-app/src/books.rs:357
+#: crates/mylongbox-app/src/app.rs:2363 crates/mylongbox-app/src/books.rs:357
 #: crates/mylongbox-app/src/format.rs:92
 #: crates/mylongbox-app/src/import_dialog.rs:616
 #, rust-format
@@ -733,37 +734,37 @@ msgid_plural "{count} books"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/mylongbox-app/src/app.rs:2399
+#: crates/mylongbox-app/src/app.rs:2400
 msgid "No Books Here"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2400
+#: crates/mylongbox-app/src/app.rs:2401
 msgid "You don’t own any of these books."
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2418
+#: crates/mylongbox-app/src/app.rs:2419
 msgid "Trash Is Empty"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2419
+#: crates/mylongbox-app/src/app.rs:2420
 msgid "Anything moved to Trash waits here until you empty it."
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2521
+#: crates/mylongbox-app/src/app.rs:2522
 msgid "My Comics"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2525
+#: crates/mylongbox-app/src/app.rs:2526
 msgid "New Collection"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2527
+#: crates/mylongbox-app/src/app.rs:2528
 msgid ""
 "Choose a name. You can keep several collections and switch between them."
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2535 crates/mylongbox-app/src/app.rs:2786
-#: crates/mylongbox-app/src/app.rs:2834
+#: crates/mylongbox-app/src/app.rs:2536 crates/mylongbox-app/src/app.rs:2787
+#: crates/mylongbox-app/src/app.rs:2835
 #: crates/mylongbox-app/src/bulk_dialog.rs:166
 #: crates/mylongbox-app/src/form.rs:519
 #: crates/mylongbox-app/src/import_dialog.rs:337
@@ -774,142 +775,142 @@ msgstr ""
 msgid "_Cancel"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2536
+#: crates/mylongbox-app/src/app.rs:2537
 msgid "C_reate"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2565
+#: crates/mylongbox-app/src/app.rs:2566
 msgid "Front cover added"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2566
+#: crates/mylongbox-app/src/app.rs:2567
 msgid "Front cover removed"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2567
+#: crates/mylongbox-app/src/app.rs:2568
 msgid "Front cover put back"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2568
+#: crates/mylongbox-app/src/app.rs:2569
 msgid "Back cover added"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2569
+#: crates/mylongbox-app/src/app.rs:2570
 msgid "Back cover removed"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2570
+#: crates/mylongbox-app/src/app.rs:2571
 msgid "Back cover put back"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2578
+#: crates/mylongbox-app/src/app.rs:2579
 msgid "Photos"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2595
+#: crates/mylongbox-app/src/app.rs:2596
 msgid "Choose a Front Cover Photo"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2596
+#: crates/mylongbox-app/src/app.rs:2597
 msgid "Choose a Back Cover Photo"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2614
+#: crates/mylongbox-app/src/app.rs:2615
 msgid "MyLongboxDB collections"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2617
+#: crates/mylongbox-app/src/app.rs:2618
 msgid "All files"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2628
+#: crates/mylongbox-app/src/app.rs:2629
 msgid "CSV files and full exports"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2638
+#: crates/mylongbox-app/src/app.rs:2639
 #: crates/mylongbox-app/src/import_dialog.rs:729
 msgid "Import Books"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2655
+#: crates/mylongbox-app/src/app.rs:2656
 msgid "Import Collection File"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2672
+#: crates/mylongbox-app/src/app.rs:2673
 msgid "Zip archives"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2678
+#: crates/mylongbox-app/src/app.rs:2679
 msgid "Full Export with Photos"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2701
+#: crates/mylongbox-app/src/app.rs:2702
 msgid "CSV files"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2707
+#: crates/mylongbox-app/src/app.rs:2708
 msgid "Export as CSV"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2724
+#: crates/mylongbox-app/src/app.rs:2725
 msgid "Export a Copy"
 msgstr ""
 
 #. Translators: how much a copy is worth.
-#: crates/mylongbox-app/src/app.rs:2743 crates/mylongbox-app/src/books.rs:279
+#: crates/mylongbox-app/src/app.rs:2744 crates/mylongbox-app/src/books.rs:279
 msgid "Value"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2744
+#: crates/mylongbox-app/src/app.rs:2745
 #: crates/mylongbox-app/src/bulk_dialog.rs:121
 #: crates/mylongbox-app/src/form.rs:1346 crates/mylongbox-app/src/prefs.rs:21
 msgid "Bitcoin"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2744
+#: crates/mylongbox-app/src/app.rs:2745
 #: crates/mylongbox-app/src/bulk_dialog.rs:121
 #: crates/mylongbox-app/src/form.rs:1346
 msgid "Gold (oz)"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2744
+#: crates/mylongbox-app/src/app.rs:2745
 msgid "USD"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2749 crates/mylongbox-app/src/prefs.rs:546
+#: crates/mylongbox-app/src/app.rs:2750 crates/mylongbox-app/src/prefs.rs:546
 msgid "Date (YYYY-MM-DD)"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2753
+#: crates/mylongbox-app/src/app.rs:2754
 msgid "Source (e.g. GoCollect, eBay sold)"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2779
+#: crates/mylongbox-app/src/app.rs:2780
 #: crates/mylongbox-app/src/issue_page.rs:883
 msgid "Add Value"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2780
+#: crates/mylongbox-app/src/app.rs:2781
 msgid "What this copy was worth, and when."
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2786 crates/mylongbox-app/src/prefs.rs:588
+#: crates/mylongbox-app/src/app.rs:2787 crates/mylongbox-app/src/prefs.rs:588
 msgid "_Add"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2848
+#: crates/mylongbox-app/src/app.rs:2849
 msgid "Discard Changes?"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2850
+#: crates/mylongbox-app/src/app.rs:2851
 msgid "The changes made in this form have not been saved."
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2856
+#: crates/mylongbox-app/src/app.rs:2857
 msgid "_Keep Editing"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2857
+#: crates/mylongbox-app/src/app.rs:2858
 msgid "_Discard"
 msgstr ""
 
