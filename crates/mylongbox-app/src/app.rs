@@ -2386,15 +2386,14 @@ impl App {
         };
         match saved {
             Ok(saved) => {
-                let edited = form.target.is_some();
                 self.form = None;
                 self.recent_copy = Some(saved.copy);
-                root.pop_page();
-                // An edit replaces the stale detail page under the form;
-                // an add shows the new book.
-                if edited {
-                    root.pop_page();
-                }
+                // The page shows the copy just saved, not whichever copy
+                // of the issue comes first.
+                self.open_copy = Some(saved.copy);
+                // Pages under the form show the book as it was, so they go
+                // too, and Back from the saved book leads to the list.
+                root.pop_to_section();
                 self.show(root);
                 self.open_issue(saved.issue, root, sender);
                 root.toast(&gettext("Saved"));
@@ -2957,6 +2956,9 @@ impl App {
         root.set_totals(&format::totals(&rows));
         let view = self.view_key();
         let scroll = (self.books_view.as_ref() == Some(&view)).then(|| root.books_scroll());
+        if scroll.is_none() {
+            root.forget_books_scroll();
+        }
         self.books_view = Some(view);
         self.grid.clear();
         self.table.clear();

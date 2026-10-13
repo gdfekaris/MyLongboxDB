@@ -78,6 +78,10 @@ mod imp {
         pub empty_page: TemplateChild<adw::StatusPage>,
         #[template_child]
         pub custom_bin: TemplateChild<adw::Bin>,
+        /// Where the grid and the list were, to scroll back to once
+        /// they are next shown, when refilled under a page opened over
+        /// them.
+        pub pending_scroll: std::cell::Cell<Option<(f64, f64)>>,
     }
 
     #[glib::object_subclass]
@@ -117,6 +121,17 @@ mod imp {
                 }
             });
             self.sidebar.add_controller(keys);
+
+            // Views refilled while hidden have no layout to scroll in
+            // until they are shown again.
+            let window = self.obj().downgrade();
+            self.section_page.connect_shown(move |_| {
+                if let Some(window) = window.upgrade()
+                    && let Some(scroll) = window.imp().pending_scroll.take()
+                {
+                    window.restore_books_scroll(scroll);
+                }
+            });
         }
     }
     impl WidgetImpl for MainWindow {}
@@ -377,6 +392,10 @@ impl MainWindow {
     /// How far down the grid and the list are scrolled.
     pub fn books_scroll(&self) -> (f64, f64) {
         let imp = self.imp();
+        // A refill while hidden has already lost the place it keeps.
+        if let Some(pending) = imp.pending_scroll.get() {
+            return pending;
+        }
         (
             imp.grid_scroller.vadjustment().value(),
             imp.list_scroller.vadjustment().value(),
@@ -389,6 +408,11 @@ impl MainWindow {
     /// again once they have.
     pub fn restore_books_scroll(&self, (grid, list): (f64, f64)) {
         let imp = self.imp();
+        if !imp.section_page.is_mapped() {
+            imp.pending_scroll.set(Some((grid, list)));
+            return;
+        }
+        imp.pending_scroll.set(None);
         let (grid_adj, list_adj) = (
             imp.grid_scroller.vadjustment(),
             imp.list_scroller.vadjustment(),
@@ -399,6 +423,11 @@ impl MainWindow {
             grid_adj.set_value(grid);
             list_adj.set_value(list);
         });
+    }
+
+    /// Drops a position kept for books no longer shown.
+    pub fn forget_books_scroll(&self) {
+        self.imp().pending_scroll.set(None);
     }
 
     pub fn is_showing_books(&self) -> bool {
