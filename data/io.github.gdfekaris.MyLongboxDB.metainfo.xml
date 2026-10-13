@@ -79,6 +79,16 @@
   </supports>
 
   <releases>
+    <release version="0.1.2" date="2026-10-13">
+      <description>
+        <p>Graded and signed shelves, page quality, and a fix.</p>
+        <ul>
+          <li>Graded Books and Signed Books in the sidebar, grouped with Key Issues</li>
+          <li>Record the page quality of comics and magazines on CGC's scale, from White to Brown / Brittle, and filter by it</li>
+          <li>Moving a single selected book to Trash now works</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-10-12">
       <description>
         <p>Saved shelves, and fixes from the first days of use.</p>

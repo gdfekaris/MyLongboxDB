@@ -880,7 +880,7 @@ dependencies = [
 
 [[package]]
 name = "mylongbox-app"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "gtk4",
  "libadwaita",
@@ -892,7 +892,7 @@ dependencies = [
 
 [[package]]
 name = "mylongbox-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "csv",
  "proptest",
@@ -906,7 +906,7 @@ dependencies = [
 
 [[package]]
 name = "mylongbox-media"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "image",
  "libheif-rs",
@@ -916,7 +916,7 @@ dependencies = [
 
 [[package]]
 name = "mylongbox-sandbox"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "landlock",
  "libc",
