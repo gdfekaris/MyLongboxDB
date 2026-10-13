@@ -1,4 +1,5 @@
 # Files with text to translate, from the repository root.
+crates/mylongbox-app/src/about.rs
 crates/mylongbox-app/src/app.rs
 crates/mylongbox-app/src/books.rs
 crates/mylongbox-app/src/bulk_dialog.rs

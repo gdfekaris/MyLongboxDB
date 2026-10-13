@@ -24,8 +24,8 @@ use crate::settings::{self, Settings};
 use crate::sorting::SortBy;
 use crate::window::MainWindow;
 use crate::{
-    bulk_dialog, covers, customize, form, format, gaps_page, import_dialog, photo_editor, prefs,
-    prompt, series_dialog, shortcuts, sorting, trash_page, viewer, work,
+    about, bulk_dialog, covers, customize, form, format, gaps_page, import_dialog, photo_editor,
+    prefs, prompt, series_dialog, shortcuts, sorting, trash_page, viewer, work,
 };
 
 /// What a sidebar section shows.
@@ -334,6 +334,7 @@ pub enum AppMsg {
     /// Show a message, from work that finished in the background.
     Notify(String),
     ShowShortcuts,
+    ShowAbout,
     /// Close the window, asking first if a form has unsaved changes.
     Quit,
     QuitNow,
@@ -623,6 +624,7 @@ impl Component for App {
             relm4::main_application().set_accels_for_action(&format!("win.{name}"), &[keys]);
         }
         add_action(&root, "shortcuts", &sender, || AppMsg::ShowShortcuts);
+        add_action(&root, "about", &sender, || AppMsg::ShowAbout);
         relm4::main_application().set_accels_for_action("win.shortcuts", &["<Control>question"]);
         add_action(&root, "quit", &sender, || AppMsg::Quit);
         relm4::main_application().set_accels_for_action("win.quit", &["<Control>q"]);
@@ -968,6 +970,24 @@ impl Component for App {
             AppMsg::Compact => self.compact(root, &sender),
             AppMsg::CompactReady(result) => self.finish_compact(result, root),
             AppMsg::Notify(message) => root.toast(&message),
+            AppMsg::ShowAbout => {
+                let size = self.open.as_ref().and_then(|(name, db)| {
+                    let total = self
+                        .store()
+                        .ok()?
+                        .list()
+                        .ok()?
+                        .into_iter()
+                        .find(|c| &c.name == name)?
+                        .size_bytes;
+                    Some(about::Size {
+                        collection: name.clone(),
+                        total,
+                        photos: db.photo_bytes().ok()?,
+                    })
+                });
+                about::show(root, size);
+            }
             AppMsg::ShowShortcuts => shortcuts::dialog().present(Some(root)),
             AppMsg::Quit => match &self.form {
                 Some(form) if form.is_dirty() => {

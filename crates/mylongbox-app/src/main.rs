@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+mod about;
 mod app;
 mod autocomplete;
 mod books;

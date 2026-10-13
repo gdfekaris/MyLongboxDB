@@ -205,11 +205,18 @@ fn collections_group(
         let row = adw::ActionRow::new();
         row.set_use_markup(false);
         row.set_title(&c.name);
-        let size = glib::format_size(c.size_bytes);
+        let photos = state
+            .db
+            .filter(|_| current)
+            .and_then(|db| db.photo_bytes().ok());
+        let size = match photos {
+            Some(photos) => crate::about::size_text(c.size_bytes, photos),
+            None => glib::format_size(c.size_bytes).to_string(),
+        };
         row.set_subtitle(&if current {
             gettext_f("Open now \u{b7} {size}", &[("size", &size)])
         } else {
-            size.to_string()
+            size
         });
         let button = |icon: &str, tip: &str| {
             gtk::Button::builder()
