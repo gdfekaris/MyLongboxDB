@@ -5,8 +5,8 @@ comic books, magazines, and collected editions. Everything, including
 cover photos, lives in one local SQLite file, and the app never touches
 the network.
 
-**Status:** 0.1.0 is the first release. It is not on Flathub yet; install
-it from the Releases page as described below.
+**Status:** 0.1.1 is the latest release. It is not on Flathub yet;
+install it from the Releases page as described below.
 
 ## Installing
 
@@ -14,9 +14,13 @@ Each release on the repository's Releases page has a Flatpak bundle and
 its SHA-256 checksum. Check the download, then install it:
 
 ```sh
-sha256sum -c MyLongboxDB-0.1.0.flatpak.sha256
-flatpak install --user MyLongboxDB-0.1.0.flatpak
+sha256sum -c MyLongboxDB-0.1.1.flatpak.sha256
+flatpak install --user MyLongboxDB-0.1.1.flatpak
 ```
+
+A newer release installs over an older one the same way. A collection
+opened by a newer release cannot be opened by an older one, so keep a
+copy (Export a Copy) before upgrading if you may want to go back.
 
 ## Building
 
