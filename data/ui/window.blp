@@ -313,6 +313,12 @@ template $MainWindow: Adw.ApplicationWindow {
 menu entry_menu {
   section {
     item {
+      label: _("_Edit Series…");
+      action: "win.edit-series-entry";
+      hidden-when: "action-disabled";
+    }
+
+    item {
       label: _("_Rename…");
       action: "win.rename-entry";
     }

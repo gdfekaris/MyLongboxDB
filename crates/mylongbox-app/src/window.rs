@@ -425,6 +425,19 @@ impl MainWindow {
         });
     }
 
+    /// How far down the list of names is scrolled.
+    pub fn names_scroll(&self) -> f64 {
+        self.imp().names_scroller.vadjustment().value()
+    }
+
+    /// Scrolls the list of names back to where `names_scroll` found it,
+    /// once refilled; the new rows are laid out on the next frame.
+    pub fn restore_names_scroll(&self, value: f64) {
+        let adjustment = self.imp().names_scroller.vadjustment();
+        adjustment.set_value(value);
+        glib::idle_add_local_once(move || adjustment.set_value(value));
+    }
+
     /// Drops a position kept for books no longer shown.
     pub fn forget_books_scroll(&self) {
         self.imp().pending_scroll.set(None);

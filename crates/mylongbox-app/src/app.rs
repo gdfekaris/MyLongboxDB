@@ -7,7 +7,7 @@ use gtk::{gio, glib};
 use mylongbox_core::{
     Amount, BulkChange, Category, CollectionInfo, CollectionStore, CopyId, CopyRow, CoverPhoto,
     Currency, Database, Date, EditionId, FilterSet, ImportSource, IssueId, Prefill, SavedShelf,
-    SavedShelfId, SeriesId, Shelf, ShelfEntry, ShelfList, Side, TrashId, ValueEntry,
+    SavedShelfId, SeriesFields, SeriesId, Shelf, ShelfEntry, ShelfList, Side, TrashId, ValueEntry,
 };
 use mylongbox_media::Edit;
 use relm4::typed_view::column::TypedColumnView;
@@ -15,7 +15,7 @@ use relm4::typed_view::grid::TypedGridView;
 use relm4::typed_view::list::TypedListView;
 use relm4::{Component, ComponentParts, ComponentSender};
 
-use crate::books::{self, Book, Name};
+use crate::books::{self, Book, Manage, Name};
 use crate::filter_panel::FilterPanel;
 use crate::form::{Focus, Form, Hooks};
 use crate::i18n::{gettext, gettext_f, gettext_noop, ngettext_f};
@@ -25,7 +25,7 @@ use crate::sorting::SortBy;
 use crate::window::MainWindow;
 use crate::{
     bulk_dialog, covers, customize, form, format, gaps_page, import_dialog, photo_editor, prefs,
-    prompt, shortcuts, sorting, trash_page, viewer, work,
+    prompt, series_dialog, shortcuts, sorting, trash_page, viewer, work,
 };
 
 /// What a sidebar section shows.
@@ -268,6 +268,9 @@ pub struct App {
     places: Vec<Place>,
     /// The name-list entry whose books are shown, if any.
     shelf: Option<ShelfEntry>,
+    /// The entry being renamed, merged, or deleted: the one shown, or
+    /// one picked from its list's menu.
+    managed: Option<ShelfEntry>,
     /// What the books last shown were, from `view_key`.
     books_view: Option<String>,
     as_list: bool,
@@ -378,6 +381,12 @@ pub enum AppMsg {
     DoRenameCollection(String, String),
     ConfirmDeleteCollection(String),
     DoDeleteCollection(String),
+    /// Do something to an entry of a name list: the one whose books are
+    /// shown, or the one at this position in the list shown.
+    Manage(Manage, Option<u32>),
+    /// Ask for a series' new details, from the page of this copy if any.
+    EditSeries(SeriesId, Option<CopyId>),
+    SaveSeries(SeriesId, Box<SeriesFields>, String, Option<CopyId>),
     RenameEntry,
     EntryAliases,
     MergeEntry,
@@ -547,11 +556,33 @@ impl Component for App {
             AppMsg::ShowPreferences(true)
         });
         relm4::main_application().set_accels_for_action("win.preferences", &["<Control>comma"]);
-        add_action(&root, "rename-entry", &sender, || AppMsg::RenameEntry);
-        add_action(&root, "entry-aliases", &sender, || AppMsg::EntryAliases);
-        add_action(&root, "merge-entry", &sender, || AppMsg::MergeEntry);
+        add_action(&root, "rename-entry", &sender, || {
+            AppMsg::Manage(Manage::Rename, None)
+        });
+        add_action(&root, "entry-aliases", &sender, || {
+            AppMsg::Manage(Manage::Aliases, None)
+        });
+        add_action(&root, "merge-entry", &sender, || {
+            AppMsg::Manage(Manage::Merge, None)
+        });
+        add_action(&root, "edit-series-entry", &sender, || {
+            AppMsg::Manage(Manage::EditSeries, None)
+        });
+        {
+            let manage = gio::SimpleAction::new("manage-name", Some(glib::VariantTy::STRING));
+            let s = sender.clone();
+            manage.connect_activate(move |_, target| {
+                if let Some((what, position)) = target
+                    .and_then(|t| t.get::<String>())
+                    .and_then(|t| books::parse_manage_target(&t))
+                {
+                    s.input(AppMsg::Manage(what, Some(position)));
+                }
+            });
+            root.add_action(&manage);
+        }
         add_action(&root, "delete-entry", &sender, || {
-            AppMsg::ConfirmDeleteEntry
+            AppMsg::Manage(Manage::Delete, None)
         });
         add_action(&root, "trash-selected", &sender, || AppMsg::TrashSelected);
         relm4::main_application().set_accels_for_action("win.trash-selected", &["Delete"]);
@@ -720,6 +751,7 @@ impl Component for App {
             editing: None,
             places: Vec::new(),
             shelf: None,
+            managed: None,
             books_view: None,
             as_list: false,
             grid,
@@ -1342,8 +1374,71 @@ impl Component for App {
                     )),
                 }
             }
+            AppMsg::Manage(what, shelf) => {
+                self.managed = match shelf {
+                    None => self.shelf.clone(),
+                    Some(at) => self.names.get(at).map(|n| n.borrow().0.clone()),
+                };
+                match (what, self.managed.as_ref().map(|e| e.shelf)) {
+                    (_, None) => {}
+                    (Manage::Rename, _) => sender.input(AppMsg::RenameEntry),
+                    (Manage::Aliases, _) => sender.input(AppMsg::EntryAliases),
+                    (Manage::Merge, _) => sender.input(AppMsg::MergeEntry),
+                    (Manage::Delete, _) => sender.input(AppMsg::ConfirmDeleteEntry),
+                    (Manage::EditSeries, Some(Shelf::Series(series))) => {
+                        sender.input(AppMsg::EditSeries(series, None));
+                    }
+                    (Manage::EditSeries, Some(_)) => {}
+                }
+            }
+            AppMsg::EditSeries(series, copy) => {
+                let Some((_, db)) = &self.open else {
+                    return;
+                };
+                let loaded = db.series(series).and_then(|s| {
+                    let publisher = match s.fields.publisher {
+                        Some(p) => db.lookup(p)?.name,
+                        None => String::new(),
+                    };
+                    Ok((s, publisher))
+                });
+                match loaded {
+                    Ok((current, publisher)) => {
+                        let s = sender.clone();
+                        series_dialog::ask(
+                            root,
+                            &current,
+                            &publisher,
+                            db,
+                            move |fields, publisher| {
+                                s.input(AppMsg::SaveSeries(
+                                    series,
+                                    Box::new(fields),
+                                    publisher,
+                                    copy,
+                                ));
+                            },
+                        );
+                    }
+                    Err(why) => root.toast(&why.to_string()),
+                }
+            }
+            AppMsg::SaveSeries(series, fields, publisher, copy) => {
+                match self.with_db(|db| db.edit_series(series, &fields, &publisher)) {
+                    Ok(()) => {
+                        match copy {
+                            Some(copy) => self.refresh_copy(copy, root, &sender),
+                            None => self.after_manage(Some(Shelf::Series(series)), root),
+                        }
+                        root.toast(&gettext("Saved"));
+                    }
+                    Err(why) => {
+                        root.toast(&gettext_f("Could not save: {reason}", &[("reason", &why)]))
+                    }
+                }
+            }
             AppMsg::RenameEntry => {
-                if let Some(entry) = &self.shelf {
+                if let Some(entry) = &self.managed {
                     let initial = rename_text(entry);
                     let s = sender.clone();
                     prompt::ask_text(
@@ -1361,11 +1456,11 @@ impl Component for App {
                 }
             }
             AppMsg::DoRename(name) => {
-                let Some(shelf) = self.shelf.as_ref().map(|e| e.shelf) else {
+                let Some(shelf) = self.managed.as_ref().map(|e| e.shelf) else {
                     return;
                 };
                 match self.with_db(|db| db.rename_shelf(shelf, &name)) {
-                    Ok(()) => self.show_entry(shelf, root),
+                    Ok(()) => self.after_manage(Some(shelf), root),
                     Err(why) => root.toast(&gettext_f(
                         "Could not rename: {reason}",
                         &[("reason", &why)],
@@ -1373,7 +1468,7 @@ impl Component for App {
                 }
             }
             AppMsg::EntryAliases => {
-                let (Some(entry), Some((_, db))) = (&self.shelf, &self.open) else {
+                let (Some(entry), Some((_, db))) = (&self.managed, &self.open) else {
                     return;
                 };
                 let shelf = entry.shelf;
@@ -1400,7 +1495,7 @@ impl Component for App {
                 }
             }
             AppMsg::MergeEntry => {
-                let (Some(entry), Some((_, db))) = (&self.shelf, &self.open) else {
+                let (Some(entry), Some((_, db))) = (&self.managed, &self.open) else {
                     return;
                 };
                 let shelf = entry.shelf;
@@ -1429,12 +1524,12 @@ impl Component for App {
                 );
             }
             AppMsg::DoMerge(into) => {
-                let Some(shelf) = self.shelf.as_ref().map(|e| e.shelf) else {
+                let Some(shelf) = self.managed.as_ref().map(|e| e.shelf) else {
                     return;
                 };
                 match self.with_db(|db| db.merge_shelf(shelf, &into)) {
                     Ok(kept) => {
-                        self.show_entry(kept, root);
+                        self.after_manage(Some(kept), root);
                         root.toast(&gettext("Merged"));
                     }
                     Err(why) => {
@@ -1443,7 +1538,7 @@ impl Component for App {
                 }
             }
             AppMsg::ConfirmDeleteEntry => {
-                if let Some(entry) = &self.shelf {
+                if let Some(entry) = &self.managed {
                     let body = match entry.shelf {
                         Shelf::Series(_) => gettext_f(
                             "\u{201c}{name}\u{201d} and every book in it move to Trash.",
@@ -1464,13 +1559,12 @@ impl Component for App {
                 }
             }
             AppMsg::DoDeleteEntry => {
-                let Some(shelf) = self.shelf.as_ref().map(|e| e.shelf) else {
+                let Some(shelf) = self.managed.as_ref().map(|e| e.shelf) else {
                     return;
                 };
                 match self.with_db(|db| db.delete_shelf(shelf)) {
                     Ok(trash) => {
-                        self.shelf = None;
-                        self.show(root);
+                        self.after_manage(None, root);
                         match trash {
                             Some(trash) => {
                                 let undo = sender.clone();
@@ -2112,6 +2206,27 @@ impl App {
         }
     }
 
+    /// Shows the effect of renaming, merging, or deleting an entry, or
+    /// of changing a series: the shelf shown follows the entry to
+    /// `kept`, or leaves it if it is gone; a list changed from its own
+    /// menu keeps its place.
+    fn after_manage(&mut self, kept: Option<Shelf>, root: &MainWindow) {
+        self.managed = None;
+        if self.shelf.is_some() {
+            match kept {
+                Some(shelf) => self.show_entry(shelf, root),
+                None => {
+                    self.shelf = None;
+                    self.show(root);
+                }
+            }
+        } else {
+            let scroll = root.names_scroll();
+            self.show(root);
+            root.restore_names_scroll(scroll);
+        }
+    }
+
     /// The copies selected in the view showing, in the order shown.
     fn selected_copies(&self) -> Vec<CopyId> {
         let model: &gtk::MultiSelection = if self.as_list {
@@ -2297,6 +2412,10 @@ impl App {
                     view_photo: {
                         let s = sender.clone();
                         Rc::new(move |copy, side| s.input(AppMsg::ViewPhoto(copy, side)))
+                    },
+                    edit_series: {
+                        let s = sender.clone();
+                        Rc::new(move |series, copy| s.input(AppMsg::EditSeries(series, copy)))
                     },
                 };
                 root.push_page(&issue_page::page(&detail, &links, current));
@@ -2833,6 +2952,15 @@ impl App {
                     .is_some_and(|e| Database::shelf_has_aliases(e.shelf)),
             );
         }
+        if let Some(action) = root.lookup_action("edit-series-entry")
+            && let Ok(action) = action.downcast::<gio::SimpleAction>()
+        {
+            action.set_enabled(
+                self.shelf
+                    .as_ref()
+                    .is_some_and(|e| matches!(e.shelf, Shelf::Series(_))),
+            );
+        }
     }
 
     fn load(&mut self, root: &MainWindow) -> mylongbox_core::Result<()> {
@@ -2892,7 +3020,8 @@ impl App {
                 if entries.is_empty() {
                     root.show_empty(&gettext(empty), &gettext(hint));
                 } else {
-                    self.names.extend_from_iter(entries.into_iter().map(Name));
+                    self.names
+                        .extend_from_iter((0..).zip(entries).map(|(at, e)| Name(e, at)));
                     root.show_names();
                 }
                 return Ok(());

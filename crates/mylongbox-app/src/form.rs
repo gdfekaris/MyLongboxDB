@@ -149,7 +149,7 @@ const DISTRIBUTIONS: [(&str, Option<Distribution>); 3] = [
     ),
 ];
 
-const FORMATS: [(&str, Option<MagazineFormat>); 4] = [
+pub(crate) const FORMATS: [(&str, Option<MagazineFormat>); 4] = [
     (gettext_noop("Not noted"), None),
     (
         gettext_noop("Standard size"),
@@ -163,7 +163,7 @@ const FORMATS: [(&str, Option<MagazineFormat>); 4] = [
 ];
 
 /// Whether a magazine is black and white.
-const COLORS: [(&str, Option<bool>); 3] = [
+pub(crate) const COLORS: [(&str, Option<bool>); 3] = [
     (gettext_noop("Not noted"), None),
     // Translators: printed in color, as opposed to black and white.
     (gettext_noop("Color"), Some(false)),

@@ -1,8 +1,9 @@
 //! How books and name-list entries look in the results views.
 
 use adw::prelude::*;
+use gtk::gio;
 use gtk::pango::EllipsizeMode;
-use mylongbox_core::{Category, CopyRow, Need, ShelfEntry};
+use mylongbox_core::{Category, CopyRow, Database, Need, Shelf, ShelfEntry};
 use relm4::typed_view::column::{RelmColumn, TypedColumnView};
 use relm4::typed_view::grid::RelmGridItem;
 use relm4::typed_view::list::RelmListItem;
@@ -295,12 +296,77 @@ pub fn book_table() -> TypedColumnView<Book, gtk::MultiSelection> {
 }
 
 /// One entry of a name list, such as a series or a creator.
-pub struct Name(pub ShelfEntry);
+/// An entry of a name list, and its position in the list.
+pub struct Name(pub ShelfEntry, pub u32);
 
 pub struct NameWidgets {
     name: gtk::Label,
     detail: gtk::Label,
     count: gtk::Label,
+    menu: gtk::MenuButton,
+}
+
+/// What can be done to an entry of a name list, from its own menu or
+/// from the menu of the shelf it leads to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Manage {
+    Rename,
+    Aliases,
+    Merge,
+    Delete,
+    EditSeries,
+}
+
+impl Manage {
+    const ALL: [(Self, &'static str); 5] = [
+        (Self::Rename, "rename"),
+        (Self::Aliases, "aliases"),
+        (Self::Merge, "merge"),
+        (Self::Delete, "delete"),
+        (Self::EditSeries, "edit-series"),
+    ];
+
+    fn code(self) -> &'static str {
+        Self::ALL
+            .iter()
+            .find(|(m, _)| *m == self)
+            .map_or("", |(_, c)| c)
+    }
+}
+
+/// The action target naming what to do to the entry at `position` in
+/// the list shown, e.g. `rename 12`, for the `win.manage-name` action.
+fn manage_target(what: Manage, position: u32) -> String {
+    format!("{} {position}", what.code())
+}
+
+/// Reads a target made by [`manage_target`].
+pub fn parse_manage_target(target: &str) -> Option<(Manage, u32)> {
+    let (what, position) = target.split_once(' ')?;
+    let what = Manage::ALL.iter().find(|(_, c)| *c == what)?.0;
+    Some((what, position.parse().ok()?))
+}
+
+/// The menu of things to do to `shelf`'s entry, at `position` in its
+/// list.
+fn manage_menu(shelf: Shelf, position: u32) -> gio::Menu {
+    let menu = gio::Menu::new();
+    let add = |label: String, what: Manage| {
+        let item = gio::MenuItem::new(Some(&label), None);
+        let target = manage_target(what, position);
+        item.set_action_and_target_value(Some("win.manage-name"), Some(&target.to_variant()));
+        menu.append_item(&item);
+    };
+    if matches!(shelf, Shelf::Series(_)) {
+        add(gettext("_Edit Series…"), Manage::EditSeries);
+    }
+    add(gettext("_Rename…"), Manage::Rename);
+    if Database::shelf_has_aliases(shelf) {
+        add(gettext("_Alternate Names…"), Manage::Aliases);
+    }
+    add(gettext("_Merge Into…"), Manage::Merge);
+    add(gettext("_Delete…"), Manage::Delete);
+    menu
 }
 
 impl RelmListItem for Name {
@@ -327,6 +393,12 @@ impl RelmListItem for Name {
         let count = gtk::Label::builder()
             .css_classes(["dim-label", "numeric"])
             .build();
+        let menu = gtk::MenuButton::builder()
+            .icon_name("view-more-symbolic")
+            .tooltip_text(gettext("Manage This Entry"))
+            .valign(gtk::Align::Center)
+            .css_classes(["flat"])
+            .build();
         let arrow = gtk::Image::from_icon_name("go-next-symbolic");
         let root = gtk::Box::builder()
             .spacing(12)
@@ -335,6 +407,7 @@ impl RelmListItem for Name {
             .build();
         root.append(&text);
         root.append(&count);
+        root.append(&menu);
         root.append(&arrow);
         (
             root,
@@ -342,6 +415,7 @@ impl RelmListItem for Name {
                 name,
                 detail,
                 count,
+                menu,
             },
         )
     }
@@ -349,6 +423,9 @@ impl RelmListItem for Name {
     fn bind(&mut self, widgets: &mut NameWidgets, _: &mut gtk::Box) {
         let entry = &self.0;
         widgets.name.set_label(&entry.name);
+        widgets
+            .menu
+            .set_menu_model(Some(&manage_menu(entry.shelf, self.1)));
         widgets.detail.set_label(&entry.detail);
         widgets.detail.set_visible(!entry.detail.is_empty());
         widgets.count.set_label(&match entry.copies {
@@ -438,5 +515,16 @@ mod tests {
             ..row()
         };
         assert_eq!(badge(&book), "TPB");
+    }
+
+    #[test]
+    fn manage_targets_read_back() {
+        for (what, _) in Manage::ALL {
+            let target = manage_target(what, 41);
+            assert_eq!(parse_manage_target(&target), Some((what, 41)), "{target}");
+        }
+        for bad in ["", "rename", "rename x", "frobnicate 3", "rename -1"] {
+            assert_eq!(parse_manage_target(bad), None, "{bad}");
+        }
     }
 }

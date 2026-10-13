@@ -8,7 +8,7 @@ use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
     Category, CopyDetail, CopyId, EditionDetail, EditionId, IssueDetail, IssueId, MagazineFormat,
-    Prefill, Role, Side, ValueEntry, format_collects,
+    Prefill, Role, SeriesId, Side, ValueEntry, format_collects,
 };
 
 use crate::books::version;
@@ -38,6 +38,8 @@ pub struct Links {
     pub swap_photos: Rc<dyn Fn(CopyId)>,
     /// Opens the full-size view of a copy's photos at one side.
     pub view_photo: Rc<dyn Fn(CopyId, Side)>,
+    /// Change the series' details, from the page of this copy if any.
+    pub edit_series: Rc<dyn Fn(SeriesId, Option<CopyId>)>,
 }
 
 /// The copy the page is about: `open_copy` if the issue has it, else
@@ -137,7 +139,7 @@ pub fn page(d: &IssueDetail, links: &Links, current: Option<CopyId>) -> adw::Nav
 
     let header = adw::HeaderBar::new();
     let toolbar = adw::ToolbarView::new();
-    header.pack_end(&issue_menu(&toolbar, d.issue.id, links));
+    header.pack_end(&issue_menu(&toolbar, d, current, links));
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&prefs));
     adw::NavigationPage::builder()
@@ -965,8 +967,20 @@ fn plain_row(title: &str, subtitle: &str) -> adw::ActionRow {
 /// The page's own menu, for the issue as a whole. Its actions belong to
 /// `page`, which holds both the header and the content, since a menu
 /// finds actions only on the widgets around it.
-fn issue_menu(page: &adw::ToolbarView, issue: IssueId, links: &Links) -> gtk::MenuButton {
+fn issue_menu(
+    page: &adw::ToolbarView,
+    d: &IssueDetail,
+    current: Option<CopyId>,
+    links: &Links,
+) -> gtk::MenuButton {
+    let (issue, series) = (d.issue.id, d.series.id);
     let actions = gio::SimpleActionGroup::new();
+    let edit_series = gio::SimpleAction::new("edit-series", None);
+    {
+        let hook = links.edit_series.clone();
+        edit_series.connect_activate(move |_, _| hook(series, current));
+    }
+    actions.add_action(&edit_series);
     let trash = gio::SimpleAction::new("trash", None);
     {
         let hook = links.trash_issue.clone();
@@ -975,6 +989,7 @@ fn issue_menu(page: &adw::ToolbarView, issue: IssueId, links: &Links) -> gtk::Me
     actions.add_action(&trash);
     page.insert_action_group("issue", Some(&actions));
     let menu = gio::Menu::new();
+    menu.append(Some(&gettext("_Edit Series…")), Some("issue.edit-series"));
     menu.append(Some(&gettext("Move Issue to _Trash")), Some("issue.trash"));
     gtk::MenuButton::builder()
         .icon_name("view-more-symbolic")

@@ -20,6 +20,7 @@ mod issue_page;
 mod photo_editor;
 mod prefs;
 mod prompt;
+mod series_dialog;
 mod settings;
 mod shortcuts;
 mod sorting;
