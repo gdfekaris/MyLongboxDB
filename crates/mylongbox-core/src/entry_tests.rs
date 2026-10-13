@@ -644,3 +644,45 @@ fn signers_merge_and_cannot_be_deleted_while_used() {
     db.merge_lookups(alias, stan).unwrap();
     assert_eq!(db.signatures(saved.copy).unwrap()[0].name, "Stan Lee");
 }
+
+#[test]
+fn a_series_is_edited_with_its_publisher_named() {
+    let db = db();
+    let saved = db.add_book(&comic("Amazing Spider-Man", "1")).unwrap();
+    let series = db.issue(saved.issue).unwrap().series;
+    let marvel = db.create_lookup::<PublisherId>("Marvel Comics").unwrap();
+
+    let mut f = db.series(series).unwrap().fields;
+    f.start_year = Some(1963);
+    f.volume = Some(1);
+    f.known_issue_count = Some(441);
+    f.notes = "First run".into();
+    db.edit_series(series, &f, " marvel comics ").unwrap();
+    let read = db.series(series).unwrap().fields;
+    assert_eq!(read.publisher, Some(marvel), "found by name, in any case");
+    assert_eq!(
+        (read.start_year, read.volume, read.known_issue_count),
+        (Some(1963), Some(1), Some(441))
+    );
+    assert_eq!(read.notes, "First run");
+
+    db.edit_series(series, &f, "Atlas").unwrap();
+    let atlas = db.find_lookup::<PublisherId>("Atlas").unwrap();
+    assert!(atlas.is_some(), "a new publisher is added");
+    assert_eq!(db.series(series).unwrap().fields.publisher, atlas);
+
+    db.edit_series(series, &f, "  ").unwrap();
+    assert_eq!(db.series(series).unwrap().fields.publisher, None);
+}
+
+#[test]
+fn a_refused_series_edit_adds_no_publisher() {
+    let db = db();
+    let saved = db.add_book(&comic("Amazing Spider-Man", "1")).unwrap();
+    let series = db.issue(saved.issue).unwrap().series;
+    let mut f = db.series(series).unwrap().fields;
+    f.name = "   ".into();
+    assert!(db.edit_series(series, &f, "Charlton").is_err());
+    assert_eq!(db.find_lookup::<PublisherId>("Charlton").unwrap(), None);
+    assert_eq!(db.series(series).unwrap().fields.name, "Amazing Spider-Man");
+}

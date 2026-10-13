@@ -522,6 +522,21 @@ impl Database {
             .collect()
     }
 
+    /// Saves a series' details with its publisher given by name, as the
+    /// Edit Series dialog has it: found by name or alternate name, added
+    /// if there is none, or cleared when blank. One unit, so a refused
+    /// change leaves no new publisher behind.
+    pub fn edit_series(&self, id: SeriesId, fields: &SeriesFields, publisher: &str) -> Result<()> {
+        let tx = self.tx()?;
+        let mut f = fields.clone();
+        f.publisher = match publisher.trim() {
+            "" => None,
+            name => Some(self.name::<PublisherId>(name)?),
+        };
+        self.update_series(id, &f)?;
+        tx.commit()
+    }
+
     /// The entry with this name or alternate name, added if there is none.
     pub(crate) fn name<I: LookupId>(&self, name: &str) -> Result<I> {
         match self.find_lookup::<I>(name)? {
