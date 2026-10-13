@@ -89,10 +89,9 @@ fn sample() -> Sample {
     e.copy.notes = "Pressed; 100% original".into();
     e.storage_box = Some("Box 1".into());
     e.tags = vec!["Key".into()];
-    e.signatures = vec![(
-        "Gerry Conway".into(),
-        SignatureFields::new(Verification::CgcSignatureSeries),
-    )];
+    let mut signed = SignatureFields::new(Verification::CgcSignatureSeries);
+    signed.placement = Some(SignaturePlacement::FrontCover);
+    e.signatures = vec![("Gerry Conway".into(), signed)];
     let a = db.add_book(&e).unwrap().copy;
     db.add_value(a, date("2023-01-01"), usd("2000"), "GoCollect")
         .unwrap();
@@ -500,6 +499,19 @@ fn choices_flags_and_presence() {
         (
             Filter::Choice(Choice::PageQuality(vec![PageQuality::White])),
             set(&[s.a]),
+        ),
+        (
+            Filter::Choice(Choice::SignaturePlacement(vec![
+                SignaturePlacement::FrontCover,
+                SignaturePlacement::FirstPage,
+            ])),
+            set(&[s.a]),
+        ),
+        (
+            Filter::Choice(Choice::SignaturePlacement(vec![
+                SignaturePlacement::BackCover,
+            ])),
+            set(&[]),
         ),
         (
             Filter::Choice(Choice::PageQuality(vec![

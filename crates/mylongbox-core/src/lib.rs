@@ -100,8 +100,8 @@ pub use model::{
     Binding, BookCondition, BoxId, Category, CharacterId, Copy, CopyFields, CopyId, CoverDate,
     CreatorId, Distribution, Edition, EditionFields, EditionId, Grade, GradeType, Isbn, Issue,
     IssueFields, IssueId, MagazineFormat, PageQuality, PublisherId, Role, RowUuid, SavedShelfId,
-    Series, SeriesFields, SeriesId, Side, SignatureFields, StoryArcId, TagId, TeamId, TrashGroup,
-    TrashId, ValueId, Verification,
+    Series, SeriesFields, SeriesId, Side, SignatureFields, SignaturePlacement, StoryArcId, TagId,
+    TeamId, TrashGroup, TrashId, ValueId, Verification,
 };
 pub use money::{
     Amount, ConversionError, Currency, ExchangeRate, ParseAmountError, RateError, RateTable,

@@ -1780,6 +1780,7 @@ impl Component for App {
                 let title = match side {
                     Side::Front => gettext("Edit Front Cover"),
                     Side::Back => gettext("Edit Back Cover"),
+                    Side::Signature => gettext("Edit Signature Photo"),
                 };
                 let preview = loaded.preview.clone();
                 // The full photo waits here for the edit; closing the
@@ -2320,7 +2321,12 @@ impl App {
                 Ok(db.issue_detail(edition.issue)?.label)
             })
             .unwrap_or_default();
-        viewer::open(root, &title, full(Side::Front), full(Side::Back), side);
+        let photos = viewer::Photos {
+            front: full(Side::Front),
+            back: full(Side::Back),
+            signature: full(Side::Signature),
+        };
+        viewer::open(root, &title, photos, side);
     }
 
     /// Stores a photo made or kept earlier, and shows the copy with it.
@@ -3249,6 +3255,9 @@ fn photo_message(side: Side, done: PhotoDone) -> String {
         (Side::Back, PhotoDone::Added) => gettext("Back cover added"),
         (Side::Back, PhotoDone::Removed) => gettext("Back cover removed"),
         (Side::Back, PhotoDone::PutBack) => gettext("Back cover put back"),
+        (Side::Signature, PhotoDone::Added) => gettext("Signature photo added"),
+        (Side::Signature, PhotoDone::Removed) => gettext("Signature photo removed"),
+        (Side::Signature, PhotoDone::PutBack) => gettext("Signature photo put back"),
     }
 }
 
@@ -3275,6 +3284,7 @@ fn pick_photo(root: &MainWindow, sender: &ComponentSender<App>, copy: CopyId, si
         .title(match side {
             Side::Front => gettext("Choose a Front Cover Photo"),
             Side::Back => gettext("Choose a Back Cover Photo"),
+            Side::Signature => gettext("Choose a Photo of the Signature"),
         })
         .modal(true)
         .filters(&filters)

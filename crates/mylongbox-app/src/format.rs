@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use gtk::glib;
 use mylongbox_core::{
     Amount, Binding, BookCondition, CoverDate, Date, Distribution, Grade, GradeType,
-    MagazineFormat, PageQuality, RateTable, Role, Verification,
+    MagazineFormat, PageQuality, RateTable, Role, SignaturePlacement, Verification,
 };
 
 use crate::i18n::{gettext, gettext_f, gettext_noop, ngettext_f, pgettext};
@@ -226,8 +226,21 @@ pub fn verification(verification: Verification) -> &'static str {
         Verification::Jsa => label(gettext_noop("JSA authenticated")),
         Verification::CgcSignatureSeries => label(gettext_noop("CGC Signature Series")),
         Verification::CgcJsa => label(gettext_noop("CGC Signature Verified (JSA)")),
+        Verification::CbcsWitnessed => label(gettext_noop("CBCS Witnessed Signature")),
         Verification::CbcsVerified => label(gettext_noop("CBCS Verified Signature")),
         Verification::PgxVerified => label(gettext_noop("PGX Signature Verified")),
+    }
+}
+
+/// Where on a book a signature is, e.g. `Inside front cover`.
+pub fn signature_placement(placement: SignaturePlacement) -> &'static str {
+    match placement {
+        SignaturePlacement::FrontCover => label(gettext_noop("Front cover")),
+        SignaturePlacement::InsideFrontCover => label(gettext_noop("Inside front cover")),
+        SignaturePlacement::FirstPage => label(gettext_noop("First page")),
+        SignaturePlacement::InteriorPage => label(gettext_noop("Interior page")),
+        SignaturePlacement::InsideBackCover => label(gettext_noop("Inside back cover")),
+        SignaturePlacement::BackCover => label(gettext_noop("Back cover")),
     }
 }
 

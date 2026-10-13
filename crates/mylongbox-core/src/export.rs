@@ -86,6 +86,7 @@ pub const COLUMNS: &[&str] = &[
     "Date Added",
     "Front Photo",
     "Back Photo",
+    "Signature Photo",
 ];
 
 /// The credit roles in the order of their columns.
@@ -313,6 +314,7 @@ impl Database {
                 &text(f.signed_on),
                 &f.place,
                 if f.sketch { "sketch" } else { "" },
+                f.placement.map_or("", |p| p.code()),
             ])
         }));
         let values = self.values(id)?;
@@ -403,6 +405,7 @@ impl Database {
             copy.added_at.clone(),
             photo(Side::Front)?,
             photo(Side::Back)?,
+            photo(Side::Signature)?,
         ]);
         debug_assert_eq!(row.len(), COLUMNS.len());
         Ok(row)
@@ -429,7 +432,8 @@ collection.csv
   Lists: a cell holding several names separates them with \"; \", for
   example \"Wolverine; Hulk\". Signatures and value history entries have
   parts separated by \" | \":
-    Signatures:     name | verification | certificate | date | place | sketch
+    Signatures:     name | verification | certificate | date | place |
+                    sketch | placement
     Value History:  date | amount | currency | source
   A backslash before ; or | or \\ means that character is part of a
   name rather than a separator.
@@ -461,17 +465,21 @@ collection.csv
     Distribution: direct, newsstand
     Magazine Format: standard, treasury, digest
     Signature verification: unverified, witnessed, coa, jsa, cgc_ss,
-      cgc_jsa, cbcs, pgx
+      cgc_jsa, cbcs_witnessed, cbcs, pgx
+    Signature placement: front_cover, inside_front_cover, first_page,
+      interior_page, inside_back_cover, back_cover
   Yes or no columns are \"yes\", \"no\", or empty when not recorded.
 
   Collects, for collected editions, lists the issues the book reprints,
   for example \"Amazing Spider-Man (1963) 1-10; Annual 1\".
 
 images/
-  The cover photos, as JPEG files named after the copy:
+  The photos, as JPEG files named after the copy:
     <Copy ID>_front.jpg
     <Copy ID>_back.jpg
-  The Front Photo and Back Photo columns name each copy's files.
+    <Copy ID>_signature.jpg   a signature inside the book
+  The Front Photo, Back Photo, and Signature Photo columns name each
+  copy's files.
 
 MyLongboxDB can import this archive, or collection.csv on its own,
 with nothing lost.

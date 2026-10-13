@@ -111,12 +111,12 @@ impl Database {
         Ok(u64::try_from(bytes).unwrap_or(0))
     }
 
-    /// Which sides of a copy have photos, front first.
+    /// Which photos a copy has: front, then back, then signature.
     pub fn photo_sides(&self, copy: CopyId) -> Result<Vec<Side>> {
         query_all(
             &self.conn,
             "SELECT side FROM cover_photo WHERE copy_id = ?1
-             ORDER BY side = 'back'",
+             ORDER BY CASE side WHEN 'front' THEN 0 WHEN 'back' THEN 1 ELSE 2 END",
             [copy],
             |row| row.get(0),
         )

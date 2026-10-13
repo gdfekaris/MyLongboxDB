@@ -153,10 +153,12 @@ code_enum! {
 }
 
 code_enum! {
-    /// Which side of a book a cover photo shows.
+    /// What a copy's photo shows: one of its covers, or a signature
+    /// inside it.
     pub enum Side {
         Front = "front",
         Back = "back",
+        Signature = "signature",
     }
 }
 
@@ -235,8 +237,25 @@ code_enum! {
         CgcSignatureSeries = "cgc_ss",
         /// CGC Signature Verified: authenticated through JSA and slabbed.
         CgcJsa = "cgc_jsa",
+        /// CBCS's Authentic Signature program: signed in front of a CBCS
+        /// witness.
+        CbcsWitnessed = "cbcs_witnessed",
+        /// CBCS's Verified Signature program: signed without a CBCS
+        /// witness and authenticated afterwards.
         CbcsVerified = "cbcs",
         PgxVerified = "pgx",
+    }
+}
+
+code_enum! {
+    /// Where on a book a signature is.
+    pub enum SignaturePlacement {
+        FrontCover = "front_cover",
+        InsideFrontCover = "inside_front_cover",
+        FirstPage = "first_page",
+        InteriorPage = "interior_page",
+        InsideBackCover = "inside_back_cover",
+        BackCover = "back_cover",
     }
 }
 
@@ -251,6 +270,8 @@ pub struct SignatureFields {
     pub place: String,
     /// A sketch (remark) drawn with the signature.
     pub sketch: bool,
+    /// Where on the book it is.
+    pub placement: Option<SignaturePlacement>,
 }
 
 impl SignatureFields {
@@ -261,6 +282,7 @@ impl SignatureFields {
             signed_on: None,
             place: String::new(),
             sketch: false,
+            placement: None,
         }
     }
 }

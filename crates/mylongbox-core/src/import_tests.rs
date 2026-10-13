@@ -300,6 +300,33 @@ fn page_quality_on_a_collected_edition_is_a_problem() {
 }
 
 #[test]
+fn signatures_are_read_with_or_without_their_placement() {
+    let db = Database::open_in_memory().unwrap();
+    let text = "Series,Issue Number,Signatures\n\
+                Thor,1,Stan Lee | cbcs_witnessed | B-1 | 2010-07-22 | SDCC | | first_page\n\
+                Thor,2,Stan Lee | cgc_ss |  |  |  | \n\
+                Thor,3,Stan Lee | cgc_ss |  |  |  |  | upside_down\n";
+    let report = import(&db, text);
+    assert_eq!(outcomes(&report)[..2], [&Outcome::Added; 2]);
+    assert_eq!(
+        report.rows[2].outcome,
+        Outcome::Problem(
+            "Signatures: \u{201c}Stan Lee | cgc_ss |  |  |  |  | upside_down\u{201d} cannot be read"
+                .into()
+        )
+    );
+    let rows = db.browse(crate::Shelf::Everything).unwrap();
+    let first = &db.signatures(rows[0].copy).unwrap()[0].fields;
+    assert_eq!(first.verification, Verification::CbcsWitnessed);
+    assert_eq!(first.placement, Some(SignaturePlacement::FirstPage));
+    let second = &db.signatures(rows[1].copy).unwrap()[0].fields;
+    assert_eq!(
+        second.placement, None,
+        "an export made before placement was kept"
+    );
+}
+
+#[test]
 fn each_problem_names_its_column() {
     let db = Database::open_in_memory().unwrap();
     let text = "Series,Issue Number,Grade,Purchase Date,Category,Signatures\n\

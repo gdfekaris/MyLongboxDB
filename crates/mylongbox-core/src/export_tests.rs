@@ -58,7 +58,10 @@ fn an_empty_collection_exports_just_the_header() {
     assert_eq!(db.export_csv(None, &mut out, false).unwrap(), 0);
     let text = String::from_utf8(out).unwrap();
     assert!(text.starts_with("Copy ID,Edition ID,Issue ID,Series ID,Category,Series,"));
-    assert!(text.ends_with("Back Photo\r\n"), "RFC 4180 line endings");
+    assert!(
+        text.ends_with("Signature Photo\r\n"),
+        "RFC 4180 line endings"
+    );
 }
 
 #[test]
@@ -115,6 +118,7 @@ fn every_field_is_written() {
     signed.signed_on = Some(date("2015-10-10"));
     signed.place = "NYCC | 2015".into();
     signed.sketch = true;
+    signed.placement = Some(SignaturePlacement::FirstPage);
     e.signatures = vec![
         ("Gerry Conway".into(), signed),
         (
@@ -188,7 +192,7 @@ fn every_field_is_written() {
     expect("Tags", "For sale; Key");
     expect(
         "Signatures",
-        r"Gerry Conway | cgc_ss | SS-99 | 2015-10-10 | NYCC \| 2015 | sketch; Gil Kane | unverified |  |  |  | ",
+        r"Gerry Conway | cgc_ss | SS-99 | 2015-10-10 | NYCC \| 2015 | sketch | first_page; Gil Kane | unverified |  |  |  |  | ",
     );
     expect("Notes", "Pressed; über-clean ✓");
     expect("Current Value", "2000.00");

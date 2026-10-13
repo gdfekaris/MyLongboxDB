@@ -227,7 +227,7 @@ impl Database {
     pub fn signatures(&self, copy: CopyId) -> Result<Vec<Signature>> {
         let mut stmt = self.conn.prepare(
             "SELECT s.creator_id, creator.name, s.verification, s.cert_number, s.signed_on,
-                 s.place, s.sketch
+                 s.place, s.sketch, s.placement
              FROM signature s JOIN creator ON creator.id = s.creator_id
              WHERE s.copy_id = ?1
              ORDER BY s.position",
@@ -242,6 +242,7 @@ impl Database {
                     signed_on: row.get(4)?,
                     place: row.get(5)?,
                     sketch: row.get(6)?,
+                    placement: row.get(7)?,
                 },
             })
         })?;
@@ -267,8 +268,8 @@ impl Database {
                 .filter(|c| !c.is_empty());
             tx.execute(
                 "INSERT INTO signature (copy_id, position, creator_id, verification,
-                     cert_number, signed_on, place, sketch)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                     cert_number, signed_on, place, sketch, placement)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     copy,
                     position,
@@ -277,7 +278,8 @@ impl Database {
                     cert,
                     f.signed_on,
                     f.place.trim(),
-                    f.sketch
+                    f.sketch,
+                    f.placement
                 ],
             )?;
         }

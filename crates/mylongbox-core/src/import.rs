@@ -21,7 +21,8 @@ use crate::export::{COLUMNS, ROLE_COLUMNS, split, split_items, split_parts};
 use crate::issue_number::IssueNumber;
 use crate::model::{
     Binding, BookCondition, Category, CopyId, CoverDate, Distribution, Grade, GradeType, Isbn,
-    MagazineFormat, PageQuality, RowUuid, SeriesId, Side, SignatureFields, Verification,
+    MagazineFormat, PageQuality, RowUuid, SeriesId, Side, SignatureFields, SignaturePlacement,
+    Verification,
 };
 use crate::money::{Amount, Currency};
 use crate::photos::CoverPhoto;
@@ -710,11 +711,15 @@ fn plan(cells: &Cells<'_>, today: Date) -> std::result::Result<Planned, String> 
     {
         values.push((today, worth, String::new()));
     }
-    let photos = [(Side::Front, "Front Photo"), (Side::Back, "Back Photo")]
-        .into_iter()
-        .filter(|(_, column)| !cells.get(column).is_empty())
-        .map(|(side, column)| (side, cells.get(column).to_owned()))
-        .collect();
+    let photos = [
+        (Side::Front, "Front Photo"),
+        (Side::Back, "Back Photo"),
+        (Side::Signature, "Signature Photo"),
+    ]
+    .into_iter()
+    .filter(|(_, column)| !cells.get(column).is_empty())
+    .map(|(side, column)| (side, cells.get(column).to_owned()))
+    .collect();
     Ok(Planned {
         copy_id: cells.read("Copy ID", uuid)?,
         edition_id: cells.read("Edition ID", uuid)?,
@@ -730,7 +735,8 @@ fn plan(cells: &Cells<'_>, today: Date) -> std::result::Result<Planned, String> 
 }
 
 /// A signature as `name | verification | certificate | date | place |
-/// sketch`, of which only the name is needed.
+/// sketch | placement`, of which only the name is needed; exports made
+/// before placement was kept have no last part.
 fn signature(item: &str) -> std::result::Result<(String, SignatureFields), String> {
     let parts = split_parts(item);
     let part = |n: usize| parts.get(n).map_or("", String::as_str);
@@ -749,6 +755,11 @@ fn signature(item: &str) -> std::result::Result<(String, SignatureFields), Strin
     };
     fields.place = part(4).to_owned();
     fields.sketch = !part(5).is_empty() && part(5) != "no";
+    fields.placement = if part(6).is_empty() {
+        None
+    } else {
+        Some(code(part(6), SignaturePlacement::from_code).ok_or_else(problem)?)
+    };
     if part(0).is_empty() {
         return Err(problem());
     }

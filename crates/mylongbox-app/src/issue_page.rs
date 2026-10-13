@@ -229,6 +229,7 @@ fn photo_or_placeholder(
     button.update_property(&[gtk::accessible::Property::Label(&match side {
         Side::Front => gettext("View the Front Cover Full Size"),
         Side::Back => gettext("View the Back Cover Full Size"),
+        Side::Signature => gettext("View the Signature Photo Full Size"),
     })]);
     let hook = links.view_photo.clone();
     button.connect_clicked(move |_| hook(copy, side));
@@ -250,6 +251,7 @@ fn summary_cover(d: &IssueDetail, current: Option<CopyId>, links: &Links) -> gtk
     let missing = |side| match side {
         Side::Front => gettext("No Front Cover Image for This Copy"),
         Side::Back => gettext("No Back Cover Image for This Copy"),
+        Side::Signature => gettext("No Signature Photo for This Copy"),
     };
     let found = d
         .editions
@@ -289,14 +291,15 @@ fn summary_cover(d: &IssueDetail, current: Option<CopyId>, links: &Links) -> gtk
     {
         let frame = frame.clone();
         flip.connect_clicked(move |b| {
+            // The flip turns the book over; the signature has its own slot.
             let next = match side.get() {
                 Side::Front => Side::Back,
-                Side::Back => Side::Front,
+                Side::Back | Side::Signature => Side::Front,
             };
             side.set(next);
             show(&frame, next);
             b.set_tooltip_text(Some(&match next {
-                Side::Front => gettext("Show the Back Cover"),
+                Side::Front | Side::Signature => gettext("Show the Back Cover"),
                 Side::Back => gettext("Show the Front Cover"),
             }));
         });
@@ -760,6 +763,10 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
             format::verification(sf.verification),
             format::joined([
                 gettext_f("Signed by {name}", &[("name", &s.name)]),
+                sf.placement
+                    .map(format::signature_placement)
+                    .unwrap_or_default()
+                    .to_owned(),
                 if sf.sketch {
                     gettext("with a sketch")
                 } else {
@@ -805,8 +812,8 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
     row
 }
 
-/// The copy's front and back photos, each with ways to add, replace, or
-/// remove it.
+/// The copy's front and back photos and the photo of its signature,
+/// each with ways to add, replace, or remove it.
 fn photo_row(c: &CopyDetail, links: &Links) -> gtk::ListBoxRow {
     let copy = c.copy.id;
     let slots = gtk::Box::builder()
@@ -819,7 +826,11 @@ fn photo_row(c: &CopyDetail, links: &Links) -> gtk::ListBoxRow {
     for side in [Side::Front, Side::Back] {
         slots.append(&photo_slot(copy, side, c.photos.contains(&side), links));
     }
-    if !c.photos.is_empty() {
+    let covers = c
+        .photos
+        .iter()
+        .any(|s| matches!(s, Side::Front | Side::Back));
+    if covers {
         let swap = gtk::Button::builder()
             .icon_name("object-flip-horizontal-symbolic")
             .tooltip_text(gettext("Swap Front and Back"))
@@ -830,6 +841,12 @@ fn photo_row(c: &CopyDetail, links: &Links) -> gtk::ListBoxRow {
         swap.connect_clicked(move |_| hook(copy));
         slots.append(&swap);
     }
+    slots.append(&photo_slot(
+        copy,
+        Side::Signature,
+        c.photos.contains(&Side::Signature),
+        links,
+    ));
     gtk::ListBoxRow::builder()
         .activatable(false)
         .selectable(false)
@@ -854,6 +871,13 @@ fn photo_slot(copy: CopyId, side: Side, has_photo: bool, links: &Links) -> gtk::
             gettext("Replace the Back Cover Photo"),
             gettext("Remove the Back Cover Photo"),
             gettext("Add a Back Cover Photo"),
+        ),
+        Side::Signature => (
+            gettext("Signature"),
+            gettext("No Signature Photo"),
+            gettext("Replace the Signature Photo"),
+            gettext("Remove the Signature Photo"),
+            gettext("Add a Photo of the Signature"),
         ),
     };
     let frame = gtk::Box::builder()

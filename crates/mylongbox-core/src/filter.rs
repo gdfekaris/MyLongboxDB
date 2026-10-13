@@ -24,8 +24,8 @@ use crate::issue_number::IssueNumber;
 use crate::lookup::LookupId;
 use crate::model::{
     Binding, BookCondition, Category, CharacterId, CopyId, CreatorId, Distribution, Grade,
-    GradeType, MagazineFormat, PageQuality, Role, SeriesId, StoryArcId, TagId, TeamId,
-    Verification,
+    GradeType, MagazineFormat, PageQuality, Role, SeriesId, SignaturePlacement, StoryArcId, TagId,
+    TeamId, Verification,
 };
 use crate::money::{Amount, Currency};
 use crate::search::{edits_allowed, fold, json_ids, like_escaped};
@@ -131,6 +131,8 @@ pub enum Choice {
     DustJacketCondition(Vec<BookCondition>),
     /// How any of the book's signatures is verified.
     Verification(Vec<Verification>),
+    /// Where on the book any of its signatures is.
+    SignaturePlacement(Vec<SignaturePlacement>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -152,6 +154,8 @@ pub enum Flag {
 pub enum Presence {
     FrontPhoto,
     BackPhoto,
+    /// A photo of a signature inside the book.
+    SignaturePhoto,
     Value,
     /// A grade, or a book condition for a collected edition.
     Grade,
@@ -513,6 +517,7 @@ fn choice_sql(choice: &Choice) -> (&'static str, bool) {
         Choice::BookCondition(_) => (within!("id", "copy", "book_condition"), false),
         Choice::DustJacketCondition(_) => (within!("id", "copy", "dust_jacket_condition"), false),
         Choice::Verification(_) => (within!("copy_id", "signature", "verification"), false),
+        Choice::SignaturePlacement(_) => (within!("copy_id", "signature", "placement"), false),
     }
 }
 
@@ -530,6 +535,7 @@ fn choice_codes(choice: &Choice) -> String {
         Choice::PageQuality(v) => codes(v, PageQuality::code),
         Choice::BookCondition(v) | Choice::DustJacketCondition(v) => codes(v, BookCondition::code),
         Choice::Verification(v) => codes(v, Verification::code),
+        Choice::SignaturePlacement(v) => codes(v, SignaturePlacement::code),
     };
     json_strings(&list)
 }
@@ -615,6 +621,9 @@ impl Presence {
         match self {
             Self::FrontPhoto => of_copy!("SELECT copy_id FROM cover_photo WHERE side = 'front'"),
             Self::BackPhoto => of_copy!("SELECT copy_id FROM cover_photo WHERE side = 'back'"),
+            Self::SignaturePhoto => {
+                of_copy!("SELECT copy_id FROM cover_photo WHERE side = 'signature'")
+            }
             Self::Value => of_copy!("SELECT copy_id FROM value_entry"),
             Self::Grade => of_copy!(
                 "SELECT id FROM copy WHERE grade IS NOT NULL OR book_condition IS NOT NULL"

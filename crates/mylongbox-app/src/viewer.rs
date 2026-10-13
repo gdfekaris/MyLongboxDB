@@ -42,6 +42,7 @@ type Action = fn(&Viewer);
 struct Viewer {
     front: Option<gdk::Texture>,
     back: Option<gdk::Texture>,
+    signature: Option<gdk::Texture>,
     side: Cell<Side>,
     /// The scale the photo is shown at, or `None` while fitted to the
     /// view, which follows the view's size.
@@ -62,6 +63,7 @@ impl Viewer {
         match self.side.get() {
             Side::Front => self.front.as_ref(),
             Side::Back => self.back.as_ref(),
+            Side::Signature => self.signature.as_ref(),
         }
     }
 
@@ -90,12 +92,14 @@ impl Viewer {
             .set_alternative_text(Some(&match self.side.get() {
                 Side::Front => gettext("Front cover photo"),
                 Side::Back => gettext("Back cover photo"),
+                Side::Signature => gettext("Photo of the signature"),
             }));
         self.across.set_visible(texture.is_some());
         self.missing.set_visible(texture.is_none());
         self.missing_label().set_label(&match self.side.get() {
             Side::Front => gettext("No Front Cover Image"),
             Side::Back => gettext("No Back Cover Image"),
+            Side::Signature => gettext("No Signature Photo"),
         });
         self.set_zoom(None, None);
     }
@@ -185,14 +189,21 @@ impl Viewer {
     }
 }
 
+/// A copy's photos: its covers, and a signature inside it if there is a
+/// photo of one.
+pub struct Photos {
+    pub front: Option<gdk::Texture>,
+    pub back: Option<gdk::Texture>,
+    pub signature: Option<gdk::Texture>,
+}
+
 /// Opens the viewer on `side` of a copy's photos.
-pub fn open(
-    parent: &impl IsA<gtk::Widget>,
-    title: &str,
-    front: Option<gdk::Texture>,
-    back: Option<gdk::Texture>,
-    side: Side,
-) {
+pub fn open(parent: &impl IsA<gtk::Widget>, title: &str, photos: Photos, side: Side) {
+    let Photos {
+        front,
+        back,
+        signature,
+    } = photos;
     let picture = gtk::Picture::builder()
         .content_fit(gtk::ContentFit::Contain)
         .can_shrink(true)
@@ -225,9 +236,20 @@ pub fn open(
         .width_chars(5)
         .css_classes(["numeric", "dim-label"])
         .build();
+    // The signature is offered only when there is a photo of it.
+    let mut choices = vec![
+        (Side::Front, gettext("_Front")),
+        (Side::Back, gettext("_Back")),
+    ];
+    if signature.is_some() || side == Side::Signature {
+        // Translators: a photo of a signature inside a comic, beside its
+        // front and back covers.
+        choices.push((Side::Signature, gettext("_Signature")));
+    }
     let viewer = Rc::new(Viewer {
         front,
         back,
+        signature,
         side: Cell::new(side),
         zoom: Cell::new(None),
         scrolled: scrolled.clone(),
@@ -239,28 +261,26 @@ pub fn open(
     });
 
     let sides = adw::ToggleGroup::new();
-    // Translators: the two sides of a comic's cover, front and back.
-    for (name, label) in [("front", gettext("_Front")), ("back", gettext("_Back"))] {
+    for (side, label) in choices {
         sides.add(
             adw::Toggle::builder()
-                .name(name)
+                .name(side.code())
                 .label(&label)
                 .use_underline(true)
                 .build(),
         );
     }
-    sides.set_active_name(Some(match side {
-        Side::Front => "front",
-        Side::Back => "back",
-    }));
+    sides.set_active_name(Some(side.code()));
     {
         let weak = Rc::downgrade(&viewer);
         sides.connect_active_name_notify(move |group| {
             if let Some(v) = weak.upgrade() {
-                v.side.set(match group.active_name().as_deref() {
-                    Some("back") => Side::Back,
-                    _ => Side::Front,
-                });
+                v.side.set(
+                    group
+                        .active_name()
+                        .and_then(|name| Side::from_code(&name))
+                        .unwrap_or(Side::Front),
+                );
                 v.show_side();
             }
         });

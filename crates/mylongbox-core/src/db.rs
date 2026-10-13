@@ -337,7 +337,7 @@ mod tests {
         }
         let before = dir.join("before.sqlite");
         let db = Database::open_keeping(&path, Some(&before)).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 3);
+        assert_eq!(db.schema_version().unwrap(), 4);
         assert!(db.saved_shelves().unwrap().is_empty());
         db.add_saved_shelf("Everything", &crate::FilterSet::default())
             .unwrap();
@@ -380,7 +380,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 3);
+        assert_eq!(db.schema_version().unwrap(), 4);
         let copy = db.copy(crate::model::CopyId(1)).unwrap();
         let mut fields = CopyFields {
             grade: Grade::from_tenths(94),
@@ -409,6 +409,79 @@ mod tests {
         assert_eq!(
             db.copy(copy.id).unwrap().fields.page_quality,
             Some(PageQuality::OffWhiteToWhite)
+        );
+        drop(db);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_version_3_collection_keeps_its_signatures_and_photos() {
+        use crate::model::{CopyId, CreatorId, Side, SignaturePlacement, Verification};
+        let dir = std::env::temp_dir().join(format!("mlbx-upgrade-4-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("old.sqlite");
+        let jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3];
+        {
+            let mut conn = connect(Connection::open(&path).unwrap()).unwrap();
+            migrate::run(&mut conn, &MIGRATIONS[..3]).unwrap();
+            conn.execute_batch(
+                "INSERT INTO series (id, uuid, name, category)
+                     VALUES (1, '00000000-0000-4000-8000-000000000001', 'X-Men', 'comic');
+                 INSERT INTO issue (id, uuid, series_id, number, number_sort)
+                     VALUES (1, '00000000-0000-4000-8000-000000000002', 1, '1', '1');
+                 INSERT INTO edition (id, uuid, issue_id)
+                     VALUES (1, '00000000-0000-4000-8000-000000000003', 1);
+                 INSERT INTO copy (id, uuid, edition_id)
+                     VALUES (1, '00000000-0000-4000-8000-000000000004', 1);
+                 INSERT INTO creator (id, uuid, name)
+                     VALUES (1, '00000000-0000-4000-8000-000000000005', 'Stan Lee');
+                 INSERT INTO signature (copy_id, position, creator_id, verification,
+                     cert_number, signed_on, place, sketch)
+                     VALUES (1, 1, 1, 'cbcs', 'B-1', '2010-07-22', 'SDCC', 1);",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO cover_photo (id, uuid, copy_id, side, full_jpeg, thumb_jpeg,
+                     width, height, sha256)
+                 VALUES (7, '00000000-0000-4000-8000-000000000006', 1, 'front', ?1, ?1,
+                     10, 15, ?2)",
+                rusqlite::params![&jpeg[..], "a".repeat(64)],
+            )
+            .unwrap();
+        }
+        let db = Database::open(&path).unwrap();
+        assert_eq!(db.schema_version().unwrap(), 4);
+        assert!(db.integrity_check().unwrap().is_empty());
+        let copy = CopyId(1);
+        let signatures = db.signatures(copy).unwrap();
+        assert_eq!(signatures.len(), 1);
+        let f = &signatures[0].fields;
+        assert_eq!(f.verification, Verification::CbcsVerified);
+        assert_eq!(f.cert_number.as_deref(), Some("B-1"));
+        assert_eq!(
+            f.signed_on.map(|d| d.to_string()).as_deref(),
+            Some("2010-07-22")
+        );
+        assert_eq!(
+            (f.place.as_str(), f.sketch, f.placement),
+            ("SDCC", true, None)
+        );
+        let front = db.photo(copy, Side::Front).unwrap().unwrap();
+        assert_eq!((front.full_jpeg.as_slice(), front.width), (&jpeg[..], 10));
+        // What the upgrade allows now.
+        let mut f = f.clone();
+        f.verification = Verification::CbcsWitnessed;
+        f.placement = Some(SignaturePlacement::InsideFrontCover);
+        db.set_signatures(copy, &[(CreatorId(1), f.clone())])
+            .unwrap();
+        db.set_photo(copy, Side::Signature, &front).unwrap();
+        drop(db);
+        let db = Database::open(&path).unwrap();
+        assert_eq!(db.signatures(copy).unwrap()[0].fields, f);
+        assert_eq!(
+            db.photo_sides(copy).unwrap(),
+            [Side::Front, Side::Signature]
         );
         drop(db);
         std::fs::remove_dir_all(&dir).unwrap();

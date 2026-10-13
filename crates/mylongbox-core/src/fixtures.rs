@@ -301,6 +301,9 @@ pub(crate) fn generate(db: &Database, spec: FixtureSpec) -> Result<FixtureSummar
                             .map(|_| {
                                 let mut f = SignatureFields::new(*rng.pick(Verification::ALL));
                                 f.sketch = rng.chance(10);
+                                if rng.chance(70) {
+                                    f.placement = Some(*rng.pick(SignaturePlacement::ALL));
+                                }
                                 (*rng.pick(&creators), f)
                             })
                             .collect();

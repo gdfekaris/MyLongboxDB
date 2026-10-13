@@ -6,8 +6,8 @@
 use mylongbox_core::{
     Amount, Binding, BookCondition, Category, Choice, Compare, Currency, Date, DateCondition,
     DateField, Distribution, Filter, Flag, Grade, GradeType, IssueNumber, ListCondition, ListField,
-    MagazineFormat, MoneyField, NumberField, PageQuality, Presence, Role, SeriesId, TextCondition,
-    TextField, Verification,
+    MagazineFormat, MoneyField, NumberField, PageQuality, Presence, Role, SeriesId,
+    SignaturePlacement, TextCondition, TextField, Verification,
 };
 
 use crate::format;
@@ -25,6 +25,7 @@ pub enum ChoiceKind {
     BookCondition,
     DustJacketCondition,
     Verification,
+    SignaturePlacement,
 }
 
 /// What a field is, which decides its conditions and values.
@@ -131,6 +132,10 @@ pub const FIELDS: &[Field] = &[
         gettext_noop("Signature Verification"),
         Kind::Choice(ChoiceKind::Verification),
     ),
+    field(
+        gettext_noop("Signature Placement"),
+        Kind::Choice(ChoiceKind::SignaturePlacement),
+    ),
     field(gettext_noop("Sketch"), Kind::Flag(Flag::Sketch)),
     field(
         gettext_noop("Certificate Number"),
@@ -179,6 +184,10 @@ pub const FIELDS: &[Field] = &[
     field(
         gettext_noop("Back Cover Photo"),
         Kind::Has(Presence::BackPhoto),
+    ),
+    field(
+        gettext_noop("Signature Photo"),
+        Kind::Has(Presence::SignaturePhoto),
     ),
     field(gettext_noop("Value Entry"), Kind::Has(Presence::Value)),
     field(
@@ -375,6 +384,10 @@ impl ChoiceKind {
                 .iter()
                 .map(|v| format::verification(*v))
                 .collect(),
+            Self::SignaturePlacement => SignaturePlacement::ALL
+                .iter()
+                .map(|p| format::signature_placement(*p))
+                .collect(),
         }
     }
 
@@ -394,6 +407,9 @@ impl ChoiceKind {
                 Choice::DustJacketCondition(pick(BookCondition::ALL, picked))
             }
             Self::Verification => Choice::Verification(pick(Verification::ALL, picked)),
+            Self::SignaturePlacement => {
+                Choice::SignaturePlacement(pick(SignaturePlacement::ALL, picked))
+            }
         }
     }
 }
@@ -699,6 +715,10 @@ pub fn unbuild(
                     picked(BookCondition::ALL, v),
                 ),
                 Choice::Verification(v) => (ChoiceKind::Verification, picked(Verification::ALL, v)),
+                Choice::SignaturePlacement(v) => (
+                    ChoiceKind::SignaturePlacement,
+                    picked(SignaturePlacement::ALL, v),
+                ),
             };
             (
                 Kind::Choice(kind),
@@ -810,6 +830,13 @@ mod tests {
                 PageQuality::White,
                 PageQuality::BrownBrittle,
             ])),
+            Filter::Choice(Choice::SignaturePlacement(vec![
+                SignaturePlacement::InsideFrontCover,
+            ])),
+            Filter::Has {
+                what: Presence::SignaturePhoto,
+                has: false,
+            },
             Filter::Flag {
                 flag: Flag::Sketch,
                 value: false,

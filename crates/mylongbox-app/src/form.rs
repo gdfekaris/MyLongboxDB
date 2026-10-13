@@ -10,7 +10,7 @@ use mylongbox_core::{
     Amount, Binding, BookCondition, BookEntry, BoxId, Category, CharacterId, CopyId, CreatorId,
     Currency, Database, Distribution, Grade, GradeType, Isbn, IssueNumber, LookupId,
     MagazineFormat, PageQuality, PublisherId, Role, SeriesChoice, SeriesId, SignatureFields,
-    StoryArcId, TagId, TeamId, Verification,
+    SignaturePlacement, StoryArcId, TagId, TeamId, Verification,
 };
 
 use crate::i18n::{gettext, gettext_f, gettext_noop, ngettext_f, pgettext};
@@ -1417,33 +1417,6 @@ impl MoneyRow {
     }
 }
 
-/// The ways a signature can be verified, in the order offered.
-const VERIFICATIONS: [(&str, Verification); 8] = [
-    (gettext_noop("Unverified"), Verification::Unverified),
-    (gettext_noop("Witnessed by me"), Verification::Witnessed),
-    (
-        gettext_noop("Certificate of authenticity"),
-        Verification::Certificate,
-    ),
-    (gettext_noop("JSA authenticated"), Verification::Jsa),
-    (
-        gettext_noop("CGC Signature Series"),
-        Verification::CgcSignatureSeries,
-    ),
-    (
-        gettext_noop("CGC Signature Verified (JSA)"),
-        Verification::CgcJsa,
-    ),
-    (
-        gettext_noop("CBCS Verified Signature"),
-        Verification::CbcsVerified,
-    ),
-    (
-        gettext_noop("PGX Signature Verified"),
-        Verification::PgxVerified,
-    ),
-];
-
 /// One signature in the form: who signed, how it is verified, and its
 /// details folded away beneath.
 struct SignatureRow {
@@ -1454,6 +1427,7 @@ struct SignatureRow {
     date: adw::EntryRow,
     place: adw::EntryRow,
     sketch: adw::SwitchRow,
+    placement: adw::ComboRow,
 }
 
 /// Signatures that can be added and removed.
@@ -1499,17 +1473,16 @@ impl SignatureList {
         autocomplete::attach(&row, move |text| suggest(text), |_| {});
         self.dirty.watch(&row);
 
-        let names: Vec<String> = VERIFICATIONS
+        let names: Vec<&str> = Verification::ALL
             .iter()
-            .map(|(name, _)| gettext(name))
+            .map(|v| format::verification(*v))
             .collect();
-        let names: Vec<&str> = names.iter().map(String::as_str).collect();
         let verification = gtk::DropDown::from_strings(&names);
         verification.set_valign(gtk::Align::Center);
         verification.set_tooltip_text(Some(&gettext("How It Is Verified")));
-        let index = VERIFICATIONS
+        let index = Verification::ALL
             .iter()
-            .position(|(_, v)| *v == f.verification)
+            .position(|v| *v == f.verification)
             .unwrap_or(0);
         verification.set_selected(u32::try_from(index).unwrap_or(0));
         {
@@ -1520,13 +1493,34 @@ impl SignatureList {
 
         let details = adw::ExpanderRow::builder()
             .title(gettext("Details"))
-            .subtitle(gettext("Certificate, date, place, sketch"))
+            .subtitle(gettext("Where on the book, certificate, date, sketch"))
             .build();
+        let mut placements = vec![gettext("Not noted")];
+        placements.extend(
+            SignaturePlacement::ALL
+                .iter()
+                .map(|p| format::signature_placement(*p).to_owned()),
+        );
+        let placements: Vec<&str> = placements.iter().map(String::as_str).collect();
+        let placement = adw::ComboRow::builder()
+            .title(gettext("Where on the Book"))
+            .model(&gtk::StringList::new(&placements))
+            .build();
+        let at = f
+            .placement
+            .and_then(|p| SignaturePlacement::ALL.iter().position(|&q| q == p))
+            .map_or(0, |i| i + 1);
+        placement.set_selected(u32::try_from(at).unwrap_or(0));
+        {
+            let d = self.dirty.clone();
+            placement.connect_selected_notify(move |_| d.mark());
+        }
+        details.add_row(&placement);
         let cert = entry_row(&gettext("Certificate Number"));
         cert.set_text(f.cert_number.as_deref().unwrap_or(""));
         let date = entry_row(&gettext("Date Signed (YYYY-MM-DD)"));
         date.set_text(&f.signed_on.map(|d| d.to_string()).unwrap_or_default());
-        let place = entry_row(&gettext("Where (e.g. NYCC 2015)"));
+        let place = entry_row(&gettext("Signed At (e.g. NYCC 2015)"));
         place.set_text(&f.place);
         let sketch = adw::SwitchRow::builder()
             .title(gettext("With a Sketch"))
@@ -1572,6 +1566,7 @@ impl SignatureList {
             date,
             place,
             sketch,
+            placement,
         });
         row
     }
@@ -1595,13 +1590,18 @@ impl SignatureList {
             values.push((
                 name,
                 SignatureFields {
-                    verification: VERIFICATIONS
+                    verification: Verification::ALL
                         .get(index)
-                        .map_or(Verification::Unverified, |v| v.1),
+                        .copied()
+                        .unwrap_or(Verification::Unverified),
                     cert_number: Some(r.cert.text().trim().to_owned()).filter(|c| !c.is_empty()),
                     signed_on,
                     place: r.place.text().trim().to_owned(),
                     sketch: r.sketch.is_active(),
+                    placement: usize::try_from(r.placement.selected())
+                        .ok()
+                        .and_then(|i| i.checked_sub(1))
+                        .and_then(|i| SignaturePlacement::ALL.get(i).copied()),
                 },
             ));
         }
