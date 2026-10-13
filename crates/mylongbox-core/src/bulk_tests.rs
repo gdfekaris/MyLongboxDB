@@ -150,3 +150,17 @@ fn several_copies_go_to_trash_and_come_back_together() {
     assert!(c.iter().all(|&copy| db.copy(copy).unwrap().trash.is_none()));
     assert!(matches!(db.trash_copies(&[]), Err(Error::Invalid(_))));
 }
+
+#[test]
+fn one_copy_goes_to_trash_under_its_own_name() {
+    let db = db();
+    let c = copies(&db, "X-Men", Category::Comic, 1);
+    let trash = db.trash_copies(&c).unwrap();
+    assert_eq!(db.copy(c[0]).unwrap().trash, Some(trash));
+    let groups = db.trash_groups().unwrap();
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].id, trash);
+    assert_eq!(groups[0].label, "Copy of X-Men #1");
+    db.restore(trash).unwrap();
+    assert!(db.copy(c[0]).unwrap().trash.is_none());
+}

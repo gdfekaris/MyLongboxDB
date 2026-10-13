@@ -99,12 +99,14 @@ impl Database {
     /// Moves several copies to Trash as one group, so they come back
     /// together.
     pub fn trash_copies(&self, copies: &[CopyId]) -> Result<TrashId> {
-        let tx = self.tx()?;
+        // Decided before the unit opens: returning from inside it would
+        // drop the unit uncommitted and undo whatever `trash_copy` did.
         let label = match copies.len() {
             0 => return Err(Error::Invalid("no copies were chosen".into())),
             1 => return self.trash_copy(copies[0]),
             n => format!("{n} copies"),
         };
+        let tx = self.tx()?;
         let trash = new_trash_group(&tx, &label)?;
         for &copy in copies {
             live(self.copy(copy)?.trash)?;
