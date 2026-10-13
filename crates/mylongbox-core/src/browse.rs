@@ -20,6 +20,11 @@ pub enum Shelf {
     Everything,
     Category(Category),
     KeyIssues,
+    /// Copies graded by a grading company (CGC, CBCS, or PGX), rather
+    /// than given a grade by eye.
+    Graded,
+    /// Copies with at least one signature.
+    Signed,
     Series(SeriesId),
     Publisher(PublisherId),
     /// Credited on the issue, cover artist of the edition, signer of the
@@ -340,6 +345,18 @@ impl Database {
             Shelf::Everything => query_all(conn, copy_rows!("1"), (), copy_row),
             Shelf::Category(category) => query(copy_rows!("s.category = ?1"), &category),
             Shelf::KeyIssues => query_all(conn, copy_rows!("i.is_key = 1"), (), copy_row),
+            Shelf::Graded => query_all(
+                conn,
+                copy_rows!("c.grade_type IN ('cgc', 'cbcs', 'pgx')"),
+                (),
+                copy_row,
+            ),
+            Shelf::Signed => query_all(
+                conn,
+                copy_rows!("EXISTS (SELECT 1 FROM signature g WHERE g.copy_id = c.id)"),
+                (),
+                copy_row,
+            ),
             Shelf::Duplicates => query_all(
                 conn,
                 copy_rows!(

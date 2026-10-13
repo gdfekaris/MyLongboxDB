@@ -124,6 +124,29 @@ const SECTIONS: &[&[Section]] = &[
         ),
     ],
     &[
+        books(
+            "key_issues",
+            gettext_noop("Key Issues"),
+            Shelf::KeyIssues,
+            gettext_noop("No Key Issues"),
+            gettext_noop("Issues you mark as key will appear here."),
+        ),
+        books(
+            "graded",
+            gettext_noop("Graded Books"),
+            Shelf::Graded,
+            gettext_noop("No Graded Books"),
+            gettext_noop("Books graded by CGC, CBCS, or PGX appear here."),
+        ),
+        books(
+            "signed",
+            gettext_noop("Signed Books"),
+            Shelf::Signed,
+            gettext_noop("No Signed Books"),
+            gettext_noop("Books you record a signature on appear here."),
+        ),
+    ],
+    &[
         names(
             "series",
             gettext_noop("Series"),
@@ -175,13 +198,6 @@ const SECTIONS: &[&[Section]] = &[
         ),
     ],
     &[
-        books(
-            "key_issues",
-            gettext_noop("Key Issues"),
-            Shelf::KeyIssues,
-            gettext_noop("No Key Issues"),
-            gettext_noop("Issues you mark as key will appear here."),
-        ),
         Section {
             code: "gaps",
             name: gettext_noop("Gaps"),

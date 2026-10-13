@@ -319,6 +319,8 @@ fn browsing_ten_thousand_copies_is_quick() {
         Shelf::Everything,
         Shelf::Category(Category::Comic),
         Shelf::KeyIssues,
+        Shelf::Graded,
+        Shelf::Signed,
         Shelf::Duplicates,
         Shelf::NeedsAttention,
     ];

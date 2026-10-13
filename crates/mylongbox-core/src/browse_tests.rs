@@ -151,6 +151,49 @@ fn key_issue_shelf_holds_key_issues() {
 }
 
 #[test]
+fn graded_shelf_holds_books_graded_by_a_grading_company() {
+    let db = db();
+    let s = series(&db, "X-Men", Category::Comic);
+    let graded: Vec<CopyId> = [GradeType::Cgc, GradeType::Cbcs, GradeType::Pgx]
+        .into_iter()
+        .zip(["1", "2", "3"])
+        .map(|(grade_type, n)| {
+            let copy = own(&db, issue(&db, s, n));
+            let mut f = db.copy(copy).unwrap().fields;
+            f.grade = Some(Grade::from_tenths(94).unwrap());
+            f.grade_type = Some(grade_type);
+            db.update_copy(copy, &f).unwrap();
+            copy
+        })
+        .collect();
+    let raw = own(&db, issue(&db, s, "4"));
+    let mut f = db.copy(raw).unwrap().fields;
+    f.grade = Some(Grade::from_tenths(94).unwrap());
+    f.grade_type = Some(GradeType::Raw);
+    db.update_copy(raw, &f).unwrap();
+    own(&db, issue(&db, s, "5"));
+    assert_eq!(copies(&db, Shelf::Graded), graded);
+    db.trash_copy(graded[0]).unwrap();
+    assert_eq!(copies(&db, Shelf::Graded), graded[1..]);
+}
+
+#[test]
+fn signed_shelf_holds_books_with_a_signature() {
+    let db = db();
+    let s = series(&db, "X-Men", Category::Comic);
+    let stan = db.create_lookup::<CreatorId>("Stan Lee").unwrap();
+    let once = own(&db, issue(&db, s, "1"));
+    let twice = own(&db, issue(&db, s, "2"));
+    own(&db, issue(&db, s, "3"));
+    let witnessed = SignatureFields::new(Verification::Witnessed);
+    db.set_signatures(once, &[(stan, witnessed.clone())])
+        .unwrap();
+    db.set_signatures(twice, &[(stan, witnessed.clone()), (stan, witnessed)])
+        .unwrap();
+    assert_eq!(copies(&db, Shelf::Signed), [once, twice]);
+}
+
+#[test]
 fn creator_shelves_include_cover_art_and_reprints() {
     let db = db();
     let kirby = db.create_lookup::<CreatorId>("Jack Kirby").unwrap();
