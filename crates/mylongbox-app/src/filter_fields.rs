@@ -569,9 +569,262 @@ pub fn build(
     })
 }
 
+/// A filter as a row of the panel: the index of its field in [`FIELDS`],
+/// its condition, and what to enter, so a saved shelf's rules can be
+/// shown for editing. `series_label` names a series as the Collects
+/// field lists it. `None` for a rule no field offers, or one whose series
+/// is no longer listed.
+pub fn unbuild(
+    filter: &Filter,
+    series_label: &dyn Fn(SeriesId) -> Option<String>,
+) -> Option<(usize, usize, Inputs)> {
+    fn compared<T>(c: &Compare<T>, write: impl Fn(&T) -> String) -> (usize, Vec<String>) {
+        match c {
+            Compare::Equal(a) => (0, vec![write(a)]),
+            Compare::AtLeast(a) => (1, vec![write(a)]),
+            Compare::AtMost(a) => (2, vec![write(a)]),
+            Compare::Between(a, b) => (3, vec![write(a), write(b)]),
+        }
+    }
+    fn picked<T: PartialEq>(all: &[T], chosen: &[T]) -> Vec<usize> {
+        (0..all.len())
+            .filter(|i| chosen.contains(&all[*i]))
+            .collect()
+    }
+    let texts = |t: Vec<String>| Inputs {
+        texts: t,
+        ..Inputs::default()
+    };
+    let (kind, condition, inputs) = match filter {
+        Filter::Text {
+            field,
+            condition,
+            value,
+        } => (
+            Kind::Text(*field),
+            match condition {
+                TextCondition::Contains => 0,
+                TextCondition::Is => 1,
+                TextCondition::SimilarTo => 2,
+            },
+            texts(vec![value.clone()]),
+        ),
+        Filter::Person { name, role } => match role {
+            None => (Kind::Person, 0, texts(vec![name.clone()])),
+            Some(role) => (
+                Kind::Person,
+                1,
+                Inputs {
+                    texts: vec![name.clone()],
+                    menu: Role::ALL.iter().position(|r| r == role)?,
+                    checks: Vec::new(),
+                },
+            ),
+        },
+        Filter::List {
+            field,
+            condition,
+            names,
+        } => (
+            Kind::List(*field),
+            match condition {
+                ListCondition::AnyOf => 0,
+                ListCondition::AllOf => 1,
+                ListCondition::NoneOf => 2,
+            },
+            texts(vec![names.join(", ")]),
+        ),
+        Filter::IssueNumber(c) => {
+            let (condition, t) = compared(c, |n| n.as_str().to_owned());
+            (Kind::IssueNumber, condition, texts(t))
+        }
+        Filter::Grade(c) => {
+            let (condition, t) = compared(c, Grade::to_string);
+            (Kind::Grade, condition, texts(t))
+        }
+        Filter::Number { field, compare } => {
+            let (condition, t) = compared(compare, u32::to_string);
+            (Kind::Number(*field), condition, texts(t))
+        }
+        Filter::Money { field, compare } => {
+            let currency = match compare {
+                Compare::Equal(a) | Compare::AtLeast(a) | Compare::AtMost(a) => a.currency(),
+                Compare::Between(a, _) => a.currency(),
+            };
+            let (condition, t) = compared(compare, |a| a.to_decimal_string());
+            (
+                Kind::Money(*field),
+                condition,
+                Inputs {
+                    texts: t,
+                    menu: CURRENCIES.iter().position(|(_, c)| *c == currency)?,
+                    checks: Vec::new(),
+                },
+            )
+        }
+        Filter::Date { field, condition } => {
+            let (n, t) = match condition {
+                DateCondition::Before(d) => (0, vec![d.to_string()]),
+                DateCondition::After(d) => (1, vec![d.to_string()]),
+                DateCondition::Between(a, b) => (2, vec![a.to_string(), b.to_string()]),
+                DateCondition::InYear(y) => (3, vec![y.to_string()]),
+            };
+            (Kind::Date(*field), n, texts(t))
+        }
+        Filter::Choice(choice) => {
+            let (kind, checks) = match choice {
+                Choice::Category(v) => (ChoiceKind::Category, picked(Category::ALL, v)),
+                Choice::MagazineFormat(v) => {
+                    (ChoiceKind::MagazineFormat, picked(MagazineFormat::ALL, v))
+                }
+                Choice::Distribution(v) => (ChoiceKind::Distribution, picked(Distribution::ALL, v)),
+                Choice::Binding(v) => (ChoiceKind::Binding, picked(Binding::ALL, v)),
+                Choice::GradeType(v) => (ChoiceKind::GradeType, picked(GradeType::ALL, v)),
+                Choice::BookCondition(v) => {
+                    (ChoiceKind::BookCondition, picked(BookCondition::ALL, v))
+                }
+                Choice::DustJacketCondition(v) => (
+                    ChoiceKind::DustJacketCondition,
+                    picked(BookCondition::ALL, v),
+                ),
+                Choice::Verification(v) => (ChoiceKind::Verification, picked(Verification::ALL, v)),
+            };
+            (
+                Kind::Choice(kind),
+                0,
+                Inputs {
+                    checks,
+                    ..Inputs::default()
+                },
+            )
+        }
+        Filter::Flag { flag, value } => (
+            Kind::Flag(*flag),
+            0,
+            Inputs {
+                menu: usize::from(!*value),
+                ..Inputs::default()
+            },
+        ),
+        Filter::Has { what, has } => (Kind::Has(*what), usize::from(!*has), Inputs::default()),
+        Filter::Collects { series, from, to } => {
+            let number = |n: &Option<IssueNumber>| {
+                n.as_ref()
+                    .map_or_else(String::new, |n| n.as_str().to_owned())
+            };
+            (
+                Kind::Collects,
+                0,
+                texts(vec![series_label(*series)?, number(from), number(to)]),
+            )
+        }
+    };
+    let field = FIELDS.iter().position(|f| f.kind == kind)?;
+    Some((field, condition, inputs))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_rules_come_back_as_the_rows_that_make_them() {
+        let d = |t: &str| t.parse::<Date>().unwrap();
+        let db = mylongbox_core::Database::open_in_memory().unwrap();
+        let ff = db
+            .create_series(&mylongbox_core::SeriesFields::new(
+                "Fantastic Four",
+                Category::Comic,
+            ))
+            .unwrap();
+        let label = |id: SeriesId| (id == ff).then(|| "Fantastic Four (1961)".to_owned());
+        let find = |l: &str| (l == "Fantastic Four (1961)").then_some(ff);
+        let rules = [
+            Filter::Text {
+                field: TextField::Notes,
+                condition: TextCondition::Is,
+                value: "spine roll".into(),
+            },
+            Filter::Person {
+                name: "Jack Kirby".into(),
+                role: None,
+            },
+            Filter::Person {
+                name: "Jack Kirby".into(),
+                role: Some(Role::Inker),
+            },
+            Filter::List {
+                field: ListField::SignedBy,
+                condition: ListCondition::NoneOf,
+                names: vec!["Stan Lee".into(), "Steve Ditko".into()],
+            },
+            Filter::IssueNumber(Compare::Between(
+                IssueNumber::new("Annual 3").unwrap(),
+                IssueNumber::new("12").unwrap(),
+            )),
+            Filter::Grade(Compare::AtMost(Grade::parse("4.5").unwrap())),
+            Filter::Number {
+                field: NumberField::PageCount,
+                compare: Compare::Equal(48),
+            },
+            Filter::Money {
+                field: MoneyField::CoverPrice,
+                compare: Compare::Between(
+                    Amount::parse(Currency::Gold, "0.0125").unwrap(),
+                    Amount::parse(Currency::Gold, "2").unwrap(),
+                ),
+            },
+            Filter::Money {
+                field: MoneyField::CurrentValue,
+                compare: Compare::AtLeast(Amount::parse(Currency::Usd, "1250.5").unwrap()),
+            },
+            Filter::Date {
+                field: DateField::Added,
+                condition: DateCondition::Between(d("2026-01-01"), d("2026-10-12")),
+            },
+            Filter::Date {
+                field: DateField::CoverDate,
+                condition: DateCondition::After(d("1999-12-25")),
+            },
+            Filter::Date {
+                field: DateField::ReleaseDate,
+                condition: DateCondition::InYear(1988),
+            },
+            Filter::Choice(Choice::Verification(vec![
+                Verification::CgcSignatureSeries,
+                Verification::CbcsVerified,
+            ])),
+            Filter::Choice(Choice::DustJacketCondition(vec![BookCondition::ALL[0]])),
+            Filter::Flag {
+                flag: Flag::Sketch,
+                value: false,
+            },
+            Filter::Has {
+                what: Presence::Notes,
+                has: true,
+            },
+            Filter::Collects {
+                series: ff,
+                from: IssueNumber::new("48").ok(),
+                to: None,
+            },
+        ];
+        for rule in rules {
+            let (field, condition, inputs) = unbuild(&rule, &label).unwrap();
+            assert_eq!(
+                build(FIELDS[field].kind, condition, &inputs, &find),
+                Some(rule.clone()),
+                "{rule:?}"
+            );
+        }
+        // A series no longer listed cannot be shown in a row.
+        let gone = Filter::Collects {
+            series: ff,
+            from: None,
+            to: None,
+        };
+        assert_eq!(unbuild(&gone, &|_| None), None);
+    }
 
     fn typed(texts: &[&str]) -> Inputs {
         Inputs {

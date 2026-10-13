@@ -8,6 +8,7 @@ mod books;
 mod bulk_dialog;
 mod chart;
 mod covers;
+mod customize;
 mod filter_fields;
 mod filter_panel;
 mod form;

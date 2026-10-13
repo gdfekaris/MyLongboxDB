@@ -6,8 +6,8 @@ use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
     Amount, BulkChange, Category, CollectionInfo, CollectionStore, CopyId, CopyRow, CoverPhoto,
-    Currency, Database, Date, EditionId, FilterSet, ImportSource, IssueId, Prefill, SeriesId,
-    Shelf, ShelfEntry, ShelfList, Side, TrashId, ValueEntry,
+    Currency, Database, Date, EditionId, FilterSet, ImportSource, IssueId, Prefill, SavedShelf,
+    SavedShelfId, SeriesId, Shelf, ShelfEntry, ShelfList, Side, TrashId, ValueEntry,
 };
 use mylongbox_media::Edit;
 use relm4::typed_view::column::TypedColumnView;
@@ -24,8 +24,8 @@ use crate::settings::{self, Settings};
 use crate::sorting::SortBy;
 use crate::window::MainWindow;
 use crate::{
-    bulk_dialog, covers, form, format, gaps_page, import_dialog, photo_editor, prefs, prompt,
-    shortcuts, sorting, trash_page, viewer, work,
+    bulk_dialog, covers, customize, form, format, gaps_page, import_dialog, photo_editor, prefs,
+    prompt, shortcuts, sorting, trash_page, viewer, work,
 };
 
 /// What a sidebar section shows.
@@ -41,56 +41,82 @@ enum Content {
 }
 
 struct Section {
+    /// Names the section in the collection's list of hidden ones. Never
+    /// change these.
+    code: &'static str,
     name: &'static str,
     content: Content,
 }
 
+impl Section {
+    /// Everything and Trash are always shown, so the way back to the
+    /// books, and to what was thrown away, is never hidden.
+    fn locked(&self) -> bool {
+        matches!(self.code, "everything" | "trash")
+    }
+}
+
 const fn books(
+    code: &'static str,
     name: &'static str,
     shelf: Shelf,
     empty: &'static str,
     hint: &'static str,
 ) -> Section {
     Section {
+        code,
         name,
         content: Content::Books(shelf, empty, hint),
     }
 }
 
 const fn names(
+    code: &'static str,
     name: &'static str,
     list: ShelfList,
     empty: &'static str,
     hint: &'static str,
 ) -> Section {
     Section {
+        code,
         name,
         content: Content::Names(list, empty, hint),
     }
+}
+
+/// A row of the sidebar.
+#[derive(Clone, Copy)]
+enum Place {
+    Section(&'static Section),
+    Saved(SavedShelfId),
 }
 
 /// The sidebar, in groups separated by a line.
 const SECTIONS: &[&[Section]] = &[
     &[
         books(
+            "everything",
             gettext_noop("Everything"),
             Shelf::Everything,
             gettext_noop("Nothing Here Yet"),
             gettext_noop("Comics, magazines, and collected editions you add will appear here."),
         ),
         books(
+            "comics",
             gettext_noop("Comics"),
             Shelf::Category(Category::Comic),
             gettext_noop("No Comics"),
             gettext_noop("Comics you add will appear here."),
         ),
         books(
+            "magazines",
             gettext_noop("Magazines"),
             Shelf::Category(Category::Magazine),
             gettext_noop("No Magazines"),
             gettext_noop("Magazines you add will appear here."),
         ),
         books(
+            "collected",
             gettext_noop("Collected Editions"),
             Shelf::Category(Category::CollectedEdition),
             gettext_noop("No Collected Editions"),
@@ -99,42 +125,49 @@ const SECTIONS: &[&[Section]] = &[
     ],
     &[
         names(
+            "series",
             gettext_noop("Series"),
             ShelfList::Series,
             gettext_noop("No Series"),
             gettext_noop("Series appear here as you add books."),
         ),
         names(
+            "publishers",
             gettext_noop("Publishers"),
             ShelfList::Publishers,
             gettext_noop("No Publishers"),
             gettext_noop("Publishers appear here as you add them to series."),
         ),
         names(
+            "creators",
             gettext_noop("Creators"),
             ShelfList::Creators,
             gettext_noop("No Creators"),
             gettext_noop("Writers, artists, and editors appear here as you credit them."),
         ),
         names(
+            "characters",
             gettext_noop("Characters"),
             ShelfList::Characters,
             gettext_noop("No Characters"),
             gettext_noop("Characters appear here as you add them to issues."),
         ),
         names(
+            "teams",
             gettext_noop("Teams"),
             ShelfList::Teams,
             gettext_noop("No Teams"),
             gettext_noop("Teams appear here as you add them to issues."),
         ),
         names(
+            "story_arcs",
             gettext_noop("Story Arcs"),
             ShelfList::StoryArcs,
             gettext_noop("No Story Arcs"),
             gettext_noop("Story arcs appear here as you add them to issues."),
         ),
         names(
+            "storage",
             gettext_noop("Storage Locations"),
             ShelfList::StorageBoxes,
             gettext_noop("No Storage Locations"),
@@ -143,22 +176,26 @@ const SECTIONS: &[&[Section]] = &[
     ],
     &[
         books(
+            "key_issues",
             gettext_noop("Key Issues"),
             Shelf::KeyIssues,
             gettext_noop("No Key Issues"),
             gettext_noop("Issues you mark as key will appear here."),
         ),
         Section {
+            code: "gaps",
             name: gettext_noop("Gaps"),
             content: Content::Gaps,
         },
         books(
+            "duplicates",
             gettext_noop("Duplicates"),
             Shelf::Duplicates,
             gettext_noop("No Duplicates"),
             gettext_noop("Editions you own more than one copy of appear here."),
         ),
         books(
+            "needs_attention",
             gettext_noop("Needs Attention"),
             Shelf::NeedsAttention,
             gettext_noop("Nothing Needs Attention"),
@@ -168,6 +205,7 @@ const SECTIONS: &[&[Section]] = &[
         ),
     ],
     &[Section {
+        code: "trash",
         name: gettext_noop("Trash"),
         content: Content::Trash,
     }],
@@ -206,6 +244,12 @@ pub struct App {
     /// For views built while loading, whose buttons send messages.
     sender: ComponentSender<App>,
     section: &'static Section,
+    /// The saved shelf shown in place of `section`, if one is.
+    saved: Option<SavedShelfId>,
+    /// The saved shelf whose filters the filter panel is changing.
+    editing: Option<SavedShelfId>,
+    /// What each row of the sidebar opens, in order.
+    places: Vec<Place>,
     /// The name-list entry whose books are shown, if any.
     shelf: Option<ShelfEntry>,
     as_list: bool,
@@ -350,6 +394,19 @@ pub enum AppMsg {
     ViewChanged(bool),
     SearchChanged(String),
     ShowFilters(bool),
+    /// Keep the filters shown as a new shelf, or as the one being edited.
+    SaveShelf,
+    AddShelf(String),
+    RenameShelf(SavedShelfId),
+    ShelfRenamed(SavedShelfId, String),
+    /// Open the filter panel on a shelf's filters, to change them.
+    EditShelf(SavedShelfId),
+    ConfirmRemoveShelf(SavedShelfId),
+    RemoveShelf(SavedShelfId),
+    CustomizeSidebar,
+    SectionHidden(&'static str, bool),
+    /// Move a shelf one place earlier in the sidebar, or later.
+    MoveShelf(SavedShelfId, bool),
     FiltersChanged,
     /// Put the corrected spelling in the search box.
     UseCorrection,
@@ -432,7 +489,17 @@ impl Component for App {
         relm4::main_application().set_accels_for_action("win.add-next", &["<Control><Shift>n"]);
         relm4::main_application().set_accels_for_action("win.add-comic", &["<Control>n"]);
         relm4::main_application().set_accels_for_action("win.shelf-back", &["<Alt>Left"]);
-        fill_sidebar(&root, &sender);
+        {
+            let sender = sender.clone();
+            root.sidebar().connect_row_activated(move |_, row| {
+                if let Ok(index) = usize::try_from(row.index()) {
+                    sender.input(AppMsg::SectionSelected(index));
+                }
+            });
+        }
+        add_action(&root, "customize-sidebar", &sender, || {
+            AppMsg::CustomizeSidebar
+        });
 
         let css = gtk::CssProvider::new();
         css.load_from_string(books::CSS);
@@ -537,6 +604,7 @@ impl Component for App {
         let current_db: Rc<RefCell<Weak<Database>>> = Rc::default();
         let filters = {
             let (changed, db) = (sender.clone(), current_db.clone());
+            let save = sender.clone();
             FilterPanel::new(
                 move || changed.input(AppMsg::FiltersChanged),
                 Rc::new(move |label: &str| {
@@ -547,6 +615,7 @@ impl Component for App {
                         (listed.to_lowercase() == label).then_some(s.id)
                     })
                 }),
+                move || save.input(AppMsg::SaveShelf),
             )
         };
         root.set_filter_panel(filters.widget());
@@ -629,6 +698,9 @@ impl Component for App {
             settings: Settings::load(&settings::path()),
             sender: sender.clone(),
             section: &SECTIONS[0][0],
+            saved: None,
+            editing: None,
+            places: Vec::new(),
             shelf: None,
             as_list: false,
             grid,
@@ -662,7 +734,10 @@ impl Component for App {
         };
         match startup {
             Some(name) => model.open_collection(&name, &root),
-            None => model.show(&root),
+            None => {
+                model.refresh_sidebar(&root);
+                model.show(&root);
+            }
         }
         ComponentParts { model, widgets: () }
     }
@@ -872,14 +947,21 @@ impl Component for App {
                 }
             }
             AppMsg::SectionSelected(index) => {
-                if let Some(section) = sections().nth(index) {
-                    self.section = section;
-                    self.shelf = None;
-                    self.end_search(root);
-                    root.pop_to_section();
-                    self.show(root);
-                    root.show_content();
+                let Some(place) = self.places.get(index).copied() else {
+                    return;
+                };
+                match place {
+                    Place::Section(section) => {
+                        self.section = section;
+                        self.saved = None;
+                    }
+                    Place::Saved(id) => self.saved = Some(id),
                 }
+                self.shelf = None;
+                self.end_search(root);
+                root.pop_to_section();
+                self.show(root);
+                root.show_content();
             }
             AppMsg::NameActivated(position) => {
                 if let Some(entry) = self.names.get_visible(position) {
@@ -1024,14 +1106,95 @@ impl Component for App {
             }
             AppMsg::ShowFilters(shown) => {
                 self.filters_shown = shown;
+                // Closing the panel ends editing a shelf, unsaved.
+                if !shown && self.editing.take().is_some() {
+                    self.filters.clear();
+                }
+                self.update_save_button();
                 root.pop_to_section();
                 self.show(root);
             }
             AppMsg::FiltersChanged => {
+                self.update_save_button();
                 if self.filters_shown {
                     root.pop_to_section();
                     self.show(root);
                 }
+            }
+            AppMsg::SaveShelf => self.save_shelf(root),
+            AppMsg::AddShelf(name) => {
+                let Some((_, db)) = &self.open else {
+                    return;
+                };
+                match db.add_saved_shelf(&name, &self.filters.filter_set()) {
+                    Ok(id) => {
+                        self.go_to_shelf(id, root);
+                        root.toast(&gettext_f(
+                            "Added \u{201c}{name}\u{201d} to the sidebar",
+                            &[("name", name.trim())],
+                        ));
+                    }
+                    Err(why) => root.toast(&why.to_string()),
+                }
+            }
+            AppMsg::RenameShelf(id) => self.ask_shelf_name(id, root),
+            AppMsg::ShelfRenamed(id, name) => {
+                if let Some((_, db)) = &self.open {
+                    match db.rename_saved_shelf(id, &name) {
+                        Ok(()) => {
+                            self.refresh_sidebar(root);
+                            self.show_header(root);
+                        }
+                        Err(why) => root.toast(&why.to_string()),
+                    }
+                }
+            }
+            AppMsg::EditShelf(id) => self.edit_shelf(id, root),
+            AppMsg::ConfirmRemoveShelf(id) => {
+                let Some(shelf) = self.with_db(|db| db.saved_shelf(id)).ok() else {
+                    return;
+                };
+                confirm(
+                    root,
+                    &gettext("Remove Shelf?"),
+                    &gettext_f(
+                        "\u{201c}{name}\u{201d} is removed from the sidebar. The books it \
+                         shows stay in the collection.",
+                        &[("name", &shelf.name)],
+                    ),
+                    &gettext("_Remove"),
+                    &sender,
+                    move || AppMsg::RemoveShelf(id),
+                );
+            }
+            AppMsg::RemoveShelf(id) => {
+                if let Err(why) = self.with_db(|db| db.delete_saved_shelf(id)) {
+                    root.toast(&why);
+                    return;
+                }
+                if self.editing == Some(id) {
+                    self.end_search(root);
+                }
+                if self.refresh_sidebar(root) {
+                    root.pop_to_section();
+                    self.show(root);
+                }
+            }
+            AppMsg::CustomizeSidebar => self.customize_sidebar(root),
+            AppMsg::SectionHidden(code, hidden) => {
+                if let Err(why) = self.with_db(|db| db.set_section_hidden(code, hidden)) {
+                    root.toast(&why);
+                }
+                if self.refresh_sidebar(root) {
+                    root.pop_to_section();
+                    self.show(root);
+                }
+            }
+            AppMsg::MoveShelf(id, earlier) => {
+                if let Err(why) = self.with_db(|db| db.move_saved_shelf(id, earlier)) {
+                    root.toast(&why);
+                }
+                self.refresh_sidebar(root);
             }
             AppMsg::Sort(by, reversed) => {
                 self.sort = by;
@@ -2224,8 +2387,10 @@ impl App {
         self.form = None;
         self.recent_copy = None;
         self.open = None;
-        // An entry names a row of the old collection.
+        // An entry and a shelf name rows of the old collection.
         self.shelf = None;
+        self.saved = None;
+        self.editing = None;
         root.pop_to_section();
         self.end_search(root);
         self.opened += 1;
@@ -2245,6 +2410,9 @@ impl App {
                 &[("name", name), ("reason", &why)],
             )),
         }
+        // Each collection keeps its own shelves and hidden sections.
+        self.refresh_sidebar(root);
+        self.update_save_button();
         self.refresh_display(root);
         self.show(root);
     }
@@ -2259,6 +2427,7 @@ impl App {
             "export-shown-csv",
             "export-zip",
             "import-books",
+            "customize-sidebar",
             "add-comic",
             "add-magazine",
             "add-collected",
@@ -2285,9 +2454,10 @@ impl App {
         if self.searching() {
             gettext("Search Results")
         } else {
-            match &self.shelf {
-                Some(entry) => entry.name.clone(),
-                None => gettext(self.section.name),
+            match (&self.shelf, self.saved_name()) {
+                (Some(entry), _) => entry.name.clone(),
+                (None, Some(name)) => name,
+                (None, None) => gettext(self.section.name),
             }
         }
     }
@@ -2354,6 +2524,256 @@ impl App {
         root.end_search();
     }
 
+    /// The name of the saved shelf shown, if one is.
+    fn saved_name(&self) -> Option<String> {
+        let id = self.saved?;
+        self.with_db(|db| db.saved_shelf(id)).ok().map(|s| s.name)
+    }
+
+    /// Words the filter panel's save button for adding a shelf or
+    /// updating the one being edited, usable once the panel filters by
+    /// something.
+    fn update_save_button(&self) {
+        let filtering = self.filters.filter_set() != FilterSet::default();
+        if self.editing.is_some() {
+            self.filters.set_save(
+                &gettext("_Update Shelf"),
+                &gettext("Keep These Filters for the Shelf Being Changed"),
+                filtering,
+            );
+        } else {
+            self.filters.set_save(
+                &gettext("Add to _Sidebar\u{2026}"),
+                &gettext("Keep These Filters as a Shelf in the Sidebar"),
+                filtering && self.open.is_some(),
+            );
+        }
+    }
+
+    /// Updates the shelf being edited with the panel's filters, or asks
+    /// for a name to keep them as a new shelf under.
+    fn save_shelf(&mut self, root: &MainWindow) {
+        let filters = self.filters.filter_set();
+        if let Some(id) = self.editing {
+            match self.with_db(|db| db.set_saved_shelf_filters(id, &filters)) {
+                Ok(()) => {
+                    self.editing = None;
+                    self.filters.clear();
+                    self.go_to_shelf(id, root);
+                    root.toast(&gettext("Shelf updated"));
+                }
+                Err(why) => root.toast(&why),
+            }
+            return;
+        }
+        let sender = self.sender.clone();
+        prompt::ask_text(
+            root,
+            prompt::Ask {
+                heading: &gettext("Add to Sidebar"),
+                body: &gettext(
+                    "The shelf shows every book these filters find, and keeps up as the \
+                     collection changes.",
+                ),
+                field: &gettext("Shelf Name"),
+                initial: "",
+                action: &gettext("_Add"),
+                suggest: None,
+            },
+            move |name| sender.input(AppMsg::AddShelf(name)),
+        );
+    }
+
+    fn ask_shelf_name(&self, id: SavedShelfId, root: &MainWindow) {
+        let Ok(shelf) = self.with_db(|db| db.saved_shelf(id)) else {
+            return;
+        };
+        let sender = self.sender.clone();
+        prompt::ask_text(
+            root,
+            prompt::Ask {
+                heading: &gettext("Rename Shelf"),
+                body: "",
+                field: &gettext("Shelf Name"),
+                initial: &shelf.name,
+                action: &gettext("_Rename"),
+                suggest: None,
+            },
+            move |name| sender.input(AppMsg::ShelfRenamed(id, name)),
+        );
+    }
+
+    /// Shows a shelf, leaving any search, and marks it in the sidebar.
+    fn go_to_shelf(&mut self, id: SavedShelfId, root: &MainWindow) {
+        self.saved = Some(id);
+        self.shelf = None;
+        self.end_search(root);
+        self.refresh_sidebar(root);
+        root.pop_to_section();
+        self.show(root);
+        root.show_content();
+    }
+
+    /// Opens the filter panel on a shelf's filters, so they can be
+    /// changed and kept with Update Shelf.
+    fn edit_shelf(&mut self, id: SavedShelfId, root: &MainWindow) {
+        let Ok(shelf) = self.with_db(|db| db.saved_shelf(id)) else {
+            return;
+        };
+        let Some(filters) = shelf.filters else {
+            return;
+        };
+        let series: Vec<(SeriesId, String)> = self
+            .with_db(|db| db.list_series())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| {
+                (
+                    s.id,
+                    form::series_label(&s.fields.name, s.fields.start_year),
+                )
+            })
+            .collect();
+        let label = |id: SeriesId| {
+            series
+                .iter()
+                .find(|(s, _)| *s == id)
+                .map(|(_, l)| l.clone())
+        };
+        self.saved = Some(id);
+        self.shelf = None;
+        self.query.clear();
+        root.search_entry().set_text("");
+        self.filters.set_filter_set(&filters, &label);
+        self.editing = Some(id);
+        self.update_save_button();
+        self.refresh_sidebar(root);
+        // Opening the panel shows what its filters find, as it does for any
+        // search; the header says which shelf is being changed.
+        root.filter_toggle().set_active(true);
+        root.pop_to_section();
+        self.show(root);
+    }
+
+    /// Lists the visible sections and the open collection's shelves in
+    /// the sidebar, and marks the one shown. If that one is gone, as when
+    /// it was hidden or removed, Everything is shown instead, and `true`
+    /// says the books shown must be read again.
+    fn refresh_sidebar(&mut self, root: &MainWindow) -> bool {
+        let (hidden, shelves) = match &self.open {
+            Some((_, db)) => (
+                db.hidden_sections().unwrap_or_default(),
+                db.saved_shelves().unwrap_or_default(),
+            ),
+            None => (Vec::new(), Vec::new()),
+        };
+        let sidebar = root.sidebar();
+        sidebar.remove_all();
+        self.places.clear();
+        let label = |text: &str| {
+            gtk::Label::builder()
+                .label(text)
+                .xalign(0.0)
+                .hexpand(true)
+                .ellipsize(gtk::pango::EllipsizeMode::End)
+                .margin_start(6)
+                .margin_end(6)
+                .build()
+        };
+        let mut group_starts = Vec::new();
+        let mut shelves_start = None;
+        for (n, group) in SECTIONS.iter().enumerate() {
+            // The owner's shelves go just above Trash.
+            if n + 1 == SECTIONS.len() && !shelves.is_empty() {
+                shelves_start = Some(self.places.len());
+                for shelf in &shelves {
+                    sidebar.append(&shelf_row(shelf, &label(&shelf.name), &self.sender));
+                    self.places.push(Place::Saved(shelf.id));
+                }
+            }
+            let visible: Vec<&'static Section> = group
+                .iter()
+                .filter(|s| s.locked() || !hidden.iter().any(|h| h == s.code))
+                .collect();
+            if visible.is_empty() {
+                continue;
+            }
+            group_starts.push(self.places.len());
+            for section in visible {
+                sidebar.append(&label(&gettext(section.name)));
+                self.places.push(Place::Section(section));
+            }
+        }
+        sidebar.set_header_func(move |row, _| {
+            let at = usize::try_from(row.index()).unwrap_or(0);
+            if Some(at) == shelves_start {
+                let header = gtk::Box::builder()
+                    .orientation(gtk::Orientation::Vertical)
+                    .spacing(6)
+                    .build();
+                header.append(&gtk::Separator::default());
+                header.append(
+                    &gtk::Label::builder()
+                        .label(gettext("My Shelves"))
+                        .xalign(0.0)
+                        .margin_start(12)
+                        .css_classes(["caption-heading", "dim-label"])
+                        .build(),
+                );
+                row.set_header(Some(&header));
+            } else {
+                let starts_group = at > 0 && group_starts.contains(&at);
+                row.set_header(starts_group.then(gtk::Separator::default).as_ref());
+            }
+        });
+        let current = self.places.iter().position(|p| match (p, self.saved) {
+            (Place::Saved(id), Some(saved)) => *id == saved,
+            (Place::Section(s), None) => std::ptr::eq(*s, self.section),
+            _ => false,
+        });
+        let moved = current.is_none();
+        if moved {
+            self.saved = None;
+            self.editing = None;
+            self.section = &SECTIONS[0][0];
+            self.shelf = None;
+        }
+        if let Some(row) = sidebar.row_at_index(i32::try_from(current.unwrap_or(0)).unwrap_or(0)) {
+            sidebar.select_row(Some(&row));
+        }
+        moved
+    }
+
+    fn customize_sidebar(&self, root: &MainWindow) {
+        let Some((_, db)) = &self.open else {
+            root.toast(&gettext("Open a collection first"));
+            return;
+        };
+        let hidden = db.hidden_sections().unwrap_or_default();
+        let entries = sections()
+            .map(|s| customize::Entry {
+                code: s.code,
+                name: gettext(s.name),
+                locked: s.locked(),
+                hidden: hidden.iter().any(|h| h == s.code),
+            })
+            .collect();
+        let shelves = db
+            .saved_shelves()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| (s.id, s.name))
+            .collect();
+        let (hide, shift) = (self.sender.clone(), self.sender.clone());
+        let hooks = customize::Hooks {
+            set_hidden: Box::new(move |code, hidden| {
+                hide.input(AppMsg::SectionHidden(code, hidden))
+            }),
+            move_shelf: Box::new(move |id, earlier| shift.input(AppMsg::MoveShelf(id, earlier))),
+        };
+        customize::dialog(entries, shelves, hooks).present(Some(root));
+    }
+
     fn show_header(&self, root: &MainWindow) {
         let Some((collection, _)) = &self.open else {
             return;
@@ -2365,13 +2785,22 @@ impl App {
                 self.found,
                 &[("count", &self.found.to_string())],
             );
-            root.set_location(collection, &gettext("Search Results"), &found);
+            let title = match (self.editing, self.saved_name()) {
+                (Some(_), Some(name)) => {
+                    gettext_f("Changing \u{201c}{name}\u{201d}", &[("name", &name)])
+                }
+                _ => gettext("Search Results"),
+            };
+            root.set_location(collection, &title, &found);
             root.set_back_visible(false);
             return;
         }
-        match &self.shelf {
-            Some(entry) => root.set_location(collection, &entry.name, &gettext(self.section.name)),
-            None => root.set_location(collection, &gettext(self.section.name), collection),
+        match (&self.shelf, self.saved_name()) {
+            (Some(entry), _) => {
+                root.set_location(collection, &entry.name, &gettext(self.section.name));
+            }
+            (None, Some(name)) => root.set_location(collection, &name, collection),
+            (None, None) => root.set_location(collection, &gettext(self.section.name), collection),
         }
         root.set_back_visible(self.shelf.is_some());
         // Only some lists keep alternate names.
@@ -2394,6 +2823,42 @@ impl App {
         let Some((_, db)) = &self.open else {
             return Ok(());
         };
+        if let (None, Some(id)) = (&self.shelf, self.saved) {
+            let shelf = db.saved_shelf(id)?;
+            let Some(filters) = shelf.filters else {
+                self.fill_books(Vec::new(), false, root);
+                root.show_empty(
+                    &gettext("This Shelf Cannot Be Read"),
+                    &gettext(
+                        "A newer version of MyLongboxDB saved its filters. Update the app to \
+                         use it, or remove it.",
+                    ),
+                );
+                return Ok(());
+            };
+            let rows = db.filter_books(&filters)?;
+            if rows.is_empty() {
+                let missing = db.missing_from(&filters)?;
+                let hint = if missing.is_empty() {
+                    gettext("No books match this shelf\u{2019}s filters yet.")
+                } else {
+                    let names: Vec<String> = missing
+                        .iter()
+                        .map(|n| format!("\u{201c}{n}\u{201d}"))
+                        .collect();
+                    gettext_f(
+                        "Its filters mention {names}, which the collection no longer lists. \
+                         Edit the shelf\u{2019}s filters to change them.",
+                        &[("names", &names.join(", "))],
+                    )
+                };
+                self.fill_books(Vec::new(), false, root);
+                root.show_empty(&gettext("No Books on This Shelf"), &hint);
+            } else {
+                self.fill_books(rows, false, root);
+            }
+            return Ok(());
+        }
         let (shelf, empty, hint) = match (&self.shelf, self.section.content) {
             (Some(entry), _) => (
                 entry.shelf,
@@ -2485,36 +2950,49 @@ fn add_action(root: &MainWindow, name: &str, sender: &ComponentSender<App>, msg:
     root.add_action(&action);
 }
 
-fn fill_sidebar(root: &MainWindow, sender: &ComponentSender<App>) {
-    let sidebar = root.sidebar();
-    let mut group_starts = Vec::new();
-    let mut index = 0;
-    for group in SECTIONS {
-        group_starts.push(index);
-        for section in *group {
-            let label = gtk::Label::builder()
-                .label(gettext(section.name))
-                .xalign(0.0)
-                .margin_start(6)
-                .margin_end(6)
-                .build();
-            sidebar.append(&label);
-            index += 1;
-        }
+/// A shelf's row in the sidebar: its name and a menu of what can be
+/// done with it.
+fn shelf_row(shelf: &SavedShelf, label: &gtk::Label, sender: &ComponentSender<App>) -> gtk::Box {
+    let id = shelf.id;
+    let actions = gio::SimpleActionGroup::new();
+    let menu = gio::Menu::new();
+    for (name, text, msg) in [
+        (
+            "rename",
+            gettext("_Rename\u{2026}"),
+            AppMsg::RenameShelf as fn(SavedShelfId) -> AppMsg,
+        ),
+        ("edit", gettext("_Edit Filters"), AppMsg::EditShelf),
+        (
+            "remove",
+            gettext("Re_move\u{2026}"),
+            AppMsg::ConfirmRemoveShelf,
+        ),
+    ] {
+        let action = gio::SimpleAction::new(name, None);
+        // Rules a newer version wrote cannot be shown for editing.
+        action.set_enabled(name != "edit" || shelf.filters.is_some());
+        let sender = sender.clone();
+        action.connect_activate(move |_, _| sender.input(msg(id)));
+        actions.add_action(&action);
+        menu.append(Some(&text), Some(&format!("shelf.{name}")));
     }
-    sidebar.set_header_func(move |row, _| {
-        let starts_group = row.index() > 0 && group_starts.contains(&(row.index() as usize));
-        row.set_header(starts_group.then(gtk::Separator::default).as_ref());
-    });
-    if let Some(first) = sidebar.row_at_index(0) {
-        sidebar.select_row(Some(&first));
-    }
-    let sender = sender.clone();
-    sidebar.connect_row_activated(move |_, row| {
-        if let Ok(index) = usize::try_from(row.index()) {
-            sender.input(AppMsg::SectionSelected(index));
-        }
-    });
+    let button = gtk::MenuButton::builder()
+        .icon_name("view-more-symbolic")
+        .tooltip_text(gettext("Shelf Menu"))
+        .menu_model(&menu)
+        .valign(gtk::Align::Center)
+        .css_classes(["flat"])
+        .build();
+    button.update_property(&[gtk::accessible::Property::Label(&gettext_f(
+        "Menu of \u{201c}{name}\u{201d}",
+        &[("name", &shelf.name)],
+    ))]);
+    let row = gtk::Box::builder().spacing(6).build();
+    row.append(label);
+    row.append(&button);
+    row.insert_action_group("shelf", Some(&actions));
+    row
 }
 
 fn ask_for_name(root: &MainWindow, sender: &ComponentSender<App>) {

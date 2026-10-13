@@ -1,13 +1,13 @@
 //! The filter panel: rows of field, condition, and value, added with a
 //! button, each changing the results as soon as it reads as a filter.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 
 use adw::prelude::*;
 use mylongbox_core::{FilterSet, OwnedAs, SeriesId};
 
-use crate::filter_fields::{FIELDS, Inputs, Kind, Shape, build};
+use crate::filter_fields::{FIELDS, Inputs, Kind, Shape, build, unbuild};
 use crate::i18n::{gettext, gettext_noop};
 
 const OWNED_AS: [(&str, OwnedAs); 3] = [
@@ -97,13 +97,21 @@ pub struct FilterPanel {
     rows: RefCell<Vec<Rc<Row>>>,
     owned_as: gtk::DropDown,
     changed: Rc<dyn Fn()>,
+    /// Holds back `changed` while rows are filled in all at once.
+    quiet: Rc<Cell<bool>>,
     series: SeriesLookup,
+    save: gtk::Button,
 }
 
 impl FilterPanel {
     /// A panel that calls `changed` whenever what it filters by may have
-    /// changed, and finds series for the Collects field with `series`.
-    pub fn new(changed: impl Fn() + 'static, series: SeriesLookup) -> Rc<Self> {
+    /// changed, finds series for the Collects field with `series`, and
+    /// calls `save` when its filters are to be kept as a shelf.
+    pub fn new(
+        changed: impl Fn() + 'static,
+        series: SeriesLookup,
+        save: impl Fn() + 'static,
+    ) -> Rc<Self> {
         let list = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(6)
@@ -129,12 +137,20 @@ impl FilterPanel {
             .use_underline(true)
             .css_classes(["flat"])
             .build();
+        let save_button = gtk::Button::builder()
+            .label(gettext("Add to _Sidebar\u{2026}"))
+            .use_underline(true)
+            .tooltip_text(gettext("Keep These Filters as a Shelf in the Sidebar"))
+            .sensitive(false)
+            .build();
+        save_button.connect_clicked(move |_| save());
         let bar = gtk::Box::builder().spacing(6).build();
         bar.append(&add);
         bar.append(&owned_as);
         let spacer = gtk::Box::builder().hexpand(true).build();
         bar.append(&spacer);
         bar.append(&clear);
+        bar.append(&save_button);
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(6)
@@ -145,14 +161,25 @@ impl FilterPanel {
             .build();
         root.append(&scroller);
         root.append(&bar);
+        let quiet = Rc::new(Cell::new(false));
+        let changed: Rc<dyn Fn()> = {
+            let quiet = quiet.clone();
+            Rc::new(move || {
+                if !quiet.get() {
+                    changed();
+                }
+            })
+        };
         let panel = Rc::new(Self {
             myself: RefCell::new(Weak::new()),
             root,
             list,
             rows: RefCell::new(Vec::new()),
             owned_as: owned_as.clone(),
-            changed: Rc::new(changed),
+            changed,
+            quiet,
             series,
+            save: save_button,
         });
         panel.myself.replace(Rc::downgrade(&panel));
         {
@@ -203,6 +230,58 @@ impl FilterPanel {
                 .get(selected(&self.owned_as))
                 .map_or(OwnedAs::SingleIssue, |o| o.1),
         }
+    }
+
+    /// Fills the panel with `filters`, one row for each rule, as for
+    /// editing a shelf. `series_label` names a series as the Collects
+    /// field lists it; a rule that cannot be shown is left out.
+    pub fn set_filter_set(
+        &self,
+        filters: &FilterSet,
+        series_label: &dyn Fn(SeriesId) -> Option<String>,
+    ) {
+        self.quiet.set(true);
+        for row in self.rows.take() {
+            self.list.remove(&row.widget);
+        }
+        for rule in &filters.rules {
+            let Some((field, condition, inputs)) = unbuild(rule, series_label) else {
+                continue;
+            };
+            let row = self.add_row_quietly();
+            // Each choice rebuilds what follows it, so they go in order.
+            row.field.set_selected(u32::try_from(field).unwrap_or(0));
+            row.condition
+                .set_selected(u32::try_from(condition).unwrap_or(0));
+            for (entry, text) in row.entries.borrow().iter().zip(&inputs.texts) {
+                entry.set_text(text);
+            }
+            if let Some(menu) = row.menu.borrow().as_ref() {
+                menu.set_selected(u32::try_from(inputs.menu).unwrap_or(0));
+            }
+            for (i, check) in row.checks.borrow().iter().enumerate() {
+                check.set_active(inputs.checks.contains(&i));
+            }
+        }
+        if self.rows.borrow().is_empty() {
+            self.add_row_quietly();
+        }
+        let owned_as = OWNED_AS
+            .iter()
+            .position(|(_, o)| *o == filters.owned_as)
+            .unwrap_or(0);
+        self.owned_as
+            .set_selected(u32::try_from(owned_as).unwrap_or(0));
+        self.quiet.set(false);
+        (self.changed)();
+    }
+
+    /// Words the save button: adding a new shelf, or updating the one
+    /// being edited.
+    pub fn set_save(&self, label: &str, tooltip: &str, sensitive: bool) {
+        self.save.set_label(label);
+        self.save.set_tooltip_text(Some(tooltip));
+        self.save.set_sensitive(sensitive);
     }
 
     /// Back to one empty row, owned as single issues.
