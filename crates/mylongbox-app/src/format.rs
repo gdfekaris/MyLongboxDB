@@ -366,9 +366,10 @@ pub fn local_date(timestamp: &str) -> Option<Date> {
     .ok()
 }
 
-/// What a backup made at `now` is called, e.g.
-/// `mylongboxdb-Comics-2026-10-10-0930.sqlite`.
-pub fn backup_name(collection: &str, now: &glib::DateTime) -> String {
+/// What a copy of a collection made at `now` is called, e.g.
+/// `mylongboxdb-Comics-2026-10-10-0930.sqlite`, so copies made over time
+/// sort in the order they were made.
+pub fn copy_name(collection: &str, now: &glib::DateTime) -> String {
     format!(
         "mylongboxdb-{collection}-{:04}-{:02}-{:02}-{:02}{:02}.sqlite",
         now.year(),
@@ -488,10 +489,10 @@ mod tests {
     }
 
     #[test]
-    fn backups_are_named_by_collection_and_time() {
+    fn copies_are_named_by_collection_and_time() {
         let at = glib::DateTime::from_utc(2026, 3, 7, 9, 5, 30.0).unwrap();
         assert_eq!(
-            backup_name("Main Comics", &at),
+            copy_name("Main Comics", &at),
             "mylongboxdb-Main Comics-2026-03-07-0905.sqlite"
         );
     }

@@ -48,20 +48,6 @@ fn write(file: &glib::KeyFile, path: &Path) -> Result<(), glib::Error> {
     file.save_to_file(path)
 }
 
-/// The folder backups are written to, once chosen.
-pub fn backup_folder(path: &Path) -> Option<PathBuf> {
-    let folder = read(path).string(BACKUP, "folder").ok()?;
-    (!folder.is_empty()).then(|| PathBuf::from(folder.as_str()))
-}
-
-/// Remembers the folder backups are written to, keeping the rest of the
-/// settings as they are.
-pub fn set_backup_folder(path: &Path, folder: &Path) -> Result<(), glib::Error> {
-    let file = read(path);
-    file.set_string(BACKUP, "folder", &folder.to_string_lossy());
-    write(&file, path)
-}
-
 pub fn path() -> PathBuf {
     glib::user_config_dir().join("settings.ini")
 }
@@ -98,10 +84,12 @@ impl Settings {
         }
     }
 
-    /// Saves the settings, keeping anything else the file holds, such as
-    /// the backup folder.
+    /// Saves the settings, keeping anything else the file holds.
     pub fn save(&self, path: &Path) -> Result<(), glib::Error> {
         let file = read(path);
+        // Version 0.1.0 remembered a backup folder here, which nothing
+        // reads any more.
+        let _ = file.remove_key(BACKUP, "folder");
         file.set_string(GROUP, "currency", self.currency.map_or("", |c| c.code()));
         file.set_boolean(GROUP, "grade-names", self.grade_names);
         file.set_integer(
@@ -139,14 +127,15 @@ mod tests {
         };
         wanted.save(&path).unwrap();
         assert_eq!(Settings::load(&path), wanted);
-        // The backup folder is kept apart, and saving keeps it.
-        assert_eq!(backup_folder(&path), None);
-        set_backup_folder(&path, Path::new("/run/user/1000/doc/ab12/Backups")).unwrap();
+        // Other keys are kept, but not the backup folder 0.1.0 kept.
+        let file = read(&path);
+        file.set_string("other", "kept", "yes");
+        file.set_string(BACKUP, "folder", "/run/user/1000/doc/ab12/Backups");
+        write(&file, &path).unwrap();
         Settings::default().save(&path).unwrap();
-        assert_eq!(
-            backup_folder(&path).as_deref(),
-            Some(Path::new("/run/user/1000/doc/ab12/Backups"))
-        );
+        let file = read(&path);
+        assert_eq!(file.string("other", "kept").unwrap(), "yes");
+        assert!(file.string(BACKUP, "folder").is_err());
         assert_eq!(Settings::load(&path), Settings::default());
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }

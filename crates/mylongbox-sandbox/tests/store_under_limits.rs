@@ -21,14 +21,14 @@ fn copy_in_steps(db: &Database, path: &Path) {
 }
 
 #[test]
-fn backing_up_checking_and_compacting_stay_in_the_app_folders() {
+fn exporting_checking_and_compacting_stay_in_the_app_folders() {
     let base = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("store-under-limits");
     let _ = fs::remove_dir_all(&base);
     let data = base.join("data");
-    let backups = base.join("backups");
+    let exports = base.join("exports");
     fs::create_dir_all(&data).unwrap();
-    fs::create_dir_all(&backups).unwrap();
-    if limit_writes(&[&data, &backups]).unwrap() == Enforced::Not {
+    fs::create_dir_all(&exports).unwrap();
+    if limit_writes(&[&data, &exports]).unwrap() == Enforced::Not {
         eprintln!("skipped: Landlock is not available on this kernel");
         return;
     }
@@ -63,9 +63,11 @@ fn backing_up_checking_and_compacting_stay_in_the_app_folders() {
     copy_in_steps(&db, &staging);
     assert!(store.check_copy(&staging).unwrap().is_empty());
 
-    let staging = store.staging("backup").unwrap();
+    let staging = store.staging("export").unwrap();
     copy_in_steps(&db, &staging);
-    store.finish_backup(&staging, &backups, "b.sqlite").unwrap();
+    store
+        .finish_export(&staging, &exports.join("b.sqlite"))
+        .unwrap();
 
     let staging = store.safety_staging("Comics").unwrap();
     copy_in_steps(&db, &staging);

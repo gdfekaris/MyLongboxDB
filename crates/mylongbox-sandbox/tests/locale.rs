@@ -58,7 +58,7 @@ fn messages_come_from_the_app_folder() {
         messages.join("mlbx-test.mo"),
         catalogue(&[
             ("", "Content-Type: text/plain; charset=UTF-8\n"),
-            ("Back Up Now", "Back Up Right Now \u{2713}"),
+            ("Export a Copy", "Export a Copy Now \u{2713}"),
         ]),
     )
     .unwrap();
@@ -86,6 +86,6 @@ fn messages_come_from_the_app_folder() {
             .unwrap()
             .to_owned()
     };
-    assert_eq!(lookup("Back Up Now"), "Back Up Right Now \u{2713}");
+    assert_eq!(lookup("Export a Copy"), "Export a Copy Now \u{2713}");
     assert_eq!(lookup("Not translated"), "Not translated");
 }

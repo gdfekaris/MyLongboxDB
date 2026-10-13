@@ -243,6 +243,8 @@ pub enum AppMsg {
     ImportPicked(PathBuf),
     ExportCollection,
     ExportPicked(PathBuf),
+    /// A checked copy was saved, this many bytes in size.
+    CopyExported(Result<u64, String>),
     /// Ask where to save a CSV of the collection, or of the books shown.
     ExportCsv(bool),
     /// Write the CSV, of these copies or of every one.
@@ -257,12 +259,6 @@ pub enum AppMsg {
     BooksFilePicked(PathBuf),
     /// The import wizard added this many books.
     BooksImported(usize),
-    /// Back up the open collection, asking for a folder the first time.
-    BackUp,
-    BackupFolderPicked(PathBuf),
-    /// Remember the folder chosen in Preferences.
-    BackupFolderChosen(PathBuf),
-    BackupDone(Result<(PathBuf, u64), String>),
     /// Check the open collection for damage.
     CheckDamage,
     CheckDone(Result<Vec<String>, String>),
@@ -416,7 +412,6 @@ impl Component for App {
         add_action(&root, "export-csv", &sender, || AppMsg::ExportCsv(false));
         add_action(&root, "export-zip", &sender, || AppMsg::ExportZip);
         add_action(&root, "import-books", &sender, || AppMsg::ImportBooks);
-        add_action(&root, "back-up", &sender, || AppMsg::BackUp);
         add_action(&root, "export-shown-csv", &sender, || {
             AppMsg::ExportCsv(true)
         });
@@ -691,26 +686,26 @@ impl Component for App {
                 }
                 Err(why) => root.toast(&why),
             },
-            AppMsg::ExportCollection => match &self.open {
-                Some((name, _)) => pick_export_file(root, &sender, name),
-                None => root.toast(&gettext("Open a collection first")),
-            },
-            AppMsg::ExportPicked(path) => {
-                let result = match (self.store(), &self.open) {
-                    (Ok(store), Some((_, db))) => {
-                        store.export(db, &path).map_err(|e| e.to_string())
-                    }
-                    (Err(why), _) => Err(why),
-                    (_, None) => Err(gettext("Open a collection first")),
-                };
-                match result {
-                    Ok(()) => root.toast(&gettext("Copy saved")),
-                    Err(why) => root.toast(&gettext_f(
-                        "Could not save a copy: {reason}",
-                        &[("reason", &why)],
-                    )),
+            AppMsg::ExportCollection => match (&self.open, glib::DateTime::now_local()) {
+                (Some((name, _)), Ok(now)) => {
+                    pick_export_file(root, &sender, &format::copy_name(name, &now));
                 }
-            }
+                (Some((name, _)), Err(_)) => {
+                    pick_export_file(root, &sender, &format!("{name}.sqlite"));
+                }
+                (None, _) => root.toast(&gettext("Open a collection first")),
+            },
+            AppMsg::ExportPicked(path) => self.export_copy(path, root, &sender),
+            AppMsg::CopyExported(result) => match result {
+                Ok(size) => root.toast(&gettext_f(
+                    "Saved a checked copy ({size})",
+                    &[("size", &glib::format_size(size))],
+                )),
+                Err(why) => root.toast(&gettext_f(
+                    "Could not save a copy: {reason}",
+                    &[("reason", &why)],
+                )),
+            },
             AppMsg::ExportCsv(shown) => {
                 let Some((name, _)) = &self.open else {
                     root.toast(&gettext("Open a collection first"));
@@ -813,54 +808,6 @@ impl Component for App {
                     ),
                 });
             }
-            AppMsg::BackUp => {
-                if self.open.is_none() {
-                    root.toast(&gettext("Open a collection first"));
-                    return;
-                }
-                match settings::backup_folder(&settings::path()) {
-                    Some(folder) if folder.is_dir() => {
-                        sender.input(AppMsg::BackupFolderPicked(folder));
-                    }
-                    // The folder is asked for again if it has gone.
-                    _ => pick_backup_folder(root, &sender),
-                }
-            }
-            AppMsg::BackupFolderPicked(folder) => {
-                if let Err(why) = settings::set_backup_folder(&settings::path(), &folder) {
-                    root.toast(&gettext_f(
-                        "Could not remember the backup folder: {reason}",
-                        &[("reason", &why.to_string())],
-                    ));
-                }
-                self.back_up(folder, root, &sender);
-            }
-            AppMsg::BackupFolderChosen(folder) => {
-                if let Err(why) = settings::set_backup_folder(&settings::path(), &folder) {
-                    root.toast(&gettext_f(
-                        "Could not remember the backup folder: {reason}",
-                        &[("reason", &why.to_string())],
-                    ));
-                }
-            }
-            AppMsg::BackupDone(result) => match result {
-                Ok((path, size)) => root.toast(&gettext_f(
-                    "Backed up to \u{201c}{file}\u{201d} ({size})",
-                    &[
-                        (
-                            "file",
-                            &path
-                                .file_name()
-                                .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
-                        ),
-                        ("size", &glib::format_size(size)),
-                    ],
-                )),
-                Err(why) => root.toast(&gettext_f(
-                    "Could not back up: {reason}",
-                    &[("reason", &why)],
-                )),
-            },
             AppMsg::CheckDamage => self.check_damage(root, &sender),
             AppMsg::CheckDone(Ok(problems)) if problems.is_empty() => {
                 root.toast(&gettext("No damage found"));
@@ -1736,38 +1683,28 @@ impl App {
         });
     }
 
-    /// Backs up the open collection into `folder`, checking the copy on
-    /// a worker thread before it is written there.
-    fn back_up(&self, folder: PathBuf, root: &MainWindow, sender: &ComponentSender<Self>) {
-        let Ok(now) = glib::DateTime::now_local() else {
-            root.toast(&gettext_f(
-                "Could not back up: {reason}",
-                &[("reason", &gettext("the clock could not be read"))],
-            ));
+    /// Saves a checked copy of the open collection to `path`, copying
+    /// it in steps so the window stays responsive.
+    fn export_copy(&self, path: PathBuf, root: &MainWindow, sender: &ComponentSender<Self>) {
+        let Some((guard, store, _, db)) = self.work_context(root) else {
             return;
         };
-        let Some((guard, store, name, db)) = self.work_context(root) else {
-            return;
-        };
-        let file_name = format::backup_name(&name, &now);
         let (root, sender) = (root.clone(), sender.clone());
         glib::spawn_future_local(async move {
-            let progress = work::Progress::start(&root, &gettext("Backing Up"), false);
+            let progress = work::Progress::start(&root, &gettext("Exporting a Copy"), false);
             let result = async {
-                let staging = store.staging("backup").map_err(|e| e.to_string())?;
+                let staging = store.staging("export").map_err(|e| e.to_string())?;
                 let copy = work::copy(&db, &staging, &progress).await?;
-                let doing = gettext("Checking the backup\u{2026}");
+                let doing = gettext("Checking the copy\u{2026}");
                 work::in_background(&progress, &doing, move || {
-                    store
-                        .finish_backup(&copy, &folder, &file_name)
-                        .map_err(|e| e.to_string())
+                    store.finish_export(&copy, &path).map_err(|e| e.to_string())
                 })
                 .await
             }
             .await;
             progress.finish();
             drop(guard);
-            sender.input(AppMsg::BackupDone(result));
+            sender.input(AppMsg::CopyExported(result));
         });
     }
 
@@ -1905,10 +1842,6 @@ impl App {
                     ActionGroupExt::activate_action(&root, name, None);
                 })
             },
-            backup_folder_chosen: {
-                let s = sender.clone();
-                Box::new(move |folder| s.input(AppMsg::BackupFolderChosen(folder)))
-            },
             restore_safety: msg(AppMsg::RestoreSafetyCopy),
             check: {
                 let s = sender.clone();
@@ -1925,7 +1858,6 @@ impl App {
             current: self.open.as_ref().map(|(n, _)| n.as_str()),
             db: self.open.as_ref().map(|(_, db)| db),
             show_rates,
-            backup_folder: settings::backup_folder(&settings::path()),
             safety: self
                 .open
                 .as_ref()
@@ -2316,7 +2248,6 @@ impl App {
             "export-shown-csv",
             "export-zip",
             "import-books",
-            "back-up",
             "add-comic",
             "add-magazine",
             "add-collected",
@@ -2680,22 +2611,6 @@ fn collection_filters() -> gio::ListStore {
     filters
 }
 
-/// Asks for the folder backups are written to.
-fn pick_backup_folder(root: &MainWindow, sender: &ComponentSender<App>) {
-    let dialog = gtk::FileDialog::builder()
-        .title(gettext("Choose a Folder for Backups"))
-        .modal(true)
-        .build();
-    let sender = sender.clone();
-    dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
-        if let Ok(folder) = result
-            && let Some(path) = folder.path()
-        {
-            sender.input(AppMsg::BackupFolderPicked(path));
-        }
-    });
-}
-
 /// Asks for a CSV file or a full export to add books from.
 fn pick_books_file(root: &MainWindow, sender: &ComponentSender<App>) {
     let books = gtk::FileFilter::new();
@@ -2793,11 +2708,11 @@ fn pick_csv_file(
     });
 }
 
-fn pick_export_file(root: &MainWindow, sender: &ComponentSender<App>, name: &str) {
+fn pick_export_file(root: &MainWindow, sender: &ComponentSender<App>, file_name: &str) {
     let dialog = gtk::FileDialog::builder()
         .title(gettext("Export a Copy"))
         .modal(true)
-        .initial_name(format!("{name}.sqlite"))
+        .initial_name(file_name)
         .filters(&collection_filters())
         .build();
     let sender = sender.clone();

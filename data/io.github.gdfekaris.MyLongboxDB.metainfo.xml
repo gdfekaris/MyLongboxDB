@@ -23,12 +23,12 @@
       <li>Follow what each book is worth over time, in dollars, gold, or bitcoin</li>
       <li>Add front and back cover photos, including iPhone HEIC photos, cropped and straightened in the app</li>
       <li>Import from a spreadsheet, and export everything to CSV and JPEG at any time</li>
-      <li>Back up in one step, with a safety copy kept before any risky change</li>
+      <li>Save a checked backup copy at any time, with a safety copy kept before any risky change</li>
     </ul>
     <p>
       MyLongboxDB never connects to the internet. It has no networking code,
       blocks itself from opening internet connections when it starts, and can
-      change files only in its own folders and in those you choose. Nothing
+      change files only in its own folders and in files you choose. Nothing
       you record leaves your computer.
     </p>
   </description>

@@ -149,9 +149,8 @@ its authors:
   Collections live in the app's own folder,
   `~/.var/app/io.github.gdfekaris.MyLongboxDB/data/collections/`. Files
   elsewhere are reached only through the system file chooser: importing
-  copies a collection in after checking it, and exporting writes a
-  copy out. Back Up Now writes to a folder you choose once in the same
-  file chooser, and checks each backup in full before writing it there.
+  copies a collection in after checking it, and Export a Copy, the way
+  to back up, checks the copy in full before writing it out.
   Safety copies, made before imports, upgrades, changes to several
   books at once, and deleting from Trash, stay in
   `collections/safety/` beside your collections, one per collection; a

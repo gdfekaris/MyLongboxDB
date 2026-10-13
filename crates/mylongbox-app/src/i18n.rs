@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn untranslated_messages_come_back_unchanged() {
-        assert_eq!(gettext("Back Up Now"), "Back Up Now");
+        assert_eq!(gettext("Export a Copy"), "Export a Copy");
         assert_eq!(ngettext("{n} book", "{n} books", 1), "{n} book");
         assert_eq!(ngettext("{n} book", "{n} books", 2), "{n} books");
         assert_eq!(

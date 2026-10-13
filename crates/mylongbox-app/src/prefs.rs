@@ -3,7 +3,6 @@
 //! exchange-rate table.
 
 use std::cell::Cell;
-use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 
 use adw::prelude::*;
@@ -31,7 +30,6 @@ pub struct Hooks {
     pub delete: Box<dyn Fn(String)>,
     /// Runs a window action, such as importing a collection.
     pub action: Box<dyn Fn(&str)>,
-    pub backup_folder_chosen: Box<dyn Fn(PathBuf)>,
     /// Brings back the named collection's safety copy.
     pub restore_safety: Box<dyn Fn(String)>,
     /// Checks the open collection for damage.
@@ -48,7 +46,6 @@ pub struct State<'a> {
     pub db: Option<&'a Rc<Database>>,
     /// Opens on the exchange-rate page, as from the reminder banner.
     pub show_rates: bool,
-    pub backup_folder: Option<PathBuf>,
     /// The open collection's safety copy, if it has one.
     pub safety: Option<SafetyCopy>,
 }
@@ -273,15 +270,9 @@ fn collections_group(
     group
 }
 
-/// A folder's name as the file chooser showed it; folders reached
-/// through the document portal have long made-up paths above it.
-fn folder_name(folder: &std::path::Path) -> String {
-    folder.file_name().map_or_else(
-        || folder.display().to_string(),
-        |n| n.to_string_lossy().into_owned(),
-    )
-}
-
+/// Backing up is saving a checked copy of the collection where the user
+/// picks, the one way to write outside the app's own folders that the
+/// file chooser grants on every desktop.
 fn backup_group(
     state: &State<'_>,
     hooks: &Rc<Hooks>,
@@ -291,56 +282,22 @@ fn backup_group(
         .title(gettext("Back Up"))
         .description(gettext(
             "A backup is a complete copy of the open collection, checked before it is \
-             written. Import it to use it. Old backups are never removed.",
+             saved, and named with the date and time. Import it to use it.",
         ))
         .build();
-    let folder = adw::ActionRow::builder()
-        .title(gettext("Backup Folder"))
-        .subtitle(state.backup_folder.as_deref().map_or_else(
-            || gettext("Asked for the first time you back up"),
-            folder_name,
-        ))
-        .use_markup(false)
-        .build();
-    let choose = gtk::Button::builder()
-        .label(gettext("_Choose\u{2026}"))
-        .use_underline(true)
-        .valign(gtk::Align::Center)
-        .build();
-    {
-        let (hooks, dialog, row) = (hooks.clone(), dialog.clone(), folder.clone());
-        choose.connect_clicked(move |_| {
-            let chooser = gtk::FileDialog::builder()
-                .title(gettext("Choose a Folder for Backups"))
-                .modal(true)
-                .build();
-            let (hooks, row) = (hooks.clone(), row.clone());
-            let parent = dialog.root().and_downcast::<gtk::Window>();
-            chooser.select_folder(parent.as_ref(), None::<&gio::Cancellable>, move |result| {
-                if let Ok(file) = result
-                    && let Some(path) = file.path()
-                {
-                    row.set_subtitle(&folder_name(&path));
-                    (hooks.backup_folder_chosen)(path);
-                }
-            });
-        });
-    }
-    folder.add_suffix(&choose);
-    group.add(&folder);
-    let now = adw::ButtonRow::builder()
-        .title(gettext("Back _Up Now"))
+    let export = adw::ButtonRow::builder()
+        .title(gettext("_Export a Copy\u{2026}"))
         .use_underline(true)
         .build();
-    now.set_sensitive(state.current.is_some());
+    export.set_sensitive(state.current.is_some());
     {
         let (hooks, dialog) = (hooks.clone(), dialog.clone());
-        now.connect_activated(move |_| {
+        export.connect_activated(move |_| {
             dialog.close();
-            (hooks.action)("back-up");
+            (hooks.action)("export-collection");
         });
     }
-    group.add(&now);
+    group.add(&export);
     group
 }
 

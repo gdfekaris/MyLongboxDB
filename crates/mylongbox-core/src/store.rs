@@ -169,25 +169,8 @@ impl CollectionStore {
         self.import_as(&copy.path, &format!("{name} (safety copy)"))
     }
 
-    /// Writes a backup of the open collection into the folder `dest_dir`
-    /// as `file_name`, or with a number added if that is taken, and
-    /// returns where it went and its size. The copy is checked in full
-    /// before it is written there, so a backup that exists is sound.
-    pub fn back_up(
-        &self,
-        db: &Database,
-        dest_dir: &Path,
-        file_name: &str,
-    ) -> Result<(PathBuf, u64)> {
-        // Made in the store first, because SQLite cannot write through
-        // the document portal; the checked bytes are then copied over.
-        let staging = self.staging("backup")?;
-        db.write_copy(&staging)?;
-        self.finish_backup(&staging, dest_dir, file_name)
-    }
-
     /// Where a copy of the open collection is made for work on it away
-    /// from the window, such as a backup: a file in the store, which
+    /// from the window, such as an export: a file in the store, which
     /// SQLite can write, cleared and ready. `what` names the work, so
     /// different work never shares a file.
     pub fn staging(&self, what: &str) -> Result<PathBuf> {
@@ -202,22 +185,17 @@ impl CollectionStore {
         remove_with_side_files(staging);
     }
 
-    /// Finishes a backup from a copy in staging: checks it in full,
-    /// writes it into `dest_dir` as `file_name` (or with a number added),
-    /// and removes the copy, returning where the backup went and its size.
-    pub fn finish_backup(
-        &self,
-        staging: &Path,
-        dest_dir: &Path,
-        file_name: &str,
-    ) -> Result<(PathBuf, u64)> {
+    /// Finishes an export from a copy in staging: checks it in full,
+    /// writes it to `dest`, replacing what is there, and removes the
+    /// copy, returning the size written. A damaged copy is never written,
+    /// so an exported copy that exists is sound.
+    pub fn finish_export(&self, staging: &Path, dest: &Path) -> Result<u64> {
         let result = (|| {
             if !check_file(staging)?.is_empty() {
                 return Err(Error::Damaged);
             }
-            let dest = free_file(dest_dir, file_name);
-            fs::copy(staging, &dest)?;
-            Ok((dest, fs::metadata(staging)?.len()))
+            fs::copy(staging, dest)?;
+            Ok(fs::metadata(staging)?.len())
         })();
         self.discard(staging);
         result
@@ -422,19 +400,19 @@ impl CollectionStore {
         self.info(&name)
     }
 
-    /// Writes a copy of the open collection to `dest`, such as a file the
-    /// user picked in a save dialog, replacing it if it exists.
-    pub fn export(&self, db: &Database, dest: &Path) -> Result<()> {
+    /// Writes a checked copy of the open collection to `dest`, such as a
+    /// file the user picked in a save dialog, replacing it if it exists,
+    /// and returns its size.
+    pub fn export(&self, db: &Database, dest: &Path) -> Result<u64> {
         // The copy is made in the store first, because SQLite cannot write
-        // through the document portal; the bytes are then copied over.
-        let staging = self.dir.join(format!("export.{IMPORTING}"));
-        let _ = fs::remove_file(&staging);
-        let result = db.write_copy(&staging).and_then(|()| {
-            fs::copy(&staging, dest)?;
-            Ok(())
-        });
-        let _ = fs::remove_file(&staging);
-        result
+        // through the document portal; the checked bytes are then copied
+        // over.
+        let staging = self.staging("export")?;
+        if let Err(e) = db.write_copy(&staging) {
+            self.discard(&staging);
+            return Err(e);
+        }
+        self.finish_export(&staging, dest)
     }
 
     fn path_for(&self, name: &str) -> PathBuf {
@@ -479,24 +457,6 @@ fn remove_with_side_files(path: &Path) {
     for side in SIDE_FILES {
         let _ = fs::remove_file(side_file(path, side));
     }
-}
-
-/// `dir/file_name`, or `dir/stem-2.ext`, `-3`, … whichever does not exist
-/// yet, so a backup never replaces another.
-fn free_file(dir: &Path, file_name: &str) -> PathBuf {
-    let first = dir.join(file_name);
-    let (stem, extension) = file_name.rsplit_once('.').unwrap_or((file_name, ""));
-    let mut candidate = first;
-    let mut n = 1;
-    while candidate.exists() {
-        n += 1;
-        candidate = dir.join(if extension.is_empty() {
-            format!("{stem}-{n}")
-        } else {
-            format!("{stem}-{n}.{extension}")
-        });
-    }
-    candidate
 }
 
 /// Keeps a name safe to use as a file name: letters, digits, spaces, and
@@ -853,28 +813,15 @@ mod tests {
     }
 
     #[test]
-    fn backups_are_checked_and_never_replace_one_another() {
+    fn exports_are_checked_and_leave_nothing_behind() {
         let dir = TempDir::new();
         let store = store(&dir);
         store.create("Comics").unwrap();
         let db = store.open("Comics").unwrap();
         add_thor(&db, "1");
-        let backups = dir.0.join("backups");
-        fs::create_dir_all(&backups).unwrap();
-        let name = "mylongboxdb-Comics-2026-10-11-0930.sqlite";
-        let (first, size) = store.back_up(&db, &backups, name).unwrap();
-        assert_eq!(first, backups.join(name));
-        assert_eq!(size, fs::metadata(&first).unwrap().len());
-        add_thor(&db, "2");
-        let (second, _) = store.back_up(&db, &backups, name).unwrap();
-        assert_eq!(
-            second,
-            backups.join("mylongboxdb-Comics-2026-10-11-0930-2.sqlite")
-        );
-        // Nothing is left behind in the store, and each backup is a
-        // collection as it was.
-        assert_eq!(fs::read_dir(&backups).unwrap().count(), 2);
-        assert_eq!(names(&store), ["Comics"]);
+        let outside = dir.0.join("Comics.sqlite");
+        let size = store.export(&db, &outside).unwrap();
+        assert_eq!(size, fs::metadata(&outside).unwrap().len());
         let leftovers = fs::read_dir(store.dir())
             .unwrap()
             .filter(|e| {
@@ -882,13 +829,26 @@ mod tests {
                     .unwrap()
                     .path()
                     .to_string_lossy()
-                    .contains("backup")
+                    .contains("export")
             })
             .count();
         assert_eq!(leftovers, 0);
-        let imported = store.import(&first).unwrap();
+        assert!(
+            store
+                .export(&db, &dir.0.join("missing/Comics.sqlite"))
+                .is_err()
+        );
+        assert_eq!(names(&store), ["Comics"], "a failed export leaves nothing");
+
+        // A copy that is not a sound collection is never written, and what
+        // was at the destination is kept.
+        let staging = store.staging("export").unwrap();
+        fs::write(&staging, b"not a collection").unwrap();
+        assert!(store.finish_export(&staging, &outside).is_err());
+        assert!(!staging.exists());
+        assert_eq!(size, fs::metadata(&outside).unwrap().len());
+        let imported = store.import(&outside).unwrap();
         assert_eq!(books(&store.open(&imported.name).unwrap()), 1);
-        assert!(store.back_up(&db, &dir.0.join("missing"), name).is_err());
     }
 
     /// Copies the open collection into `path` in small steps, as the
@@ -941,7 +901,7 @@ mod tests {
     }
 
     #[test]
-    fn copies_are_checked_backed_up_and_cleared_away() {
+    fn copies_are_checked_exported_and_cleared_away() {
         let dir = TempDir::new();
         let store = store(&dir);
         store.create("Comics").unwrap();
@@ -952,12 +912,11 @@ mod tests {
         assert_eq!(store.check_copy(&staging).unwrap(), Vec::<String>::new());
         assert!(!staging.exists());
 
-        let backups = dir.0.join("backups");
-        fs::create_dir_all(&backups).unwrap();
-        let staging = store.staging("backup").unwrap();
+        let staging = store.staging("export").unwrap();
         copy_in_steps(&db, &staging);
-        let (path, size) = store.finish_backup(&staging, &backups, "b.sqlite").unwrap();
-        assert_eq!(path, backups.join("b.sqlite"));
+        let exported = dir.0.join("b.sqlite");
+        let size = store.finish_export(&staging, &exported).unwrap();
+        assert_eq!(size, fs::metadata(&exported).unwrap().len());
         assert!(size > 0 && !staging.exists());
 
         // A safety copy made in steps is adopted like one made at once.
