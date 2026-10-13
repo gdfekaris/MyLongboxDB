@@ -16,4 +16,4 @@ landlock = "0.4.7"
 seccompiler = { version = "0.5.0", default-features = false }
 
 [dev-dependencies]
-mylongbox-core = { path = "../mylongbox-core", version = "0.1.2" }
+mylongbox-core = { path = "../mylongbox-core", version = "0.1.3" }
