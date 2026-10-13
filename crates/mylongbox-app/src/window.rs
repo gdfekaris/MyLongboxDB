@@ -374,6 +374,33 @@ impl MainWindow {
             .set_visible_child_name(if as_list { "list" } else { "grid" });
     }
 
+    /// How far down the grid and the list are scrolled.
+    pub fn books_scroll(&self) -> (f64, f64) {
+        let imp = self.imp();
+        (
+            imp.grid_scroller.vadjustment().value(),
+            imp.list_scroller.vadjustment().value(),
+        )
+    }
+
+    /// Scrolls the grid and the list back to where `books_scroll` found
+    /// them, once refilled. The views lay out their new rows only on the
+    /// next frame, until when the old position may not fit, so it is set
+    /// again once they have.
+    pub fn restore_books_scroll(&self, (grid, list): (f64, f64)) {
+        let imp = self.imp();
+        let (grid_adj, list_adj) = (
+            imp.grid_scroller.vadjustment(),
+            imp.list_scroller.vadjustment(),
+        );
+        grid_adj.set_value(grid);
+        list_adj.set_value(list);
+        glib::idle_add_local_once(move || {
+            grid_adj.set_value(grid);
+            list_adj.set_value(list);
+        });
+    }
+
     pub fn is_showing_books(&self) -> bool {
         matches!(
             self.imp().content_stack.visible_child_name().as_deref(),

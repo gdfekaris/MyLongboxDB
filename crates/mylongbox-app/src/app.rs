@@ -252,6 +252,8 @@ pub struct App {
     places: Vec<Place>,
     /// The name-list entry whose books are shown, if any.
     shelf: Option<ShelfEntry>,
+    /// What the books last shown were, from `view_key`.
+    books_view: Option<String>,
     as_list: bool,
     grid: TypedGridView<Book, gtk::MultiSelection>,
     table: TypedColumnView<Book, gtk::MultiSelection>,
@@ -702,6 +704,7 @@ impl Component for App {
             editing: None,
             places: Vec::new(),
             shelf: None,
+            books_view: None,
             as_list: false,
             grid,
             table,
@@ -958,6 +961,8 @@ impl Component for App {
                     Place::Saved(id) => self.saved = Some(id),
                 }
                 self.shelf = None;
+                // Choosing a section starts it at the top, even the one shown.
+                self.books_view = None;
                 self.end_search(root);
                 root.pop_to_section();
                 self.show(root);
@@ -2927,9 +2932,16 @@ impl App {
     /// Shows `rows` in the grid and the list, sorted as chosen, with
     /// their totals underneath. `needs` says on each card what its book
     /// still needs.
+    ///
+    /// Showing the same books again, as after a change made on a book's
+    /// page, keeps the views where they were scrolled to, so going back
+    /// returns to the book that was opened; other books start at the top.
     fn fill_books(&mut self, mut rows: Vec<CopyRow>, needs: bool, root: &MainWindow) {
         sorting::sort(&mut rows, self.sort, self.sort_reversed, &format::in_cents);
         root.set_totals(&format::totals(&rows));
+        let view = self.view_key();
+        let scroll = (self.books_view.as_ref() == Some(&view)).then(|| root.books_scroll());
+        self.books_view = Some(view);
         self.grid.clear();
         self.table.clear();
         if rows.is_empty() {
@@ -2940,6 +2952,29 @@ impl App {
         self.table
             .extend_from_iter(rows.into_iter().map(|r| Book(r, needs)));
         root.show_books(self.as_list);
+        if let Some(scroll) = scroll {
+            root.restore_books_scroll(scroll);
+        }
+    }
+
+    /// What decides which books are shown and in what order, to tell a
+    /// refresh of the same books from a move to others.
+    fn view_key(&self) -> String {
+        let filters = if self.filters_shown {
+            format!("{:?}", self.filters.filter_set())
+        } else {
+            String::new()
+        };
+        format!(
+            "{}|{}|{:?}|{:?}|{:?}|{}|{}|{filters}",
+            self.opened,
+            self.section.code,
+            self.saved,
+            self.shelf.as_ref().map(|e| e.shelf),
+            (self.sort, self.sort_reversed),
+            self.query.trim(),
+            self.filters_shown,
+        )
     }
 }
 
