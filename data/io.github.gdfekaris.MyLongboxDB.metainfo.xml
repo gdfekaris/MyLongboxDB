@@ -79,6 +79,20 @@
   </supports>
 
   <releases>
+    <release version="0.1.1" date="2026-10-12">
+      <description>
+        <p>Saved shelves, and fixes from the first days of use.</p>
+        <ul>
+          <li>Keep any combination of filters as a shelf in the sidebar, and hide the sidebar entries you do not use</li>
+          <li>Find books by issue number in search</li>
+          <li>A book's page shows the copy you opened, and only that copy's photos and controls</li>
+          <li>Going back from a book returns to the same place in the list</li>
+          <li>Back up with Export a Copy, which now checks the copy and names it with the date and time</li>
+          <li>Photo crops start at the edges of the photo</li>
+          <li>Clearer messages when a file is picked for the wrong kind of import</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-10-12">
       <description>
         <p>The first release.</p>
