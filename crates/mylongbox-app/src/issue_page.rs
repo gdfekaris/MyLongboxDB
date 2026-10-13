@@ -50,9 +50,10 @@ pub fn current_copy(d: &IssueDetail, open_copy: Option<CopyId>) -> Option<CopyId
     }
 }
 
-/// The page for `d` as seen from the copy `current`: only that copy
-/// shows its photos and can be changed, and the issue's other copies are
-/// listed in brief, each opening the page as seen from it.
+/// The page for `d` as seen from the copy `current`: what the issue's
+/// copies share, then only that copy and its edition, and at the bottom
+/// the issue's other copies in brief, each opening the page as seen
+/// from it.
 pub fn page(d: &IssueDetail, links: &Links, current: Option<CopyId>) -> adw::NavigationPage {
     let prefs = adw::PreferencesPage::new();
     prefs.add(&summary(d, current, links));
@@ -109,8 +110,29 @@ pub fn page(d: &IssueDetail, links: &Links, current: Option<CopyId>) -> adw::Nav
         prefs.add(&group);
     }
     let category = d.series.fields.category;
-    for (n, edition) in d.editions.iter().enumerate() {
-        prefs.add(&edition_group(edition, n, category, links, current));
+    match current {
+        // Only the copy being viewed and its edition; the others wait at
+        // the bottom, so nothing about them is mistaken for this copy.
+        Some(current) => {
+            let mine = d
+                .editions
+                .iter()
+                .enumerate()
+                .find(|(_, e)| e.copies.iter().any(|c| c.copy.id == current));
+            if let Some((n, edition)) = mine {
+                prefs.add(&edition_group(edition, n, category, links, Some(current)));
+            }
+            if let Some(group) = other_copies(d, current, category, links) {
+                prefs.add(&group);
+            }
+        }
+        // An issue known only from the catalog, such as one a book
+        // reprints, has editions but no copies to choose between.
+        None => {
+            for (n, edition) in d.editions.iter().enumerate() {
+                prefs.add(&edition_group(edition, n, category, links, None));
+            }
+        }
     }
 
     let header = adw::HeaderBar::new();
@@ -479,11 +501,7 @@ fn edition_group(
     current: Option<CopyId>,
 ) -> adw::PreferencesGroup {
     let f = &e.edition.fields;
-    let name = match version(&f.variant, f.printing) {
-        v if v.is_empty() && index == 0 => gettext("Standard Edition"),
-        v if v.is_empty() => gettext("Edition"),
-        v => v,
-    };
+    let name = edition_name(e, index);
     let artists: Vec<_> = e.cover_artists.iter().map(|a| a.name.as_str()).collect();
     let flag = |value: Option<bool>, yes: String| match value {
         Some(true) => yes,
@@ -550,16 +568,55 @@ fn edition_group(
         none.add_css_class("dim-label");
         group.add(&none);
     }
-    // The copy being viewed comes first; every copy keeps its number.
-    let numbered = e.copies.iter().zip(1..);
-    let (this, others): (Vec<_>, Vec<_>) = numbered.partition(|(c, _)| Some(c.copy.id) == current);
-    for (copy, number) in this {
-        group.add(&copy_row(copy, number, category, links));
-    }
-    for (copy, number) in others {
-        group.add(&other_copy_row(copy, number, category, links));
+    // Copies keep their number within the edition, whichever is shown.
+    for (copy, number) in e.copies.iter().zip(1..) {
+        if Some(copy.copy.id) == current {
+            group.add(&copy_row(copy, number, category, links));
+        }
     }
     group
+}
+
+/// e.g. `Cover B, 2nd printing`, or `Standard Edition` for the first
+/// edition with neither; a later one is told apart by how it was sold
+/// when it can be.
+fn edition_name(e: &EditionDetail, index: usize) -> String {
+    let f = &e.edition.fields;
+    match version(&f.variant, f.printing) {
+        v if v.is_empty() && index == 0 => gettext("Standard Edition"),
+        v if v.is_empty() => f.distribution.map_or_else(
+            || gettext("Edition"),
+            |d| format::distribution(d).to_owned(),
+        ),
+        v => v,
+    }
+}
+
+/// Every copy of the issue but `current`, in brief, each opening the
+/// page as seen from it.
+fn other_copies(
+    d: &IssueDetail,
+    current: CopyId,
+    category: Category,
+    links: &Links,
+) -> Option<adw::PreferencesGroup> {
+    let group = group(&gettext("My Other Copies"));
+    let mut any = false;
+    for (index, e) in d.editions.iter().enumerate() {
+        for (copy, number) in e.copies.iter().zip(1..) {
+            if copy.copy.id != current {
+                group.add(&other_copy_row(
+                    copy,
+                    number,
+                    &edition_name(e, index),
+                    category,
+                    links,
+                ));
+                any = true;
+            }
+        }
+    }
+    any.then_some(group)
 }
 
 /// A copy's name and state in one line, and where it is and what it is
@@ -624,11 +681,12 @@ fn location(c: &CopyDetail) -> String {
 fn other_copy_row(
     c: &CopyDetail,
     number: usize,
+    edition: &str,
     category: Category,
     links: &Links,
 ) -> adw::ActionRow {
     let (title, subtitle) = copy_summary(c, number, category);
-    let row = row(&title, &subtitle);
+    let row = row(&format::joined([edition.to_owned(), title]), &subtitle);
     row.set_activatable(true);
     row.set_tooltip_text(Some(&gettext("View This Copy")));
     row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
