@@ -20,6 +20,8 @@ use crate::{chart, covers, format};
 pub struct Links {
     /// Opens another issue's page, such as one a book reprints.
     pub open: Rc<dyn Fn(IssueId)>,
+    /// Shows the page again with another copy as the one being viewed.
+    pub select: Rc<dyn Fn(CopyId)>,
     pub edit: Rc<dyn Fn(CopyId)>,
     /// Starts a new book from a copy.
     pub prefill: Rc<dyn Fn(CopyId, Prefill)>,
@@ -38,11 +40,22 @@ pub struct Links {
     pub view_photo: Rc<dyn Fn(CopyId, Side)>,
 }
 
-/// The page for `d`, with the row of `open_copy` unfolded, as after a
-/// change to that copy.
-pub fn page(d: &IssueDetail, links: &Links, open_copy: Option<CopyId>) -> adw::NavigationPage {
+/// The copy the page is about: `open_copy` if the issue has it, else
+/// its first copy, so there is always one copy to edit when any exist.
+pub fn current_copy(d: &IssueDetail, open_copy: Option<CopyId>) -> Option<CopyId> {
+    let mut copies = d.editions.iter().flat_map(|e| &e.copies).map(|c| c.copy.id);
+    match open_copy {
+        Some(open) if copies.clone().any(|c| c == open) => Some(open),
+        _ => copies.next(),
+    }
+}
+
+/// The page for `d` as seen from the copy `current`: only that copy
+/// shows its photos and can be changed, and the issue's other copies are
+/// listed in brief, each opening the page as seen from it.
+pub fn page(d: &IssueDetail, links: &Links, current: Option<CopyId>) -> adw::NavigationPage {
     let prefs = adw::PreferencesPage::new();
-    prefs.add(&summary(d, open_copy, links));
+    prefs.add(&summary(d, current, links));
     if !d.issue.fields.synopsis.is_empty() {
         let group = group(&gettext("Synopsis"));
         group.add(&paragraph(&d.issue.fields.synopsis));
@@ -97,7 +110,7 @@ pub fn page(d: &IssueDetail, links: &Links, open_copy: Option<CopyId>) -> adw::N
     }
     let category = d.series.fields.category;
     for (n, edition) in d.editions.iter().enumerate() {
-        prefs.add(&edition_group(edition, n, category, links, open_copy));
+        prefs.add(&edition_group(edition, n, category, links, current));
     }
 
     let header = adw::HeaderBar::new();
@@ -165,18 +178,6 @@ fn series_title(name: &str, start_year: Option<u16>) -> String {
     }
 }
 
-/// The copy whose photos stand for the issue: the one asked for if it
-/// has any, else the first with a front, else the first with any, else
-/// simply the first.
-fn cover_copy(d: &IssueDetail, open_copy: Option<CopyId>) -> Option<&CopyDetail> {
-    let copies = || d.editions.iter().flat_map(|e| &e.copies);
-    copies()
-        .find(|c| Some(c.copy.id) == open_copy && !c.photos.is_empty())
-        .or_else(|| copies().find(|c| c.photos.contains(&Side::Front)))
-        .or_else(|| copies().find(|c| !c.photos.is_empty()))
-        .or_else(|| copies().next())
-}
-
 /// A photo that opens the full-size viewer when chosen, or the
 /// placeholder naming the missing side.
 fn photo_or_placeholder(
@@ -210,8 +211,10 @@ fn photo_or_placeholder(
     button.upcast()
 }
 
-/// The issue's cover, with a flip to the back.
-fn summary_cover(d: &IssueDetail, open_copy: Option<CopyId>, links: &Links) -> gtk::Widget {
+/// The cover of the copy being viewed, with a flip to the back. Other
+/// copies' photos are never shown for it, since they may be of another
+/// edition or a copy in a different state.
+fn summary_cover(d: &IssueDetail, current: Option<CopyId>, links: &Links) -> gtk::Widget {
     let frame = gtk::Box::builder()
         .width_request(160)
         .height_request(242)
@@ -221,10 +224,15 @@ fn summary_cover(d: &IssueDetail, open_copy: Option<CopyId>, links: &Links) -> g
         .css_classes(["card"])
         .build();
     let missing = |side| match side {
-        Side::Front => gettext("No Front Cover Image for This Issue"),
-        Side::Back => gettext("No Back Cover Image for This Issue"),
+        Side::Front => gettext("No Front Cover Image for This Copy"),
+        Side::Back => gettext("No Back Cover Image for This Copy"),
     };
-    let Some(c) = cover_copy(d, open_copy) else {
+    let found = d
+        .editions
+        .iter()
+        .flat_map(|e| &e.copies)
+        .find(|c| Some(c.copy.id) == current);
+    let Some(c) = found else {
         frame.set_valign(gtk::Align::Start);
         frame.append(&covers::placeholder(&missing(Side::Front), false));
         return frame.upcast();
@@ -279,10 +287,10 @@ fn summary_cover(d: &IssueDetail, open_copy: Option<CopyId>, links: &Links) -> g
 }
 
 /// The cover, the issue's name, and the facts about it at a glance.
-fn summary(d: &IssueDetail, open_copy: Option<CopyId>, links: &Links) -> adw::PreferencesGroup {
+fn summary(d: &IssueDetail, current: Option<CopyId>, links: &Links) -> adw::PreferencesGroup {
     let f = &d.issue.fields;
     let s = &d.series.fields;
-    let cover = summary_cover(d, open_copy, links);
+    let cover = summary_cover(d, current, links);
 
     let text = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
@@ -468,7 +476,7 @@ fn edition_group(
     index: usize,
     category: Category,
     links: &Links,
-    open_copy: Option<CopyId>,
+    current: Option<CopyId>,
 ) -> adw::PreferencesGroup {
     let f = &e.edition.fields;
     let name = match version(&f.variant, f.printing) {
@@ -509,18 +517,21 @@ fn edition_group(
     header.set_use_markup(true);
     header.set_title(&format!("<b>{}</b>", glib::markup_escape_text(&name)));
     header.set_subtitle(&glib::markup_escape_text(&facts));
-    let trash = gtk::Button::builder()
-        .icon_name("user-trash-symbolic")
-        .valign(gtk::Align::Center)
-        .tooltip_text(gettext("Move Edition to Trash"))
-        .css_classes(["flat"])
-        .build();
-    {
+    // Trashing an edition trashes its copies, so it is offered only
+    // where that touches no copy but the one being viewed.
+    let only_this = e.copies.iter().all(|c| Some(c.copy.id) == current);
+    if only_this {
+        let trash = gtk::Button::builder()
+            .icon_name("user-trash-symbolic")
+            .valign(gtk::Align::Center)
+            .tooltip_text(gettext("Move Edition to Trash"))
+            .css_classes(["flat"])
+            .build();
         let hook = links.trash_edition.clone();
         let edition = e.edition.id;
         trash.connect_clicked(move |_| hook(edition));
+        header.add_suffix(&trash);
     }
-    header.add_suffix(&trash);
     group.add(&header);
     if !artists.is_empty() {
         group.add(&property(&gettext("Cover Art"), &artists.join(", ")));
@@ -539,15 +550,21 @@ fn edition_group(
         none.add_css_class("dim-label");
         group.add(&none);
     }
-    for (n, copy) in e.copies.iter().enumerate() {
-        let row = copy_row(copy, n + 1, category, links);
-        row.set_expanded(open_copy == Some(copy.copy.id));
-        group.add(&row);
+    // The copy being viewed comes first; every copy keeps its number.
+    let numbered = e.copies.iter().zip(1..);
+    let (this, others): (Vec<_>, Vec<_>) = numbered.partition(|(c, _)| Some(c.copy.id) == current);
+    for (copy, number) in this {
+        group.add(&copy_row(copy, number, category, links));
+    }
+    for (copy, number) in others {
+        group.add(&other_copy_row(copy, number, category, links));
     }
     group
 }
 
-fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) -> adw::ExpanderRow {
+/// A copy's name and state in one line, and where it is and what it is
+/// worth in another.
+fn copy_summary(c: &CopyDetail, number: usize, category: Category) -> (String, String) {
     let f = &c.copy.fields;
     let condition = match category {
         Category::CollectedEdition => f
@@ -559,14 +576,6 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
             g => g,
         },
     };
-    let location = match (&c.storage_box, f.box_position) {
-        (Some(name), Some(position)) => gettext_f(
-            "{box}, position {position}",
-            &[("box", name), ("position", &position.to_string())],
-        ),
-        (Some(name), None) => name.clone(),
-        (None, _) => String::new(),
-    };
     let value = c
         .values
         .last()
@@ -577,25 +586,73 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
             )
         })
         .unwrap_or_default();
+    let title = format::joined([
+        // Translators: copies of one edition are numbered 1, 2, 3...
+        gettext_f("Copy {number}", &[("number", &number.to_string())]),
+        condition,
+        match c.signatures.len() {
+            0 => String::new(),
+            1 => gettext("Signed"),
+            n => ngettext_f(
+                "{count} signature",
+                "{count} signatures",
+                n,
+                &[("count", &n.to_string())],
+            ),
+        },
+    ]);
+    (
+        title,
+        format::joined([location(c).as_str(), value.as_str()]),
+    )
+}
 
-    let row = expander(
-        &format::joined([
-            // Translators: copies of one edition are numbered 1, 2, 3...
-            gettext_f("Copy {number}", &[("number", &number.to_string())]),
-            condition,
-            match c.signatures.len() {
-                0 => String::new(),
-                1 => gettext("Signed"),
-                n => ngettext_f(
-                    "{count} signature",
-                    "{count} signatures",
-                    n,
-                    &[("count", &n.to_string())],
-                ),
-            },
-        ]),
-        &format::joined([location.as_str(), value.as_str()]),
-    );
+/// Where a copy is kept, if that was noted.
+fn location(c: &CopyDetail) -> String {
+    match (&c.storage_box, c.copy.fields.box_position) {
+        (Some(name), Some(position)) => gettext_f(
+            "{box}, position {position}",
+            &[("box", name), ("position", &position.to_string())],
+        ),
+        (Some(name), None) => name.clone(),
+        (None, _) => String::new(),
+    }
+}
+
+/// Another copy of the issue, in brief; choosing it views the page from
+/// that copy.
+fn other_copy_row(
+    c: &CopyDetail,
+    number: usize,
+    category: Category,
+    links: &Links,
+) -> adw::ActionRow {
+    let (title, subtitle) = copy_summary(c, number, category);
+    let row = row(&title, &subtitle);
+    row.set_activatable(true);
+    row.set_tooltip_text(Some(&gettext("View This Copy")));
+    row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+    let select = links.select.clone();
+    let copy = c.copy.id;
+    row.connect_activated(move |_| select(copy));
+    row
+}
+
+/// The copy being viewed, unfolded, with its photos, everything about
+/// it, and the ways to change it.
+fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) -> adw::ExpanderRow {
+    let f = &c.copy.fields;
+    let (title, subtitle) = copy_summary(c, number, category);
+    let row = expander(&title, &subtitle);
+    row.set_expanded(true);
+    // Translators: marks the copy being viewed among the copies of an
+    // issue.
+    let this = gtk::Label::builder()
+        .label(gettext("This copy"))
+        .valign(gtk::Align::Center)
+        .css_classes(["accent", "caption-heading"])
+        .build();
+    row.add_prefix(&this);
     let edit = gtk::Button::builder()
         .icon_name("document-edit-symbolic")
         .valign(gtk::Align::Center)
@@ -650,7 +707,7 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
             ]),
         );
     }
-    add(&gettext("Location"), location.clone());
+    add(&gettext("Location"), location(c));
     add(
         &gettext("Purchased"),
         format::joined([

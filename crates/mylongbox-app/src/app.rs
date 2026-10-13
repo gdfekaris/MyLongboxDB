@@ -279,6 +279,8 @@ pub enum AppMsg {
     /// A book in the grid or list, by position.
     BookActivated(u32),
     OpenIssue(IssueId),
+    /// View the open issue's page from another of its copies.
+    SelectCopy(CopyId),
     Add(Category),
     EditCopy(CopyId),
     /// Start a new book from a copy.
@@ -888,11 +890,16 @@ impl Component for App {
             AppMsg::BookActivated(position) => {
                 // Both views hold the same rows in the same order.
                 if let Some(book) = self.grid.get_visible(position) {
-                    let issue = book.borrow().0.issue;
+                    let (issue, copy) = {
+                        let row = &book.borrow().0;
+                        (row.issue, row.copy)
+                    };
+                    self.open_copy = Some(copy);
                     self.open_issue(issue, root, &sender);
                 }
             }
             AppMsg::OpenIssue(issue) => self.open_issue(issue, root, &sender),
+            AppMsg::SelectCopy(copy) => self.refresh_copy(copy, root, &sender),
             AppMsg::Add(category) => self.open_form(FormKind::New(category), root, &sender),
             AppMsg::EditCopy(copy) => self.open_form(FormKind::Edit(copy), root, &sender),
             AppMsg::AddFrom(copy, kind) => {
@@ -2056,14 +2063,19 @@ impl App {
         };
         match db.issue_detail(issue) {
             Ok(detail) => {
-                if let Some(copy) = detail.editions.iter().flat_map(|e| &e.copies).next() {
-                    self.recent_copy = Some(copy.copy.id);
+                let current = issue_page::current_copy(&detail, self.open_copy.take());
+                if current.is_some() {
+                    self.recent_copy = current;
                 }
                 let open = sender.clone();
                 let edit = sender.clone();
                 let prefill = sender.clone();
                 let links = Links {
                     open: Rc::new(move |issue| open.input(AppMsg::OpenIssue(issue))),
+                    select: {
+                        let s = sender.clone();
+                        Rc::new(move |copy| s.input(AppMsg::SelectCopy(copy)))
+                    },
                     edit: Rc::new(move |copy| edit.input(AppMsg::EditCopy(copy))),
                     prefill: Rc::new(move |copy, kind| prefill.input(AppMsg::AddFrom(copy, kind))),
                     trash_copy: {
@@ -2103,8 +2115,7 @@ impl App {
                         Rc::new(move |copy, side| s.input(AppMsg::ViewPhoto(copy, side)))
                     },
                 };
-                let open_copy = self.open_copy.take();
-                root.push_page(&issue_page::page(&detail, &links, open_copy));
+                root.push_page(&issue_page::page(&detail, &links, current));
             }
             Err(why) => root.toast(&why.to_string()),
         }
