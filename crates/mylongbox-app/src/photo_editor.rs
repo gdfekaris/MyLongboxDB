@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use gtk::cairo;
-use mylongbox_media::{Crop, Edit, MAX_STRAIGHTEN, RgbImage, apply_edit, find_cover};
+use mylongbox_media::{Crop, Edit, MAX_STRAIGHTEN, RgbImage, apply_edit};
 
 use crate::covers;
 use crate::i18n::gettext;
@@ -145,7 +145,6 @@ struct Editor {
     frame: Cell<(u32, u32)>,
     picture: gtk::Picture,
     area: gtk::DrawingArea,
-    toasts: adw::ToastOverlay,
     straighten: gtk::Scale,
     drag: Cell<Option<(Grip, Crop)>>,
 }
@@ -177,22 +176,6 @@ impl Editor {
         f(&mut edit);
         self.edit.set(edit);
         self.refresh();
-    }
-
-    /// Crops to the cover if one stands out from the background.
-    fn fit_to_cover(&self) {
-        let whole = Edit {
-            crop: Crop::FULL,
-            ..self.edit.get()
-        };
-        match find_cover(&apply_edit(&self.preview, &whole)) {
-            Some(crop) => {
-                self.change(|e| e.crop = crop);
-            }
-            None => self.toasts.add_toast(adw::Toast::new(&gettext(
-                "No cover stands out from the background",
-            ))),
-        }
     }
 
     fn draw(&self, cr: &cairo::Context) {
@@ -227,14 +210,15 @@ impl Editor {
     }
 }
 
-/// Opens the editor on `preview`, starting from `proposal` if a cover
-/// was found. `done` gets the edit when the owner saves; closing the
-/// editor otherwise drops the photo.
+/// Opens the editor on `preview`, with the crop at the photo's edges,
+/// since no guess at the cover suits every photo: a slabbed book's case
+/// and label belong in it, a raw book's table does not. `done` gets the
+/// edit when the owner saves; closing the editor otherwise drops the
+/// photo.
 pub fn open(
     parent: &impl IsA<gtk::Widget>,
     title: &str,
     preview: RgbImage,
-    proposal: Option<Crop>,
     done: impl Fn(Edit) + 'static,
 ) {
     let picture = gtk::Picture::builder()
@@ -274,14 +258,10 @@ pub fn open(
 
     let editor = Rc::new(Editor {
         preview,
-        edit: Cell::new(Edit {
-            crop: proposal.unwrap_or(Crop::FULL),
-            ..Edit::default()
-        }),
+        edit: Cell::new(Edit::default()),
         frame: Cell::new((1, 1)),
         picture,
         area: area.clone(),
-        toasts: adw::ToastOverlay::new(),
         straighten: straighten.clone(),
         drag: Cell::new(None),
     });
@@ -373,16 +353,10 @@ pub fn open(
         None,
         &gettext("Turn Right"),
     );
-    let fit = button(
-        None,
-        Some(&gettext("_Fit to Cover")),
-        &gettext("Crop to the cover, found by its edges"),
-    );
     let reset = button(None, Some(&gettext("_Reset")), &gettext("Undo All Changes"));
-    let actions: [(&gtk::Button, Action); 4] = [
+    let actions: [(&gtk::Button, Action); 3] = [
         (&left, |e| e.change(Edit::turn_left)),
         (&right, |e| e.change(Edit::turn_right)),
-        (&fit, Editor::fit_to_cover),
         (&reset, |e| {
             e.change(|edit| *edit = Edit::default());
             e.straighten.set_value(0.0);
@@ -412,7 +386,6 @@ pub fn open(
     controls.append(&turns);
     controls.append(&straighten_label);
     controls.append(&straighten);
-    controls.append(&fit);
     controls.append(&reset);
 
     let content = gtk::Box::builder()
@@ -420,7 +393,6 @@ pub fn open(
         .build();
     content.append(&canvas);
     content.append(&controls);
-    editor.toasts.set_child(Some(&content));
 
     let cancel = gtk::Button::with_mnemonic(&gettext("_Cancel"));
     let save = gtk::Button::builder()
@@ -436,7 +408,7 @@ pub fn open(
     header.pack_end(&save);
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
-    toolbar.set_content(Some(&editor.toasts));
+    toolbar.set_content(Some(&content));
 
     let dialog = adw::Dialog::builder()
         .title(title)

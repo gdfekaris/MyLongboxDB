@@ -13,8 +13,7 @@ use adw::prelude::*;
 use gtk::{gdk, glib};
 use mylongbox_core::{CopyId, CoverPhoto, Database, Side};
 use mylongbox_media::{
-    Crop, Edit, Output, RgbImage, apply_edit, decode_bytes, decode_file, encode, find_cover,
-    preview, upright,
+    Edit, Output, RgbImage, apply_edit, decode_bytes, decode_file, encode, preview, upright,
 };
 
 /// Thumbnails kept decoded: a few screens of the cover grid.
@@ -110,8 +109,6 @@ pub struct Loaded {
     /// Upright and in sRGB, at full size.
     pub full: RgbImage,
     pub preview: RgbImage,
-    /// A crop around the cover, if one stands out.
-    pub proposal: Option<Crop>,
 }
 
 impl std::fmt::Debug for Loaded {
@@ -119,7 +116,6 @@ impl std::fmt::Debug for Loaded {
         // The pixels would flood any log.
         f.debug_struct("Loaded")
             .field("full", &self.full.dimensions())
-            .field("proposal", &self.proposal)
             .finish_non_exhaustive()
     }
 }
@@ -129,12 +125,7 @@ impl std::fmt::Debug for Loaded {
 pub fn load(path: &Path) -> Result<Loaded, String> {
     let full = upright(decode_file(path).map_err(|e| e.to_string())?);
     let preview = preview(&full, PREVIEW_EDGE);
-    let proposal = find_cover(&preview);
-    Ok(Loaded {
-        full,
-        preview,
-        proposal,
-    })
+    Ok(Loaded { full, preview })
 }
 
 /// Applies the editor's changes to the full photo and makes the JPEGs
@@ -212,6 +203,7 @@ pub fn picture(texture: &gdk::Texture, fit: gtk::ContentFit) -> gtk::Picture {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mylongbox_media::Crop;
     use std::rc::Rc;
 
     fn photo_of(width: u32, height: u32) -> CoverPhoto {
@@ -305,7 +297,6 @@ mod tests {
         let loaded = load(&path).unwrap();
         assert_eq!(loaded.full.dimensions(), (1000, 3000));
         assert_eq!(loaded.preview.dimensions(), (400, 1200));
-        assert_eq!(loaded.proposal, None, "a plain picture has no cover");
         let photo = finish(&loaded.full, &Edit::default(), Output::default()).unwrap();
         assert_eq!((photo.width, photo.height), (533, 1600));
         assert!(photo.full_jpeg.starts_with(&[0xFF, 0xD8, 0xFF]));

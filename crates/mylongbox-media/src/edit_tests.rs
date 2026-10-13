@@ -4,8 +4,7 @@ use image::imageops;
 use image::{Rgb, RgbImage};
 
 use crate::edit::{
-    Crop, Edit, MAX_STRAIGHTEN, MIN_CROP, Mapping, apply, find_cover, longest_run, preview, sample,
-    turned_size,
+    Crop, Edit, MAX_STRAIGHTEN, MIN_CROP, Mapping, apply, preview, sample, turned_size,
 };
 
 /// A picture where every pixel differs, so any misplacement shows.
@@ -150,14 +149,6 @@ fn colours_between_pixels_are_blended() {
 }
 
 #[test]
-fn the_longest_run_wins() {
-    let lines = [true, false, true, true, true, false, true, true];
-    assert_eq!(longest_run(&lines), Some((2, 5)));
-    assert_eq!(longest_run(&[false, true, true]), Some((1, 3)));
-    assert_eq!(longest_run(&[false, false]), None);
-}
-
-#[test]
 fn straightening_turns_clockwise() {
     // A dark upright line on white; turned clockwise, its top leans
     // right and its bottom left.
@@ -263,86 +254,4 @@ fn previews_are_small_copies() {
         (800, 1200)
     );
     assert_eq!(preview(&pattern(300, 200), 1200).dimensions(), (300, 200));
-}
-
-/// A busy cover at the given shares of a `width` × `height` photo on a
-/// plain, slightly uneven background.
-fn photographed(width: u32, height: u32, cover: Crop, background: [u8; 3]) -> RgbImage {
-    RgbImage::from_fn(width, height, |x, y| {
-        let (fx, fy) = (x as f32 / width as f32, y as f32 / height as f32);
-        if fx >= cover.left && fx < cover.right && fy >= cover.top && fy < cover.bottom {
-            Rgb([
-                (x * 13 % 200) as u8 + 30,
-                (y * 7 % 180) as u8,
-                ((x / 9 + y / 11) % 2 * 200) as u8,
-            ])
-        } else {
-            let grain = ((x * 31 + y * 17) % 9) as u8;
-            Rgb(background.map(|c| c.saturating_add(grain)))
-        }
-    })
-}
-
-fn near(a: Crop, b: Crop) -> bool {
-    [
-        (a.left, b.left),
-        (a.top, b.top),
-        (a.right, b.right),
-        (a.bottom, b.bottom),
-    ]
-    .iter()
-    .all(|(x, y)| (x - y).abs() < 0.02)
-}
-
-#[test]
-fn the_cover_is_found_on_a_plain_background() {
-    let cover = Crop {
-        left: 0.2,
-        top: 0.1,
-        right: 0.8,
-        bottom: 0.9,
-    };
-    for background in [[120, 110, 100], [20, 20, 25], [235, 235, 230]] {
-        let found = find_cover(&photographed(600, 800, cover, background)).unwrap();
-        assert!(near(found, cover), "{background:?}: {found:?}");
-    }
-    let off_centre = Crop {
-        left: 0.05,
-        top: 0.3,
-        right: 0.6,
-        bottom: 0.95,
-    };
-    let found = find_cover(&photographed(900, 700, off_centre, [90, 60, 40])).unwrap();
-    assert!(near(found, off_centre), "{found:?}");
-    // A cover taking up only a quarter of the photo's width.
-    let narrow = Crop {
-        left: 0.4,
-        top: 0.1,
-        right: 0.65,
-        bottom: 0.9,
-    };
-    let found = find_cover(&photographed(800, 600, narrow, [120, 110, 100])).unwrap();
-    assert!(near(found, narrow), "{found:?}");
-}
-
-#[test]
-fn nothing_is_proposed_without_a_clear_cover() {
-    // Plain, filled to the edges, or too small to judge.
-    assert_eq!(
-        find_cover(&RgbImage::from_pixel(400, 600, Rgb([128, 128, 128]))),
-        None
-    );
-    assert_eq!(find_cover(&pattern(400, 600)), None);
-    assert_eq!(find_cover(&pattern(10, 10)), None);
-    // A cover that fills almost the whole photo leaves nothing to crop.
-    let almost = Crop {
-        left: 0.01,
-        top: 0.01,
-        right: 0.99,
-        bottom: 0.99,
-    };
-    assert_eq!(
-        find_cover(&photographed(400, 600, almost, [128, 128, 128])),
-        None
-    );
 }

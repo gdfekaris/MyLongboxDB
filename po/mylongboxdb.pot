@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-12 18:21-0700\n"
+"POT-Creation-Date: 2026-10-12 18:25-0700\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -768,7 +768,7 @@ msgstr ""
 #: crates/mylongbox-app/src/import_dialog.rs:337
 #: crates/mylongbox-app/src/import_dialog.rs:342
 #: crates/mylongbox-app/src/import_dialog.rs:714
-#: crates/mylongbox-app/src/photo_editor.rs:425
+#: crates/mylongbox-app/src/photo_editor.rs:397
 #: crates/mylongbox-app/src/prefs.rs:588 crates/mylongbox-app/src/prompt.rs:48
 msgid "_Cancel"
 msgstr ""
@@ -1760,7 +1760,7 @@ msgid "Each signature on this copy, in the order signed"
 msgstr ""
 
 #: crates/mylongbox-app/src/form.rs:520
-#: crates/mylongbox-app/src/photo_editor.rs:427
+#: crates/mylongbox-app/src/photo_editor.rs:399
 msgid "_Save"
 msgstr ""
 
@@ -2635,36 +2635,24 @@ msgstr ""
 msgid "More Ways to Add"
 msgstr ""
 
-#: crates/mylongbox-app/src/photo_editor.rs:193
-msgid "No cover stands out from the background"
-msgstr ""
-
 #. Translators: rotating the photo a few degrees so the cover is level.
-#: crates/mylongbox-app/src/photo_editor.rs:272
+#: crates/mylongbox-app/src/photo_editor.rs:256
 msgid "Straighten"
 msgstr ""
 
-#: crates/mylongbox-app/src/photo_editor.rs:369
+#: crates/mylongbox-app/src/photo_editor.rs:349
 msgid "Turn Left"
 msgstr ""
 
-#: crates/mylongbox-app/src/photo_editor.rs:374
+#: crates/mylongbox-app/src/photo_editor.rs:354
 msgid "Turn Right"
 msgstr ""
 
-#: crates/mylongbox-app/src/photo_editor.rs:378
-msgid "_Fit to Cover"
-msgstr ""
-
-#: crates/mylongbox-app/src/photo_editor.rs:379
-msgid "Crop to the cover, found by its edges"
-msgstr ""
-
-#: crates/mylongbox-app/src/photo_editor.rs:381
+#: crates/mylongbox-app/src/photo_editor.rs:356
 msgid "Undo All Changes"
 msgstr ""
 
-#: crates/mylongbox-app/src/photo_editor.rs:381
+#: crates/mylongbox-app/src/photo_editor.rs:356
 msgid "_Reset"
 msgstr ""
 

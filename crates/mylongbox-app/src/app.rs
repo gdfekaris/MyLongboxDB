@@ -1483,12 +1483,12 @@ impl Component for App {
                     Side::Front => gettext("Edit Front Cover"),
                     Side::Back => gettext("Edit Back Cover"),
                 };
-                let (preview, proposal) = (loaded.preview.clone(), loaded.proposal);
+                let preview = loaded.preview.clone();
                 // The full photo waits here for the edit; closing the
                 // editor without saving drops it.
                 let loaded = RefCell::new(Some(loaded));
                 let sender = sender.clone();
-                photo_editor::open(root, &title, preview, proposal, move |edit| {
+                photo_editor::open(root, &title, preview, move |edit| {
                     if let Some(loaded) = loaded.borrow_mut().take() {
                         sender.input(AppMsg::PhotoEdited {
                             opened,
