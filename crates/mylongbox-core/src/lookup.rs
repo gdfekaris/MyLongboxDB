@@ -9,6 +9,7 @@ use crate::error::{Error, Result};
 use crate::model::{
     BoxId, CharacterId, CreatorId, PublisherId, RowUuid, StoryArcId, TagId, TeamId,
 };
+use crate::shelves::Named;
 
 /// One entry in a name list.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,7 +26,7 @@ pub struct Lookup<I> {
 #[doc(hidden)]
 pub struct LookupSql {
     /// Lowercase singular noun for messages, e.g. "creator".
-    noun: &'static str,
+    pub(crate) noun: &'static str,
     insert: &'static str,
     get: &'static str,
     list: &'static str,
@@ -337,13 +338,16 @@ impl Database {
         let sql = I::SQL;
         let name = clean_name(sql, name)?;
         let tx = self.tx()?;
-        self.lookup(id)?;
+        let old = self.lookup(id)?.name;
         check_name_free::<I>(&tx, &name, Some(id))?;
         // Renaming to one of its own alternate names swaps them over.
         if let Some(aliases) = &sql.aliases {
             tx.execute(aliases.delete, params![id.raw(), name])?;
         }
         tx.execute(sql.rename, params![id.raw(), name])?;
+        if let Some(what) = Named::of::<I>() {
+            self.rules_follow_rename(what, &old, &name)?;
+        }
         tx.commit()?;
         Ok(())
     }
@@ -389,9 +393,12 @@ impl Database {
             )));
         }
         let tx = self.tx()?;
-        self.lookup(from)?;
-        self.lookup(into)?;
+        let old = self.lookup(from)?.name;
+        let new = self.lookup(into)?.name;
         run_steps(&tx, I::SQL.merge, [from.raw(), into.raw()])?;
+        if let Some(what) = Named::of::<I>() {
+            self.rules_follow_rename(what, &old, &new)?;
+        }
         tx.commit()?;
         Ok(())
     }

@@ -12,6 +12,7 @@
 use std::collections::HashSet;
 
 use rusqlite::{Params, params};
+use serde::{Deserialize, Serialize};
 use strsim::osa_distance;
 
 use crate::browse::{CopyRow, copy_row};
@@ -29,7 +30,8 @@ use crate::money::{Amount, Currency};
 use crate::search::{edits_allowed, fold, json_ids, like_escaped};
 
 /// How the issues that issue rows find are turned into books.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum OwnedAs {
     /// Copies of the issue itself.
     #[default]
@@ -41,7 +43,8 @@ pub enum OwnedAs {
 
 /// A comparison for numbers, grades, money, and issue numbers. Between
 /// includes both ends, in either order.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Compare<T> {
     Equal(T),
     AtLeast(T),
@@ -49,7 +52,8 @@ pub enum Compare<T> {
     Between(T, T),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TextField {
     SeriesName,
     Publisher,
@@ -66,7 +70,8 @@ pub enum TextField {
     Notes,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TextCondition {
     Contains,
     Is,
@@ -74,7 +79,8 @@ pub enum TextCondition {
     SimilarTo,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum NumberField {
     PageCount,
     Printing,
@@ -83,7 +89,8 @@ pub enum NumberField {
     BoxPosition,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MoneyField {
     CoverPrice,
     PurchasePrice,
@@ -91,7 +98,8 @@ pub enum MoneyField {
     CurrentValue,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DateField {
     /// By month; an issue dated only by year counts as the whole year.
     CoverDate,
@@ -100,7 +108,8 @@ pub enum DateField {
     Added,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DateCondition {
     Before(Date),
     After(Date),
@@ -108,7 +117,8 @@ pub enum DateCondition {
     InYear(u16),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Choice {
     Category(Vec<Category>),
     MagazineFormat(Vec<MagazineFormat>),
@@ -121,7 +131,8 @@ pub enum Choice {
     Verification(Vec<Verification>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Flag {
     KeyIssue,
     /// A first appearance of a character or team.
@@ -134,7 +145,8 @@ pub enum Flag {
     Sketch,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Presence {
     FrontPhoto,
     BackPhoto,
@@ -151,7 +163,8 @@ pub enum Presence {
     Notes,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ListField {
     Characters,
     Teams,
@@ -161,7 +174,8 @@ pub enum ListField {
     SignedBy,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ListCondition {
     AnyOf,
     AllOf,
@@ -169,7 +183,8 @@ pub enum ListCondition {
 }
 
 /// One row of the filter panel.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Filter {
     Text {
         field: TextField,
@@ -221,7 +236,8 @@ pub enum Filter {
 }
 
 /// Every row of the panel, all of which a book must meet.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct FilterSet {
     pub rules: Vec<Filter>,
     pub owned_as: OwnedAs,

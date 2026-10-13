@@ -63,8 +63,12 @@ mod search_tests;
 mod shelf_ops;
 #[cfg(test)]
 mod shelf_ops_tests;
+mod shelves;
+#[cfg(test)]
+mod shelves_tests;
 mod snapshot;
 mod store;
+mod stored;
 mod values;
 
 pub use browse::{CopyRow, Need, Shelf, ShelfEntry, ShelfList};
@@ -95,9 +99,9 @@ pub use merge_series::SeriesMerge;
 pub use model::{
     Binding, BookCondition, BoxId, Category, CharacterId, Copy, CopyFields, CopyId, CoverDate,
     CreatorId, Distribution, Edition, EditionFields, EditionId, Grade, GradeType, Isbn, Issue,
-    IssueFields, IssueId, MagazineFormat, PublisherId, Role, RowUuid, Series, SeriesFields,
-    SeriesId, Side, SignatureFields, StoryArcId, TagId, TeamId, TrashGroup, TrashId, ValueId,
-    Verification,
+    IssueFields, IssueId, MagazineFormat, PublisherId, Role, RowUuid, SavedShelfId, Series,
+    SeriesFields, SeriesId, Side, SignatureFields, StoryArcId, TagId, TeamId, TrashGroup, TrashId,
+    ValueId, Verification,
 };
 pub use money::{
     Amount, ConversionError, Currency, ExchangeRate, ParseAmountError, RateError, RateTable,
@@ -105,6 +109,7 @@ pub use money::{
 };
 pub use photos::{CoverPhoto, MAX_PHOTO_SIDE};
 pub use search::SearchResults;
+pub use shelves::{MAX_SHELF_NAME, SavedShelf};
 pub use snapshot::{CopyJob, CopyTarget};
 pub use store::{CollectionInfo, CollectionStore, MAX_NAME, SafetyCopy};
 pub use values::ValueEntry;

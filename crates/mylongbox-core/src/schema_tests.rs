@@ -151,6 +151,12 @@ fn sample(conn: &Connection) -> Sample {
          VALUES ('2026-01-01', 400000, 10000000)",
         &[],
     );
+    exec(
+        "INSERT INTO saved_shelf (name, position, rules)
+         VALUES ('Signed', 1, '{\"rules\":[],\"owned_as\":\"either\"}')",
+        &[],
+    );
+    exec("INSERT INTO hidden_section (code) VALUES ('teams')", &[]);
     Sample {
         series,
         issue,
@@ -176,7 +182,8 @@ fn count(conn: &Connection, table: &str) -> i64 {
         "value_entry", "cover_photo", "creator", "creator_alias", "credit",
         "edition_cover_artist", "character", "character_alias", "issue_character", "team",
         "team_alias", "issue_team", "story_arc", "story_arc_alias", "issue_story_arc", "tag",
-        "copy_tag", "collects", "exchange_rate", "signature", "search_source",
+        "copy_tag", "collects", "exchange_rate", "signature", "search_source", "saved_shelf",
+        "hidden_section",
     );
     conn.query_row(sql, [], |row| row.get(0)).unwrap()
 }
@@ -198,7 +205,7 @@ fn user_tables(conn: &Connection) -> Vec<String> {
 #[test]
 fn schema_is_at_the_newest_version() {
     let db = Database::open_in_memory().unwrap();
-    assert_eq!(db.schema_version().unwrap(), 1);
+    assert_eq!(db.schema_version().unwrap(), 2);
 }
 
 #[test]
@@ -361,6 +368,22 @@ fn constraints_reject_bad_rows() {
         (
             "deleting a box that holds copies",
             "DELETE FROM storage_box",
+        ),
+        (
+            "a shelf whose rules are not JSON",
+            "INSERT INTO saved_shelf (name, position, rules) VALUES ('X', 2, 'signed')",
+        ),
+        (
+            "a shelf without a name",
+            "INSERT INTO saved_shelf (name, position, rules) VALUES ('', 2, '{}')",
+        ),
+        (
+            "two shelves named alike",
+            "INSERT INTO saved_shelf (name, position, rules) VALUES ('SIGNED', 2, '{}')",
+        ),
+        (
+            "a hidden entry without a code",
+            "INSERT INTO hidden_section (code) VALUES ('')",
         ),
     ];
     for (why, sql) in bad {

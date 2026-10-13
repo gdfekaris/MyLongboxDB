@@ -12,13 +12,16 @@ pub(crate) struct Migration {
 /// Every schema change, in order. Append only: once a migration has been
 /// committed, never edit, reorder, or remove it, because collections in
 /// the wild have already applied it.
-///
-/// Until the first tagged release, migration 1 may still be edited in
-/// place, because no real collection files exist yet.
-pub(crate) const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: include_str!("migrations/0001_initial.sql"),
-}];
+pub(crate) const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: include_str!("migrations/0001_initial.sql"),
+    },
+    Migration {
+        version: 2,
+        sql: include_str!("migrations/0002_saved_shelves.sql"),
+    },
+];
 
 const META_DDL: &str = "CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY NOT NULL,

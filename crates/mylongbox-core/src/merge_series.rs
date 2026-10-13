@@ -133,6 +133,8 @@ impl Database {
             [from, into],
         )?;
         tx.execute("DELETE FROM series WHERE id = ?1", [from])?;
+        self.rules_follow_series_merge(from, into)?;
+        self.series_rules_follow(&source.fields.name, &target.fields.name)?;
         tx.commit()?;
         Ok(SeriesMerge {
             moved: u32::try_from(moved_live).unwrap_or(u32::MAX),

@@ -321,6 +321,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_version_1_collection_is_upgraded_and_still_passes_its_checks() {
+        let dir = std::env::temp_dir().join(format!("mlbx-upgrade-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("old.sqlite");
+        {
+            let mut conn = connect(Connection::open(&path).unwrap()).unwrap();
+            migrate::run(&mut conn, &MIGRATIONS[..1]).unwrap();
+            conn.execute(
+                "INSERT INTO tag (uuid, name) VALUES ('00000000-0000-4000-8000-000000000001', 'Keys')",
+                [],
+            )
+            .unwrap();
+        }
+        let before = dir.join("before.sqlite");
+        let db = Database::open_keeping(&path, Some(&before)).unwrap();
+        assert_eq!(db.schema_version().unwrap(), 2);
+        assert!(db.saved_shelves().unwrap().is_empty());
+        db.add_saved_shelf("Everything", &crate::FilterSet::default())
+            .unwrap();
+        drop(db);
+        // Opened again, the upgraded file is checked against a schema made
+        // fresh, and keeps what it held.
+        let db = Database::open(&path).unwrap();
+        assert_eq!(db.saved_shelves().unwrap().len(), 1);
+        assert!(db.find_lookup::<crate::TagId>("Keys").unwrap().is_some());
+        drop(db);
+        let kept = Connection::open(&before).unwrap();
+        assert_eq!(migrate::schema_version(&kept).unwrap(), 1);
+        drop(kept);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn connection_is_hardened() {
         let db = Database::open_in_memory().unwrap();
         let conn = db.conn();

@@ -26,6 +26,18 @@ macro_rules! id_type {
                 i64::column_result(value).map(Self)
             }
         }
+
+        impl serde::Serialize for $name {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                s.serialize_i64(self.0)
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                i64::deserialize(d).map(Self)
+            }
+        }
     )+};
 }
 
@@ -45,6 +57,8 @@ id_type! {
     ValueId;
     /// A group of rows moved to Trash together.
     TrashId;
+    /// A named filter set in the sidebar.
+    SavedShelfId;
 }
 
 /// Declares an enum stored in the database as fixed text codes.
@@ -86,6 +100,25 @@ macro_rules! code_enum {
             fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
                 let text = value.as_str()?;
                 Self::from_code(text).ok_or_else(|| invalid(stringify!($name), text))
+            }
+        }
+
+        /// Saved filter rules keep the same codes as the database.
+        impl serde::Serialize for $name {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                s.serialize_str(self.code())
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                let code = <std::borrow::Cow<'de, str>>::deserialize(d)?;
+                Self::from_code(&code).ok_or_else(|| {
+                    serde::de::Error::custom(format!(
+                        concat!("invalid ", stringify!($name), ": {:?}"),
+                        code
+                    ))
+                })
             }
         }
     };

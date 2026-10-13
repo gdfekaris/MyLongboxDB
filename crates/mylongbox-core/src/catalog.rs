@@ -101,7 +101,8 @@ impl Database {
     pub fn update_series(&self, id: SeriesId, fields: &SeriesFields) -> Result<()> {
         let f = clean_series(fields)?;
         let tx = self.tx()?;
-        live(self.series(id)?.trash)?;
+        let before = self.series(id)?;
+        live(before.trash)?;
         check_category_fits_children(&tx, id, f.category)?;
         tx.execute(
             "UPDATE series SET name = ?2, category = ?3, publisher_id = ?4, volume = ?5,
@@ -121,7 +122,22 @@ impl Database {
                 f.notes,
             ],
         )?;
+        self.series_rules_follow(&before.fields.name, &f.name)?;
         tx.commit()?;
+        Ok(())
+    }
+
+    /// Carries saved "series is" rules from `old` to `new`, unless another
+    /// series is still called `old`, when the rule may mean that one.
+    pub(crate) fn series_rules_follow(&self, old: &str, new: &str) -> Result<()> {
+        let still_named: i64 = self.conn.query_row(
+            "SELECT count(*) FROM series WHERE name = ?1 COLLATE NOCASE AND trash_id IS NULL",
+            [old],
+            |row| row.get(0),
+        )?;
+        if still_named == 0 {
+            self.rules_follow_rename(crate::shelves::Named::Series, old, new)?;
+        }
         Ok(())
     }
 
