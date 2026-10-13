@@ -14,6 +14,13 @@ pub enum Error {
     /// The file is not a MyLongboxDB collection: it is not a SQLite
     /// database, or it is one that belongs to another application.
     NotACollection,
+    /// A collection file was given where a full export is read: a full
+    /// export is a zip archive of books and photos, added to a collection
+    /// through the CSV import rather than opened as one.
+    FullExport,
+    /// A collection file was given where a spreadsheet or full export is
+    /// read.
+    CollectionFile,
     /// The collection was written by a newer version of MyLongboxDB.
     /// Opening it with this version could damage it.
     NewerSchema {
@@ -69,6 +76,15 @@ impl fmt::Display for Error {
             Self::Locked => f.write_str("this collection is already open in another window"),
             Self::Damaged => f.write_str("this collection file is damaged"),
             Self::NotACollection => f.write_str("this file is not a MyLongboxDB collection"),
+            Self::FullExport => f.write_str(
+                "this file is a full export of books and photos, not a collection file. \
+                 To add its books to a collection, open the collection and choose \
+                 Import Books from CSV",
+            ),
+            Self::CollectionFile => f.write_str(
+                "this file is a whole collection, not a spreadsheet or full export. \
+                 To use it, choose Import Collection File",
+            ),
             Self::NewerSchema { found, supported } => write!(
                 f,
                 "this collection uses schema version {found}, but this version of \

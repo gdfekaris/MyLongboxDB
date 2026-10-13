@@ -1525,10 +1525,10 @@ impl Component for App {
                     &[("name", &info.name)],
                 ));
             }
-            CommandMsg::Imported(Err(why)) => root.toast(&gettext_f(
-                "Could not import: {reason}",
-                &[("reason", &why)],
-            )),
+            CommandMsg::Imported(Err(why)) => {
+                root.end_working();
+                tell(root, &gettext("Could Not Import the Collection"), &why);
+            }
             CommandMsg::BooksFileRead { opened, .. } if opened != self.opened => root.end_working(),
             CommandMsg::BooksFileRead {
                 name,
@@ -1552,10 +1552,10 @@ impl Component for App {
             }
             CommandMsg::BooksFileRead {
                 source: Err(why), ..
-            } => root.toast(&gettext_f(
-                "Could not read the file: {reason}",
-                &[("reason", &why)],
-            )),
+            } => {
+                root.end_working();
+                tell(root, &gettext("Could Not Read the File"), &why);
+            }
         }
     }
 }
@@ -2814,6 +2814,19 @@ fn ask_value(root: &MainWindow, sender: &ComponentSender<App>, copy: CopyId) {
             ));
         }
     });
+}
+
+/// Says why something failed in a dialog rather than a toast, which
+/// shows only one line: the reason may be long, such as which command a
+/// file picked by mistake belongs to.
+fn tell(root: &MainWindow, heading: &str, reason: &str) {
+    let mut body = capitalized(reason);
+    if !body.ends_with(['.', '!', '?']) {
+        body.push('.');
+    }
+    let dialog = adw::AlertDialog::new(Some(heading), Some(&body));
+    dialog.add_response("close", &gettext("_Close"));
+    dialog.present(Some(root));
 }
 
 /// Asks before something that cannot be undone, sending `yes()` if the

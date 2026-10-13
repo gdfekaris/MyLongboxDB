@@ -591,5 +591,16 @@ fn files_are_opened_by_what_they_hold() {
     assert_eq!(from_zip.len(), 1);
     assert!(from_zip.read_photo("images/none.jpg").is_err());
     assert!(ImportSource::open(&dir.join("missing.csv")).is_err());
+    // A collection file is named as one, so the message can say where it
+    // goes instead.
+    let collection = dir.join("Comics.sqlite");
+    rusqlite::Connection::open(&collection)
+        .unwrap()
+        .execute_batch("CREATE TABLE t (x)")
+        .unwrap();
+    assert!(matches!(
+        ImportSource::open(&collection),
+        Err(crate::Error::CollectionFile)
+    ));
     std::fs::remove_dir_all(&dir).unwrap();
 }

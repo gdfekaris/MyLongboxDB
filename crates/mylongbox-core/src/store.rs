@@ -21,7 +21,9 @@ const IMPORTING: &str = "importing";
 const LAST_OPENED: &str = "last-opened";
 
 /// Every SQLite database file begins with these 16 bytes.
-const SQLITE_HEADER: &[u8; 16] = b"SQLite format 3\0";
+pub(crate) const SQLITE_HEADER: &[u8; 16] = b"SQLite format 3\0";
+/// How a zip archive, such as a full export, begins.
+pub(crate) const ZIP_HEADER: &[u8; 4] = b"PK\x03\x04";
 
 /// Files SQLite may keep beside a database, named by adding these.
 const SIDE_FILES: [&str; 3] = ["-journal", "-wal", "-shm"];
@@ -374,7 +376,12 @@ impl CollectionStore {
         let mut header = [0u8; 16];
         let mut file = fs::File::open(source)?;
         if file.read_exact(&mut header).is_err() || &header != SQLITE_HEADER {
-            return Err(Error::NotACollection);
+            // A full export is the file most often picked here by mistake.
+            return Err(if header.starts_with(ZIP_HEADER) {
+                Error::FullExport
+            } else {
+                Error::NotACollection
+            });
         }
         drop(file);
 
@@ -714,6 +721,11 @@ mod tests {
             .execute_batch("CREATE TABLE bookmarks (url TEXT)")
             .unwrap();
         assert!(matches!(store.import(&foreign), Err(Error::NotACollection)));
+        // A full export is told apart, so the message can say where it
+        // goes instead.
+        let export = dir.0.join("Comics.zip");
+        fs::write(&export, b"PK\x03\x04 and then the rest of an archive").unwrap();
+        assert!(matches!(store.import(&export), Err(Error::FullExport)));
         assert!(store.list().unwrap().is_empty());
         assert_eq!(
             fs::read_dir(store.dir()).unwrap().count(),

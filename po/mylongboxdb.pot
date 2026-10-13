@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-12 18:20-0700\n"
+"POT-Creation-Date: 2026-10-12 18:21-0700\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -292,7 +292,7 @@ msgstr[1] ""
 msgid "The Collection Is Damaged"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:836
+#: crates/mylongbox-app/src/app.rs:836 crates/mylongbox-app/src/app.rs:2828
 #: crates/mylongbox-app/src/import_dialog.rs:258
 #: crates/mylongbox-app/src/prompt.rs:171
 msgid "_Close"
@@ -571,14 +571,12 @@ msgstr ""
 msgid "Imported “{name}”"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:1529
-#, rust-format
-msgid "Could not import: {reason}"
+#: crates/mylongbox-app/src/app.rs:1530
+msgid "Could Not Import the Collection"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:1556
-#, rust-format
-msgid "Could not read the file: {reason}"
+#: crates/mylongbox-app/src/app.rs:1557
+msgid "Could Not Read the File"
 msgstr ""
 
 #: crates/mylongbox-app/src/app.rs:1575
@@ -764,7 +762,7 @@ msgid ""
 msgstr ""
 
 #: crates/mylongbox-app/src/app.rs:2536 crates/mylongbox-app/src/app.rs:2787
-#: crates/mylongbox-app/src/app.rs:2835
+#: crates/mylongbox-app/src/app.rs:2848
 #: crates/mylongbox-app/src/bulk_dialog.rs:166
 #: crates/mylongbox-app/src/form.rs:519
 #: crates/mylongbox-app/src/import_dialog.rs:337
@@ -898,19 +896,19 @@ msgstr ""
 msgid "_Add"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2849
+#: crates/mylongbox-app/src/app.rs:2862
 msgid "Discard Changes?"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2851
+#: crates/mylongbox-app/src/app.rs:2864
 msgid "The changes made in this form have not been saved."
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2857
+#: crates/mylongbox-app/src/app.rs:2870
 msgid "_Keep Editing"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:2858
+#: crates/mylongbox-app/src/app.rs:2871
 msgid "_Discard"
 msgstr ""
 

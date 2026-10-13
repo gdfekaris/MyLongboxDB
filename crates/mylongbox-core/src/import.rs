@@ -176,14 +176,18 @@ fn unreadable(e: csv::Error) -> Error {
 
 impl ImportSource {
     /// The file at `path`: a full export if it is a zip archive, and
-    /// otherwise a CSV.
+    /// otherwise a CSV. A collection file is refused by name, as it is
+    /// the file most often picked here by mistake.
     pub fn open(path: &std::path::Path) -> Result<Self> {
         let mut file = std::fs::File::open(path)?;
-        let mut magic = [0; 4];
-        let is_zip = file.read_exact(&mut magic).is_ok() && magic == *b"PK\x03\x04";
+        let mut magic = Vec::new();
+        (&mut file).take(16).read_to_end(&mut magic)?;
         file.rewind()?;
-        if is_zip {
+        if magic.starts_with(crate::store::ZIP_HEADER) {
             return Self::from_zip(std::io::BufReader::new(file));
+        }
+        if magic == crate::store::SQLITE_HEADER {
+            return Err(Error::CollectionFile);
         }
         let mut bytes = Vec::new();
         // A file too large is refused without reading it all.
