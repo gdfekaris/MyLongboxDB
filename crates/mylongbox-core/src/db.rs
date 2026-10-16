@@ -337,7 +337,7 @@ mod tests {
         }
         let before = dir.join("before.sqlite");
         let db = Database::open_keeping(&path, Some(&before)).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 4);
+        assert_eq!(db.schema_version().unwrap(), 5);
         assert!(db.saved_shelves().unwrap().is_empty());
         db.add_saved_shelf("Everything", &crate::FilterSet::default())
             .unwrap();
@@ -380,7 +380,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 4);
+        assert_eq!(db.schema_version().unwrap(), 5);
         let copy = db.copy(crate::model::CopyId(1)).unwrap();
         let mut fields = CopyFields {
             grade: Grade::from_tenths(94),
@@ -451,7 +451,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 4);
+        assert_eq!(db.schema_version().unwrap(), 5);
         assert!(db.integrity_check().unwrap().is_empty());
         let copy = CopyId(1);
         let signatures = db.signatures(copy).unwrap();
@@ -483,6 +483,66 @@ mod tests {
             db.photo_sides(copy).unwrap(),
             [Side::Front, Side::Signature]
         );
+        drop(db);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_version_4_collection_lists_its_unnumbered_issues_first() {
+        use crate::Shelf;
+        let dir = std::env::temp_dir().join(format!("mlbx-upgrade-5-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("old.sqlite");
+        {
+            let mut conn = connect(Connection::open(&path).unwrap()).unwrap();
+            migrate::run(&mut conn, &MIGRATIONS[..4]).unwrap();
+            conn.execute(
+                "INSERT INTO series (id, uuid, name, category)
+                 VALUES (1, '00000000-0000-4000-8000-000000000001', 'Bone', 'comic')",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO issue (id, uuid, series_id, number, number_sort)
+                 VALUES (1, '00000000-0000-4000-8000-000000000002', 1, '1', ?1)",
+                [crate::IssueNumber::new("1").unwrap().sort_key()],
+            )
+            .unwrap();
+            conn.execute_batch(
+                "INSERT INTO issue (id, uuid, series_id, number, number_sort)
+                     VALUES (2, '00000000-0000-4000-8000-000000000003', 1, 'NN', '2nn'),
+                         (3, '00000000-0000-4000-8000-000000000004', 1, 'Alpha', '2alpha');
+                 INSERT INTO edition (id, uuid, issue_id)
+                     VALUES (1, '00000000-0000-4000-8000-000000000005', 1),
+                         (2, '00000000-0000-4000-8000-000000000006', 2),
+                         (3, '00000000-0000-4000-8000-000000000007', 3);
+                 INSERT INTO copy (id, uuid, edition_id)
+                     VALUES (1, '00000000-0000-4000-8000-000000000008', 1),
+                         (2, '00000000-0000-4000-8000-000000000009', 2),
+                         (3, '00000000-0000-4000-8000-00000000000a', 3);",
+            )
+            .unwrap();
+        }
+        let db = Database::open(&path).unwrap();
+        assert_eq!(db.schema_version().unwrap(), 5);
+        assert!(db.integrity_check().unwrap().is_empty());
+        let numbers: Vec<String> = db
+            .browse(Shelf::Everything)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.number.unwrap_or_default())
+            .collect();
+        assert_eq!(numbers, ["NN", "1", "Alpha"]);
+        // The stored key is the one the number makes now, so the issue
+        // is still found as a duplicate when entered again.
+        let key: String = db
+            .conn()
+            .query_row("SELECT number_sort FROM issue WHERE id = 2", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(key, crate::IssueNumber::new("nn").unwrap().sort_key());
         drop(db);
         std::fs::remove_dir_all(&dir).unwrap();
     }

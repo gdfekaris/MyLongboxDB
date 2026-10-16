@@ -4,6 +4,7 @@ use std::fmt;
 /// `Annual 3`, `-1`, `1A`, or `Alpha`, with a key that sorts it naturally.
 ///
 /// Sort order within a series:
+/// 0. `nn`, which marks an issue published without a number.
 /// 1. Plain numbers by value, then suffix: `-1, 0, ½, 1, 1A, 1B, 1.5, 2, 10`.
 /// 2. Prefixed numbers, grouped by prefix alphabetically (ignoring case
 ///    and spacing), then by number: `Annual 1, Annual 2, Special 1`.
@@ -266,7 +267,10 @@ fn normalize(text: &str) -> String {
 
 fn sort_key(parsed: &Parsed<'_>) -> String {
     let Some(number) = &parsed.number else {
-        return format!("2{}", normalize(parsed.prefix_raw));
+        let words = normalize(parsed.prefix_raw);
+        // `!` sorts before the digit that starts every other group.
+        let group = if words == "nn" { '!' } else { '2' };
+        return format!("{group}{words}");
     };
     // Flipping the sign bit makes signed values sort as unsigned hex.
     let value = format!("{:016x}", (number.value as u64) ^ (1 << 63));
@@ -314,6 +318,7 @@ mod tests {
     #[test]
     fn sorts_a_mixed_series_naturally() {
         let expected = [
+            "nn",
             "-1",
             "0",
             "½",
@@ -334,7 +339,6 @@ mod tests {
             "Annual Special 1",
             "Special 1",
             "Alpha",
-            "nn",
             "Omega",
         ];
         let mut shuffled = expected;
