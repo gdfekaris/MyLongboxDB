@@ -25,6 +25,7 @@ mod series_dialog;
 mod settings;
 mod shortcuts;
 mod sorting;
+mod stats_page;
 mod trash_page;
 mod viewer;
 mod window;

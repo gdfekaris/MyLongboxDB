@@ -25,7 +25,7 @@ use crate::sorting::SortBy;
 use crate::window::MainWindow;
 use crate::{
     about, bulk_dialog, covers, customize, format, gaps_page, import_dialog, photo_editor, prefs,
-    prompt, series_dialog, shortcuts, sorting, trash_page, viewer, work,
+    prompt, series_dialog, shortcuts, sorting, stats_page, trash_page, viewer, work,
 };
 
 /// What a sidebar section shows.
@@ -38,6 +38,8 @@ enum Content {
     Trash,
     /// The numbers missing from each run.
     Gaps,
+    /// What the collection holds and is worth, in figures.
+    Stats,
 }
 
 struct Section {
@@ -199,6 +201,11 @@ const SECTIONS: &[&[Section]] = &[
     ],
     &[
         Section {
+            code: "stats",
+            name: gettext_noop("Collection Stats"),
+            content: Content::Stats,
+        },
+        Section {
             code: "gaps",
             name: gettext_noop("Gaps"),
             content: Content::Gaps,
@@ -345,6 +352,8 @@ pub enum AppMsg {
     /// A book in the grid or list, by position.
     BookActivated(u32),
     OpenIssue(IssueId),
+    /// Opens a book's page as seen from one of its copies.
+    OpenCopy(IssueId, CopyId),
     /// View the open issue's page from another of its copies.
     SelectCopy(CopyId),
     Add(Category),
@@ -1055,6 +1064,10 @@ impl Component for App {
                 }
             }
             AppMsg::OpenIssue(issue) => self.open_issue(issue, root, &sender),
+            AppMsg::OpenCopy(issue, copy) => {
+                self.open_copy = Some(copy);
+                self.open_issue(issue, root, &sender);
+            }
             AppMsg::SelectCopy(copy) => self.refresh_copy(copy, root, &sender),
             AppMsg::Add(category) => self.open_form(FormKind::New(category), root, &sender),
             AppMsg::EditCopy(copy) => self.open_form(FormKind::Edit(copy), root, &sender),
@@ -3091,6 +3104,41 @@ impl App {
                     }),
                 };
                 root.show_custom(&gaps_page::page(&gaps, self.gaps_collected, &hooks));
+                return Ok(());
+            }
+            (None, Content::Stats) => {
+                let rows = db.browse(Shelf::Everything)?;
+                if rows.is_empty() {
+                    root.show_empty(
+                        &gettext("Nothing to Count Yet"),
+                        &gettext("Figures about your collection appear here as you add books."),
+                    );
+                    return Ok(());
+                }
+                let owned = |list| -> mylongbox_core::Result<usize> {
+                    Ok(db.shelf_list(list)?.iter().filter(|e| e.copies > 0).count())
+                };
+                let size = self.store().ok().and_then(|store| {
+                    let name = &self.open.as_ref()?.0;
+                    let total = store
+                        .list()
+                        .ok()?
+                        .into_iter()
+                        .find(|c| &c.name == name)?
+                        .size_bytes;
+                    Some((total, db.photo_bytes().ok()?))
+                });
+                let counts = stats_page::Counts {
+                    series: owned(ShelfList::Series)?,
+                    publishers: owned(ShelfList::Publishers)?,
+                    creators: owned(ShelfList::Creators)?,
+                    size,
+                };
+                let open = self.sender.clone();
+                let hooks = stats_page::Hooks {
+                    open: Rc::new(move |issue, copy| open.input(AppMsg::OpenCopy(issue, copy))),
+                };
+                root.show_custom(&stats_page::page(&rows, &counts, &hooks));
                 return Ok(());
             }
         };

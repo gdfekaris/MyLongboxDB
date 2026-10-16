@@ -63,45 +63,63 @@ pub fn money(amount: Amount, on: Option<Date>) -> String {
     })
 }
 
-/// What a list of results adds up to, for the bar under them: how many
-/// books, what they are worth today, and what they cost when bought,
-/// in the currency chosen in the preferences.
+/// How many books a list of results holds, for the bar under them.
+/// What they are worth is on the Collection Stats page.
 pub fn totals(rows: &[mylongbox_core::CopyRow]) -> String {
+    let n = rows.len();
+    ngettext_f(
+        "{count} book",
+        "{count} books",
+        n,
+        &[("count", &grouped(&n.to_string()))],
+    )
+}
+
+/// The sum of `amounts` in the currency chosen in the preferences, each
+/// converted at the rate for its date, or at the newest rate when
+/// `today` asks what they are worth now; summed per currency when none
+/// is chosen.
+pub fn money_total(
+    amounts: impl IntoIterator<Item = (Amount, Option<Date>)>,
+    today: bool,
+) -> Option<String> {
     DISPLAY.with(|d| {
         let d = d.borrow();
-        let target = d.settings.currency;
-        let show = |a: Amount| grouped(&a.to_string());
-        let worth = crate::sorting::total(
-            rows.iter()
-                .filter_map(|r| r.value.map(|v| (v, r.value_date))),
-            target,
-            &d.rates,
-            true,
-            show,
-        );
-        let cost = crate::sorting::total(
-            rows.iter()
-                .filter_map(|r| r.purchase_price.map(|p| (p, r.purchase_date))),
-            target,
-            &d.rates,
-            false,
-            show,
-        );
-        let n = rows.len();
-        let count = ngettext_f(
-            "{count} book",
-            "{count} books",
-            n,
-            &[("count", &grouped(&n.to_string()))],
-        );
-        joined([
-            count,
-            worth
-                .map(|w| gettext_f("Worth {amount}", &[("amount", &w)]))
-                .unwrap_or_default(),
-            cost.map(|c| gettext_f("Cost {amount}", &[("amount", &c)]))
-                .unwrap_or_default(),
-        ])
+        crate::sorting::total(amounts, d.settings.currency, &d.rates, today, |a| {
+            grouped(&a.to_string())
+        })
+    })
+}
+
+/// What books are worth now less what was paid for them, each pair a
+/// current value and a price paid with their dates, as `+$120.00` or
+/// `−$15.00`. Kept in the chosen currency, or in dollars when amounts
+/// are shown as entered, since a gain needs one currency; pairs no rate
+/// covers are left out.
+pub fn gain(
+    pairs: impl IntoIterator<Item = ((Amount, Option<Date>), (Amount, Option<Date>))>,
+) -> Option<String> {
+    DISPLAY.with(|d| {
+        let d = d.borrow();
+        let target = d.settings.currency.unwrap_or(mylongbox_core::Currency::Usd);
+        let mut total: i64 = 0;
+        let mut any = false;
+        for ((value, _), (price, bought)) in pairs {
+            let now = d.rates.convert_at_latest(value, target);
+            let then = match bought {
+                Some(date) => d.rates.convert(price, date, target),
+                None => d.rates.convert_at_latest(price, target),
+            };
+            if let (Ok(now), Ok(then)) = (now, then) {
+                total = total.saturating_add(now.units().saturating_sub(then.units()));
+                any = true;
+            }
+        }
+        any.then(|| {
+            let sign = if total < 0 { "\u{2212}" } else { "+" };
+            let size = Amount::new(target, total.saturating_abs());
+            format!("{sign}{}", grouped(&size.to_string()))
+        })
     })
 }
 
@@ -573,6 +591,23 @@ mod tests {
         );
         assert_eq!(grade(Grade::parse("9.3"), None), "9.3");
         set_display(Display::default());
+    }
+
+    #[test]
+    fn gains_net_values_against_prices_paid() {
+        use mylongbox_core::Currency;
+        set_display(Display::default());
+        let usd = |cents| Amount::new(Currency::Usd, cents);
+        let pair = |value, price| ((usd(value), None), (usd(price), None));
+        assert_eq!(gain([pair(150_000, 2_000)]).as_deref(), Some("+$1,480.00"));
+        assert_eq!(
+            gain([pair(1_000, 2_500), pair(500, 0)]).as_deref(),
+            Some("\u{2212}$10.00")
+        );
+        assert_eq!(gain([]), None);
+        // Gold has no rate here, so that pair cannot count.
+        let gold = Amount::new(Currency::Gold, 10_000);
+        assert_eq!(gain([((gold, None), (usd(100), None))]), None);
     }
 
     #[test]
