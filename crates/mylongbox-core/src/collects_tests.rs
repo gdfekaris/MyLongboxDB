@@ -192,8 +192,8 @@ fn issues_know_which_books_reprint_them() {
     assert_eq!(
         found,
         [
-            ("Omnibus (2014) #1".to_owned(), true),
-            ("Epic Collection (2014) #1".to_owned(), false),
+            ("Omnibus (2014 series) #1".to_owned(), true),
+            ("Epic Collection (2014 series) #1".to_owned(), false),
         ]
     );
 }

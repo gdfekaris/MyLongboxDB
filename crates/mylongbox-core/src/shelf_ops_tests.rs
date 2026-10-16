@@ -98,7 +98,7 @@ fn series_merge_by_their_listed_name_and_year() {
     let suggested = db
         .shelf_suggestions(Shelf::Series(old.series), "x-men")
         .unwrap();
-    assert_eq!(suggested, ["X-Men (1991)"]);
+    assert_eq!(suggested, ["X-Men (1991 series)"]);
 }
 
 #[test]

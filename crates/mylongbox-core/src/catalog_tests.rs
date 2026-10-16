@@ -382,7 +382,7 @@ fn trashing_a_series_hides_it_and_everything_in_it() {
 
     let groups = db.trash_groups().unwrap();
     assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].label, "Amazing Spider-Man (1963)");
+    assert_eq!(groups[0].label, "Amazing Spider-Man (1963 series)");
 }
 
 #[test]
@@ -416,7 +416,7 @@ fn restore_puts_back_exactly_what_was_trashed() {
     let trash = db.trash_issue(issue).unwrap();
     assert_eq!(
         db.trash_groups().unwrap()[0].label,
-        "Amazing Spider-Man (1963) #121"
+        "Amazing Spider-Man (1963 series) #121"
     );
     assert_eq!(numbers(&db, series), ["122"]);
     db.restore(trash).unwrap();
@@ -434,7 +434,7 @@ fn a_group_cannot_be_restored_under_a_trashed_parent() {
     let series_group = db.trash_series(series).unwrap();
     assert!(matches!(
         db.restore(copy_group),
-        Err(Error::ParentInTrash { parent }) if parent == "Amazing Spider-Man (1963)"
+        Err(Error::ParentInTrash { parent }) if parent == "Amazing Spider-Man (1963 series)"
     ));
     db.restore(series_group).unwrap();
     // The copy was trashed on its own, so it stays in Trash.
@@ -517,8 +517,8 @@ fn a_reprinted_issue_survives_until_its_collection_goes_too() {
     db.trash_series(asm).unwrap();
     match db.empty_trash() {
         Err(Error::StillReprinted { issue, collection }) => {
-            assert_eq!(issue, "Amazing Spider-Man (1963) #1");
-            assert_eq!(collection, "Epic Collection (2014) #1");
+            assert_eq!(issue, "Amazing Spider-Man (1963 series) #1");
+            assert_eq!(collection, "Epic Collection (2014 series) #1");
         }
         other => panic!("expected StillReprinted, got {other:?}"),
     }
@@ -624,7 +624,7 @@ fn a_reprint_is_named_even_when_trashed_before_its_series() {
     let series_group = db.trash_series(asm).unwrap();
     assert!(matches!(
         db.purge(series_group),
-        Err(Error::StillReprinted { issue, .. }) if issue == "Amazing Spider-Man (1963) #1"
+        Err(Error::StillReprinted { issue, .. }) if issue == "Amazing Spider-Man (1963 series) #1"
     ));
 }
 
@@ -655,9 +655,9 @@ fn trash_names_copies_and_editions_apart_from_their_issue() {
     assert_eq!(
         labels,
         [
-            "Copy of X-Men (1963) #1",
-            "X-Men (1963) #1 (Cover B)",
-            "X-Men (1963) #1, standard edition",
+            "Copy of X-Men (1963 series) #1",
+            "X-Men (1963 series) #1 (Cover B)",
+            "X-Men (1963 series) #1, standard edition",
         ]
     );
 }
@@ -686,4 +686,34 @@ fn imprints_are_suggested_from_the_publisher_first() {
     assert_eq!(db.suggest_imprints("", "ti", 9).unwrap(), ["Vertigo"]);
     assert_eq!(db.suggest_imprints("DC", "", 1).unwrap(), ["Vertigo"]);
     assert!(db.suggest_imprints("", "%", 9).unwrap().is_empty());
+}
+
+#[test]
+fn series_are_labelled_by_year_then_volume() {
+    use crate::{parse_series_label, same_series_label, series_label};
+    assert_eq!(
+        series_label("Amazing Spider-Man", Some(1963), Some(1)),
+        "Amazing Spider-Man (1963 series)"
+    );
+    assert_eq!(
+        series_label("Black Panther", None, Some(3)),
+        "Black Panther (Vol. 3)"
+    );
+    assert_eq!(series_label("Bone", None, None), "Bone");
+    for (text, read) in [
+        ("X-Men (1963 series)", ("X-Men", Some(1963), None)),
+        ("X-Men (1963)", ("X-Men", Some(1963), None)),
+        ("Black Panther (Vol. 3)", ("Black Panther", None, Some(3))),
+        ("Year (One)", ("Year (One)", None, None)),
+        ("1985 (Vol. 0)", ("1985 (Vol. 0)", None, None)),
+    ] {
+        let (name, year, volume) = parse_series_label(text);
+        assert_eq!((name.as_str(), year, volume), read, "{text}");
+    }
+    assert!(same_series_label("x-men (1963)", "X-Men (1963 series)"));
+    assert!(same_series_label(
+        " X-Men (1963 series) ",
+        "X-Men (1963 series)"
+    ));
+    assert!(!same_series_label("X-Men (1991)", "X-Men (1963 series)"));
 }

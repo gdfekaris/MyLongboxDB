@@ -3,7 +3,7 @@
 
 use rusqlite::{Row, ToSql};
 
-use crate::catalog::{amount_at, cover_date_at, query_all, series_title};
+use crate::catalog::{amount_at, cover_date_at, query_all, series_label};
 use crate::date::Date;
 use crate::db::Database;
 use crate::error::Result;
@@ -335,7 +335,8 @@ macro_rules! copy_rows {
                  c.purchase_price_units, c.purchase_price_currency, c.purchase_date,
                  c.added_at,
                  EXISTS (SELECT 1 FROM cover_photo p WHERE p.copy_id = c.id AND p.side = 'front'),
-                 EXISTS (SELECT 1 FROM cover_photo p WHERE p.copy_id = c.id AND p.side = 'back')
+                 EXISTS (SELECT 1 FROM cover_photo p WHERE p.copy_id = c.id AND p.side = 'back'),
+                 s.volume
              FROM ",
             live_copies!(),
             " AND ",
@@ -428,7 +429,8 @@ impl Database {
             ShelfList::Series => query_all(
                 conn,
                 concat!(
-                    "SELECT x.id, x.name, coalesce(p.name, ''), count(m.copy), x.start_year
+                    "SELECT x.id, x.name, coalesce(p.name, ''), count(m.copy), x.start_year,
+                         x.volume
                      FROM series x LEFT JOIN publisher p ON p.id = x.publisher_id
                      LEFT JOIN (",
                     shelf_pairs!(series),
@@ -440,7 +442,7 @@ impl Database {
                 (),
                 |row| {
                     let mut e = entry(row, |id| Shelf::Series(SeriesId(id)))?;
-                    e.name = series_title(&e.name, row.get(4)?);
+                    e.name = series_label(&e.name, row.get(4)?, row.get(5)?);
                     Ok(e)
                 },
             ),
@@ -478,7 +480,7 @@ pub(crate) fn copy_row(row: &Row<'_>) -> rusqlite::Result<CopyRow> {
         copy: row.get(0)?,
         issue: row.get(1)?,
         category: row.get(2)?,
-        series: series_title(&row.get::<_, String>(3)?, row.get(4)?),
+        series: series_label(&row.get::<_, String>(3)?, row.get(4)?, row.get(28)?),
         number: row.get(5)?,
         title: row.get(6)?,
         variant: row.get(7)?,

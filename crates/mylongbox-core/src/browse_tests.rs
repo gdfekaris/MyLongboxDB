@@ -66,12 +66,12 @@ fn books_come_in_natural_order() {
     assert_eq!(
         labels(&db, Shelf::Everything),
         [
-            "amazing Spider-Man (1963) #1",
-            "amazing Spider-Man (1963) #1 Cover B",
-            "X-Men (1963) #1",
-            "X-Men (1963) #2",
-            "X-Men (1963) #10",
-            "X-Men (1963) #Annual 1",
+            "amazing Spider-Man (1963 series) #1",
+            "amazing Spider-Man (1963 series) #1 Cover B",
+            "X-Men (1963 series) #1",
+            "X-Men (1963 series) #2",
+            "X-Men (1963 series) #10",
+            "X-Men (1963 series) #Annual 1",
         ]
     );
 }
@@ -181,7 +181,7 @@ fn trash_hides_books_at_every_level() {
         .into_iter()
         .map(|e| (e.name, e.copies))
         .collect();
-    assert_eq!(names, [("X-Men (1963)".to_owned(), 1)]);
+    assert_eq!(names, [("X-Men (1963 series)".to_owned(), 1)]);
 }
 
 #[test]

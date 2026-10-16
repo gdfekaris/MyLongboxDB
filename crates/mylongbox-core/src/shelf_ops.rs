@@ -2,7 +2,7 @@
 //! list it belongs to, for the management menu on a shelf's page.
 
 use crate::browse::Shelf;
-use crate::catalog::series_title;
+use crate::catalog::{same_series_label, series_label};
 use crate::db::Database;
 use crate::error::{Error, Result};
 use crate::lookup::LookupId;
@@ -69,9 +69,12 @@ impl Database {
                     .list_series()?
                     .into_iter()
                     .find(|s| {
-                        s.fields.category == category
-                            && series_title(&s.fields.name, s.fields.start_year)
-                                .eq_ignore_ascii_case(into.trim())
+                        let f = &s.fields;
+                        f.category == category
+                            && same_series_label(
+                                into,
+                                &series_label(&f.name, f.start_year, f.volume),
+                            )
                     })
                     .ok_or_else(|| {
                         Error::Invalid(format!(
@@ -138,7 +141,7 @@ impl Database {
                     .list_series()?
                     .into_iter()
                     .filter(|s| s.id != own && s.fields.category == category)
-                    .map(|s| series_title(&s.fields.name, s.fields.start_year))
+                    .map(|s| series_label(&s.fields.name, s.fields.start_year, s.fields.volume))
                     .filter(|label| label.to_lowercase().contains(&text))
                     .take(9)
                     .collect())

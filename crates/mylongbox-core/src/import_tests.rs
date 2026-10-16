@@ -228,7 +228,7 @@ fn a_spreadsheet_from_elsewhere_is_read_leniently() {
     let report = db
         .import(&mut source, &settings, &|_| unreachable!())
         .unwrap();
-    assert_eq!(report.rows[0].label, "Swamp Thing (1972) #1");
+    assert_eq!(report.rows[0].label, "Swamp Thing (1972 series) #1");
     assert_eq!(report.rows[1].line, 4);
     assert_eq!(report.added(), 2);
     let rows = db.browse(crate::Shelf::Everything).unwrap();

@@ -446,7 +446,7 @@ impl Database {
         let tx = self.tx()?;
         let series = self.series(id)?;
         live(series.trash)?;
-        let trash = new_trash_group(&tx, &series_label(&series))?;
+        let trash = new_trash_group(&tx, &label_of(&series))?;
         tx.execute(
             "UPDATE copy SET trash_id = ?1 WHERE trash_id IS NULL AND edition_id IN (
                  SELECT edition.id FROM edition JOIN issue ON issue.id = edition.issue_id
@@ -719,21 +719,60 @@ pub(crate) fn new_trash_group(conn: &Connection, label: &str) -> Result<TrashId>
     Ok(TrashId(conn.last_insert_rowid()))
 }
 
-fn series_label(series: &Series) -> String {
-    series_title(&series.fields.name, series.fields.start_year)
+fn label_of(series: &Series) -> String {
+    let f = &series.fields;
+    series_label(&f.name, f.start_year, f.volume)
 }
 
-/// A series' name with its start year, e.g. `Amazing Spider-Man (1963)`,
-/// which tells apart relaunches that share a name.
-pub(crate) fn series_title(name: &str, start_year: Option<u16>) -> String {
-    match start_year {
-        Some(year) => format!("{name} ({year})"),
-        None => name.to_owned(),
+/// A series' name with what tells apart relaunches that share it: its
+/// start year, as in `Amazing Spider-Man (1963 series)`, or failing
+/// that its volume, as in `Black Panther (Vol. 3)`.
+pub fn series_label(name: &str, start_year: Option<u16>, volume: Option<u32>) -> String {
+    match (start_year, volume) {
+        (Some(year), _) => format!("{name} ({year} series)"),
+        (None, Some(volume)) => format!("{name} (Vol. {volume})"),
+        (None, None) => name.to_owned(),
     }
 }
 
+/// Reads a series as [`series_label`] writes it, or with the year alone
+/// in brackets as earlier versions wrote it: the name, then the start
+/// year or volume the brackets name, if any.
+pub fn parse_series_label(text: &str) -> (String, Option<u16>, Option<u32>) {
+    let text = text.trim();
+    if let Some(open) = text.rfind(" (")
+        && let Some(inside) = text[open + 2..].strip_suffix(')')
+    {
+        let name = text[..open].trim().to_owned();
+        let inside = inside.trim();
+        let year = inside.strip_suffix(" series").unwrap_or(inside).trim();
+        if year.len() == 4
+            && let Ok(year) = year.parse::<u16>()
+            && year > 0
+        {
+            return (name, Some(year), None);
+        }
+        if let Some(volume) = inside
+            .strip_prefix("Vol.")
+            .or_else(|| inside.strip_prefix("vol."))
+            .and_then(|v| v.trim().parse::<u32>().ok())
+            .filter(|v| *v > 0)
+        {
+            return (name, None, Some(volume));
+        }
+    }
+    (text.to_owned(), None, None)
+}
+
+/// Whether `text` names the series labelled `label`, written either
+/// way [`parse_series_label`] reads, ignoring case.
+pub fn same_series_label(text: &str, label: &str) -> bool {
+    let (name, year, volume) = parse_series_label(text);
+    series_label(&name, year, volume).eq_ignore_ascii_case(label)
+}
+
 pub(crate) fn issue_label(series: &Series, issue: &Issue) -> String {
-    let series = series_label(series);
+    let series = label_of(series);
     match (&issue.fields.number, issue.fields.title.as_str()) {
         (Some(number), _) => format!("{series} #{number}"),
         (None, "") => series,

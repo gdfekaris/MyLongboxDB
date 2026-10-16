@@ -91,7 +91,7 @@ pub fn page(d: &IssueDetail, links: &Links, current: Option<CopyId>) -> adw::Nav
         for c in &d.collects {
             let title = format!(
                 "{} #{}",
-                series_title(&c.entry.series.name, c.entry.series.start_year),
+                mylongbox_core::series_label(&c.entry.series.name, c.entry.series.start_year, None),
                 c.entry.number
             );
             issues.add_row(&link_row(&title, "", c.issue, links));
@@ -194,13 +194,6 @@ fn paragraph(text: &str) -> gtk::Label {
         .xalign(0.0)
         .css_classes(["body"])
         .build()
-}
-
-fn series_title(name: &str, start_year: Option<u16>) -> String {
-    match start_year {
-        Some(year) => format!("{name} ({year})"),
-        None => name.to_owned(),
-    }
 }
 
 /// A photo that opens the full-size viewer when chosen, or the

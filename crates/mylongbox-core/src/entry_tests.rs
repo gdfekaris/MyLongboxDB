@@ -59,7 +59,7 @@ fn adding_creates_everything_it_names() {
 
     let saved = db.add_book(&e).unwrap();
     let d = db.issue_detail(saved.issue).unwrap();
-    assert_eq!(d.label, "Amazing Spider-Man (1963) #121");
+    assert_eq!(d.label, "Amazing Spider-Man (1963 series) #121");
     assert_eq!(d.publisher.as_deref(), Some("Marvel"));
     assert_eq!(d.issue.fields.title, "The Night Gwen Stacy Died");
     assert_eq!(d.credits.len(), 2, "blank names are skipped");
@@ -163,7 +163,7 @@ fn editing_replaces_what_the_form_shows() {
     assert_eq!(after, saved);
 
     let d = db.issue_detail(saved.issue).unwrap();
-    assert_eq!(d.label, "X-Men (1963) #2");
+    assert_eq!(d.label, "X-Men (1963 series) #2");
     assert_eq!(d.credits.len(), 1);
     assert_eq!(d.issue.fields.synopsis, "");
     let copy = &d.editions[0].copies[0];
@@ -205,7 +205,7 @@ fn editing_into_another_series_moves_the_issue() {
     assert_eq!(moved.series, taken.series);
     assert_eq!(
         db.issue_detail(saved.issue).unwrap().label,
-        "Uncanny X-Men (1963) #6"
+        "Uncanny X-Men (1963 series) #6"
     );
 }
 
@@ -483,7 +483,7 @@ fn next_issue_carries_the_run_forward() {
     assert_ne!(added.issue, saved.issue);
     assert_eq!(
         db.issue_detail(added.issue).unwrap().label,
-        "X-Men (1963) #42"
+        "X-Men (1963 series) #42"
     );
 }
 

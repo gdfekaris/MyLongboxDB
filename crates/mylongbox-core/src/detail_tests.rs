@@ -113,7 +113,7 @@ fn detail_gathers_the_whole_issue() {
         .unwrap();
 
     let d = db.issue_detail(id).unwrap();
-    assert_eq!(d.label, "Amazing Spider-Man (1963) #121");
+    assert_eq!(d.label, "Amazing Spider-Man (1963 series) #121");
     assert_eq!(d.publisher.as_deref(), Some("Marvel"));
     let credits: Vec<_> = d.credits.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(credits, ["Gerry Conway", "Gil Kane"]);

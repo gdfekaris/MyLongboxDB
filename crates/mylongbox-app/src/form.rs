@@ -322,7 +322,7 @@ impl Form {
                 move |text: &str| {
                     let found = labels()
                         .into_iter()
-                        .find(|(label, _)| label.eq_ignore_ascii_case(text.trim()));
+                        .find(|(label, _)| mylongbox_core::same_series_label(text, label));
                     *picked.borrow_mut() = found.as_ref().map(|(_, id)| *id);
                     let new = found.is_none() && !text.trim().is_empty();
                     for row in &new_rows {
@@ -749,8 +749,11 @@ impl Form {
             && let Some(db) = db.upgrade()
             && let Ok(series) = db.series(id)
         {
-            self.series
-                .set_text(&series_label(&series.fields.name, series.fields.start_year));
+            self.series.set_text(&mylongbox_core::series_label(
+                &series.fields.name,
+                series.fields.start_year,
+                series.fields.volume,
+            ));
         }
         let i = &e.issue;
         self.number
@@ -844,7 +847,8 @@ impl Form {
         let series = match *self.picked_series.borrow() {
             Some(id) => SeriesChoice::Existing(id),
             None => {
-                let (name, year_in_name) = split_year(&series_text);
+                let (name, year_in_name, volume_in_name) =
+                    mylongbox_core::parse_series_label(&series_text);
                 SeriesChoice::New {
                     name,
                     start_year: optional(
@@ -852,7 +856,8 @@ impl Form {
                         &gettext("Enter the year as four digits"),
                     )?
                     .or(year_in_name),
-                    volume: optional(&self.volume, &gettext("Enter the volume as a number"))?,
+                    volume: optional(&self.volume, &gettext("Enter the volume as a number"))?
+                        .or(volume_in_name),
                     publisher: Some(self.publisher.text().trim().to_owned())
                         .filter(|p| !p.is_empty()),
                     imprint: self.imprint.text().trim().to_owned(),
@@ -1060,18 +1065,9 @@ fn capitalized(text: &str) -> String {
 }
 
 /// `Amazing Spider-Man (1963)` → name and year.
-fn split_year(text: &str) -> (String, Option<u16>) {
-    if let Some(open) = text.rfind(" (")
-        && let Some(year) = text[open + 2..].strip_suffix(')')
-        && year.len() == 4
-        && let Ok(year) = year.parse()
-    {
-        return (text[..open].trim().to_owned(), Some(year));
-    }
-    (text.to_owned(), None)
-}
-
-pub fn series_label(name: &str, start_year: Option<u16>) -> String {
+/// A series as a contents list names it: `Amazing Spider-Man (1963)`,
+/// the year alone in brackets, which is how the list is read back.
+fn contents_series(name: &str, start_year: Option<u16>) -> String {
     match start_year {
         Some(year) => format!("{name} ({year})"),
         None => name.to_owned(),
@@ -1086,7 +1082,11 @@ fn series_labels(db: &Weak<Database>, category: Category) -> Vec<(String, Series
         .unwrap_or_default()
         .into_iter()
         .filter(|s| s.fields.category == category)
-        .map(|s| (series_label(&s.fields.name, s.fields.start_year), s.id))
+        .map(|s| {
+            let f = &s.fields;
+            let label = mylongbox_core::series_label(&f.name, f.start_year, f.volume);
+            (label, s.id)
+        })
         .collect()
 }
 
@@ -1180,7 +1180,11 @@ fn contents_preview(row: &adw::EntryRow, list: &gtk::ListBox, db: &Weak<Database
                     for e in entries.iter().take(PREVIEW_MAX) {
                         let title = format!(
                             "{} #{}",
-                            series_label(&e.entry.series.name, e.entry.series.start_year),
+                            mylongbox_core::series_label(
+                                &e.entry.series.name,
+                                e.entry.series.start_year,
+                                None
+                            ),
                             e.entry.number
                         );
                         let item = plain_row(&title, "");
@@ -1240,7 +1244,7 @@ fn reprintable_series(db: &Weak<Database>) -> Vec<String> {
         .unwrap_or_default()
         .into_iter()
         .filter(|s| s.fields.category != Category::CollectedEdition)
-        .map(|s| series_label(&s.fields.name, s.fields.start_year))
+        .map(|s| contents_series(&s.fields.name, s.fields.start_year))
         .collect()
 }
 
@@ -1906,12 +1910,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn typed_series_names_keep_their_year() {
+    fn contents_lists_name_series_by_year_alone() {
         assert_eq!(
-            split_year("Amazing Spider-Man (1963)"),
-            ("Amazing Spider-Man".to_owned(), Some(1963))
+            contents_series("Amazing Spider-Man", Some(1963)),
+            "Amazing Spider-Man (1963)"
         );
-        assert_eq!(split_year("X-Men"), ("X-Men".to_owned(), None));
-        assert_eq!(split_year("Year (One)"), ("Year (One)".to_owned(), None));
+        assert_eq!(contents_series("X-Men", None), "X-Men");
     }
 }

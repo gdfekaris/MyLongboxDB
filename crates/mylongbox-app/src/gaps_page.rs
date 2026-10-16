@@ -6,7 +6,6 @@ use std::rc::Rc;
 use adw::prelude::*;
 use mylongbox_core::{Category, SeriesGaps, SeriesId};
 
-use crate::form::series_label;
 use crate::i18n::{gettext, gettext_f, ngettext_f};
 
 /// The most ranges listed for one series before the rest are counted.
@@ -102,7 +101,7 @@ pub fn page(gaps: &[SeriesGaps], count_collected: bool, hooks: &Hooks) -> adw::P
         runs.add(&none);
     }
     for g in gaps {
-        let label = series_label(&g.name, g.start_year);
+        let label = mylongbox_core::series_label(&g.name, g.start_year, g.volume);
         let row = adw::ActionRow::new();
         row.set_use_markup(false);
         row.set_title(&label);
@@ -151,6 +150,7 @@ mod tests {
                 .unwrap(),
             name: "X".into(),
             start_year: None,
+            volume: None,
             category: Category::CollectedEdition,
             owned: 3,
             first: 1,

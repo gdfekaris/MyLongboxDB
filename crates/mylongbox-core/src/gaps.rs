@@ -15,6 +15,7 @@ pub struct SeriesGaps {
     pub series: SeriesId,
     pub name: String,
     pub start_year: Option<u16>,
+    pub volume: Option<u32>,
     pub category: Category,
     /// How many of the numbers in the run are owned.
     pub owned: u32,
@@ -96,7 +97,7 @@ impl Database {
         }
         let series = query_all(
             &self.conn,
-            "SELECT id, name, start_year, category, known_issue_count FROM series
+            "SELECT id, name, start_year, category, known_issue_count, volume FROM series
              WHERE trash_id IS NULL
              ORDER BY name COLLATE NOCASE, start_year, id",
             [],
@@ -107,13 +108,14 @@ impl Database {
                     row.get::<_, Option<u16>>(2)?,
                     row.get::<_, Category>(3)?,
                     row.get::<_, Option<u32>>(4)?,
+                    row.get::<_, Option<u32>>(5)?,
                 ))
             },
         )?;
         tx.commit()?;
         Ok(series
             .into_iter()
-            .filter_map(|(id, name, start_year, category, known)| {
+            .filter_map(|(id, name, start_year, category, known, volume)| {
                 let numbers = owned.get(&id)?;
                 let (lowest, highest) = (*numbers.first()?, *numbers.last()?);
                 let (first, last) = match known {
@@ -129,6 +131,7 @@ impl Database {
                     series: id,
                     name,
                     start_year,
+                    volume,
                     category,
                     owned,
                     first,

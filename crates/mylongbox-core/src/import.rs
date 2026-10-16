@@ -789,7 +789,8 @@ fn value(item: &str) -> std::result::Result<(Date, Amount, String), String> {
     Ok((date, amount, part(3).to_owned()))
 }
 
-/// A row's book as a reader would name it: `Thor (1966) #337`.
+/// A row's book as a reader would name it: `Thor (1966 series) #337`,
+/// with the volume in place of a missing year, as series are labelled.
 fn label(cells: &Cells<'_>) -> String {
     let mut label = cells
         .get("Series")
@@ -799,9 +800,11 @@ fn label(cells: &Cells<'_>) -> String {
     if label.is_empty() {
         label.push_str("(no series)");
     }
-    let year = cells.get("Start Year");
+    let (year, volume) = (cells.get("Start Year"), cells.get("Volume"));
     if !year.is_empty() {
-        label.push_str(&format!(" ({year})"));
+        label.push_str(&format!(" ({year} series)"));
+    } else if !volume.is_empty() {
+        label.push_str(&format!(" (Vol. {volume})"));
     }
     let number = cells.get("Issue Number").trim_start_matches('#');
     if !number.is_empty() {

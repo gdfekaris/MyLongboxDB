@@ -24,8 +24,8 @@ use crate::settings::{self, Settings};
 use crate::sorting::SortBy;
 use crate::window::MainWindow;
 use crate::{
-    about, bulk_dialog, covers, customize, form, format, gaps_page, import_dialog, photo_editor,
-    prefs, prompt, series_dialog, shortcuts, sorting, trash_page, viewer, work,
+    about, bulk_dialog, covers, customize, format, gaps_page, import_dialog, photo_editor, prefs,
+    prompt, series_dialog, shortcuts, sorting, trash_page, viewer, work,
 };
 
 /// What a sidebar section shows.
@@ -662,8 +662,9 @@ impl Component for App {
                     let db = db.borrow().upgrade()?;
                     let label = label.trim().to_lowercase();
                     db.list_series().ok()?.into_iter().find_map(|s| {
-                        let listed = form::series_label(&s.fields.name, s.fields.start_year);
-                        (listed.to_lowercase() == label).then_some(s.id)
+                        let f = &s.fields;
+                        let listed = mylongbox_core::series_label(&f.name, f.start_year, f.volume);
+                        mylongbox_core::same_series_label(&label, &listed).then_some(s.id)
                     })
                 }),
                 move || save.input(AppMsg::SaveShelf),
@@ -2795,7 +2796,11 @@ impl App {
             .map(|s| {
                 (
                     s.id,
-                    form::series_label(&s.fields.name, s.fields.start_year),
+                    mylongbox_core::series_label(
+                        &s.fields.name,
+                        s.fields.start_year,
+                        s.fields.volume,
+                    ),
                 )
             })
             .collect();
