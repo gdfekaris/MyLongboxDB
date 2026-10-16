@@ -54,7 +54,15 @@ fn detail_gathers_the_whole_issue() {
     let gwen = db.create_lookup::<CharacterId>("Gwen Stacy").unwrap();
     db.set_characters(id, &[(gwen, false)]).unwrap();
 
-    let standard = db.create_edition(id, &EditionFields::default()).unwrap();
+    let standard = db
+        .create_edition(
+            id,
+            &EditionFields {
+                distribution: Some(Distribution::Direct),
+                ..EditionFields::default()
+            },
+        )
+        .unwrap();
     let romita = db.create_lookup::<CreatorId>("John Romita").unwrap();
     db.set_cover_artists(standard, &[romita]).unwrap();
     let longbox = db.create_lookup::<BoxId>("Box 1").unwrap();

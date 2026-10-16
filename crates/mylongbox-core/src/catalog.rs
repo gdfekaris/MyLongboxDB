@@ -38,7 +38,7 @@ macro_rules! select_issue {
 
 /// Expands to one complete SQL literal, so no query is assembled at runtime.
 macro_rules! select_edition {
-    ($rest:literal) => {
+    ($rest:expr) => {
         concat!(
             "SELECT id, uuid, issue_id, trash_id, variant, printing,
     distribution, cover_price_units, cover_price_currency, barcode, isbn, binding,
@@ -51,7 +51,7 @@ macro_rules! select_edition {
 
 /// Expands to one complete SQL literal, so no query is assembled at runtime.
 macro_rules! select_copy {
-    ($rest:literal) => {
+    ($rest:expr) => {
         concat!(
             "SELECT id, uuid, edition_id, trash_id, added_at, grade, grade_type,
     cert_number, label_type, book_condition, dust_jacket_condition,
@@ -303,11 +303,15 @@ impl Database {
         Ok(())
     }
 
-    /// The live editions of an issue, oldest first.
+    /// The live editions of an issue, in the order the book list shows
+    /// their copies.
     pub fn editions_of_issue(&self, issue: IssueId) -> Result<Vec<Edition>> {
         query_all(
             &self.conn,
-            select_edition!("WHERE issue_id = ?1 AND trash_id IS NULL ORDER BY id"),
+            select_edition!(concat!(
+                "e WHERE issue_id = ?1 AND trash_id IS NULL ORDER BY ",
+                edition_order!()
+            )),
             [issue],
             edition_from_row,
         )
@@ -390,11 +394,15 @@ impl Database {
         Ok(())
     }
 
-    /// The live copies of an edition, in the order they were added.
+    /// The live copies of an edition, in the order the book list shows
+    /// them.
     pub fn copies_of_edition(&self, edition: EditionId) -> Result<Vec<Copy>> {
         query_all(
             &self.conn,
-            select_copy!("WHERE edition_id = ?1 AND trash_id IS NULL ORDER BY id"),
+            select_copy!(concat!(
+                "c WHERE edition_id = ?1 AND trash_id IS NULL ORDER BY ",
+                copy_order!()
+            )),
             [edition],
             copy_from_row,
         )

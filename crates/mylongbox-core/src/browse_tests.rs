@@ -77,6 +77,75 @@ fn books_come_in_natural_order() {
 }
 
 #[test]
+fn copies_of_an_issue_come_in_edition_then_copy_order() {
+    let db = db();
+    let s = series(&db, "X-Men", Category::Comic);
+    let i = issue(&db, s, "1");
+    let make = |variant: &str, printing: Option<u32>, distribution: Option<Distribution>| {
+        let fields = EditionFields {
+            variant: variant.into(),
+            printing,
+            distribution,
+            ..EditionFields::default()
+        };
+        db.create_edition(i, &fields).unwrap()
+    };
+    let stan = db.create_lookup::<CreatorId>("Stan Lee").unwrap();
+    let copy = |edition: EditionId, grade_type: Option<GradeType>, signed: bool| {
+        let fields = CopyFields {
+            grade_type,
+            ..CopyFields::default()
+        };
+        let copy = db.create_copy(edition, &fields).unwrap();
+        if signed {
+            let signature = SignatureFields::new(Verification::Witnessed);
+            db.set_signatures(copy, &[(stan, signature)]).unwrap();
+        }
+        copy
+    };
+    // Each made before the ones it should follow.
+    let cover_b = make("cover b", None, None);
+    let cover_a_newsstand = make("Cover A", None, Some(Distribution::Newsstand));
+    let cover_a = make("Cover A", Some(1), Some(Distribution::Direct));
+    let second = make("", Some(2), Some(Distribution::Direct));
+    let unrecorded = make("", Some(1), None);
+    let newsstand = make("", None, Some(Distribution::Newsstand));
+    let direct = make("", Some(1), Some(Distribution::Direct));
+    let cover_b_copy = copy(cover_b, None, false);
+    let cover_a_newsstand_copy = copy(cover_a_newsstand, None, false);
+    let cover_a_copy = copy(cover_a, None, false);
+    let second_copy = copy(second, None, false);
+    let unrecorded_copy = copy(unrecorded, Some(GradeType::Pgx), false);
+    let newsstand_copy = copy(newsstand, None, false);
+    let graded_signed = copy(direct, Some(GradeType::Cgc), true);
+    let graded = copy(direct, Some(GradeType::Cbcs), false);
+    let raw_signed = copy(direct, Some(GradeType::Raw), true);
+    let no_grade_type = copy(direct, None, false);
+    let order = [
+        no_grade_type,
+        raw_signed,
+        graded,
+        graded_signed,
+        newsstand_copy,
+        unrecorded_copy,
+        second_copy,
+        cover_a_copy,
+        cover_a_newsstand_copy,
+        cover_b_copy,
+    ];
+    assert_eq!(copies(&db, Shelf::Everything), order);
+
+    // The book page lists them the same way.
+    let detail = db.issue_detail(i).unwrap();
+    let on_page: Vec<CopyId> = detail
+        .editions
+        .iter()
+        .flat_map(|e| e.copies.iter().map(|c| c.copy.id))
+        .collect();
+    assert_eq!(on_page, order);
+}
+
+#[test]
 fn every_copy_of_an_edition_is_its_own_row() {
     let db = db();
     let s = series(&db, "X-Men", Category::Comic);

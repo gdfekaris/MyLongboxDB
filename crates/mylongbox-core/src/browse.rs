@@ -282,13 +282,36 @@ macro_rules! on_shelf {
     };
 }
 
+/// The editions of one issue, standard ones first and each variant's
+/// together after them, then by printing (none recorded counts as the
+/// first) and distribution: direct, newsstand, then unrecorded.
+macro_rules! edition_order {
+    () => {
+        "e.variant <> '', e.variant COLLATE NOCASE, coalesce(e.printing, 1),
+         CASE e.distribution WHEN 'direct' THEN 0 WHEN 'newsstand' THEN 1 ELSE 2 END, e.id"
+    };
+}
+
+/// The copies of one edition: raw before professionally graded, then
+/// unsigned before signed, then in the order they were added.
+macro_rules! copy_order {
+    () => {
+        "coalesce(c.grade_type IN ('cgc', 'cbcs', 'pgx'), 0),
+         EXISTS (SELECT 1 FROM signature g WHERE g.copy_id = c.id), c.id"
+    };
+}
+
 /// Natural order: by series, then issue number (so 2 comes before 10),
-/// then variant and printing. Copies of one edition stay in the order
-/// they were added.
+/// then each issue's editions and copies in their own order.
 macro_rules! natural_order {
     () => {
-        "s.name COLLATE NOCASE, s.start_year, s.volume, s.id, i.number_sort,
-         i.title COLLATE NOCASE, i.id, e.variant COLLATE NOCASE, e.printing, e.id, c.id"
+        concat!(
+            "s.name COLLATE NOCASE, s.start_year, s.volume, s.id, i.number_sort,
+             i.title COLLATE NOCASE, i.id, ",
+            edition_order!(),
+            ", ",
+            copy_order!()
+        )
     };
 }
 
