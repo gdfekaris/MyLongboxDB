@@ -116,15 +116,14 @@ pub fn page(d: &IssueDetail, links: &Links, current: Option<CopyId>) -> adw::Nav
         // Only the copy being viewed and its edition; the others wait at
         // the bottom, so nothing about them is mistaken for this copy.
         Some(current) => {
-            let mine = d
-                .editions
-                .iter()
-                .enumerate()
-                .find(|(_, e)| e.copies.iter().any(|c| c.copy.id == current));
-            if let Some((n, edition)) = mine
-                && let Some(copy) = edition.copies.iter().find(|c| c.copy.id == current)
-            {
-                prefs.add(&this_copy(edition, n, copy, category, links));
+            let mine = d.editions.iter().find_map(|e| {
+                e.copies
+                    .iter()
+                    .find(|c| c.copy.id == current)
+                    .map(|c| (e, c))
+            });
+            if let Some((edition, copy)) = mine {
+                prefs.add(&this_copy(edition, copy, category, links));
             }
             if let Some(group) = other_copies(d, current, category, links) {
                 prefs.add(&group);
@@ -133,8 +132,8 @@ pub fn page(d: &IssueDetail, links: &Links, current: Option<CopyId>) -> adw::Nav
         // An issue known only from the catalog, such as one a book
         // reprints, has editions but no copies to choose between.
         None => {
-            for (n, edition) in d.editions.iter().enumerate() {
-                prefs.add(&edition_group(edition, n, links));
+            for edition in &d.editions {
+                prefs.add(&edition_group(edition, links));
             }
         }
     }
@@ -515,24 +514,15 @@ fn appearances(d: &IssueDetail) -> Option<adw::PreferencesGroup> {
 /// The edition's name and facts, with its cover art and codes. Trashing
 /// an edition trashes its copies, so that is offered only where it
 /// touches no copy but `current`, if any.
-fn edition_rows(
-    e: &EditionDetail,
-    index: usize,
-    links: &Links,
-    current: Option<CopyId>,
-) -> Vec<adw::ActionRow> {
+fn edition_rows(e: &EditionDetail, links: &Links, current: Option<CopyId>) -> Vec<adw::ActionRow> {
     let f = &e.edition.fields;
-    let name = edition_name(e, index);
+    let name = edition_name(e);
     let artists: Vec<_> = e.cover_artists.iter().map(|a| a.name.as_str()).collect();
     let flag = |value: Option<bool>, yes: String| match value {
         Some(true) => yes,
         _ => String::new(),
     };
     let facts = format::joined([
-        f.distribution
-            .map(format::distribution)
-            .unwrap_or_default()
-            .to_owned(),
         f.binding
             .map(format::binding)
             .unwrap_or_default()
@@ -593,9 +583,9 @@ fn edition_rows(
 
 /// An edition of an issue known only from the catalog, which has no
 /// copies to show.
-fn edition_group(e: &EditionDetail, index: usize, links: &Links) -> adw::PreferencesGroup {
+fn edition_group(e: &EditionDetail, links: &Links) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::new();
-    for row in edition_rows(e, index, links, None) {
+    for row in edition_rows(e, links, None) {
         group.add(&row);
     }
     if e.copies.is_empty() {
@@ -613,7 +603,6 @@ fn edition_group(e: &EditionDetail, index: usize, links: &Links) -> adw::Prefere
 /// everything about it, and the ways to change it.
 fn this_copy(
     e: &EditionDetail,
-    index: usize,
     c: &CopyDetail,
     category: Category,
     links: &Links,
@@ -633,7 +622,7 @@ fn this_copy(
     buttons.append(&more_menu(&group, copy, category, links));
     group.set_header_suffix(Some(&buttons));
     group.add(&row(&copy_summary(c, category), ""));
-    for row in edition_rows(e, index, links, Some(copy)) {
+    for row in edition_rows(e, links, Some(copy)) {
         group.add(&row);
     }
     group.add(&photo_row(c, links));
@@ -643,19 +632,22 @@ fn this_copy(
     group
 }
 
-/// e.g. `Cover B, 2nd printing`, or `Standard Cover` for the first
-/// edition with neither; a later one is told apart by how it was sold
-/// when it can be.
-fn edition_name(e: &EditionDetail, index: usize) -> String {
+/// What sets an edition apart: its cover (`Cover B`, or `Standard
+/// Cover` when it has no variant), its printing after the first, and how
+/// it was sold, as in `Standard Cover · Direct`.
+fn edition_name(e: &EditionDetail) -> String {
     let f = &e.edition.fields;
-    match version(&f.variant, f.printing) {
-        v if v.is_empty() && index == 0 => gettext("Standard Cover"),
-        v if v.is_empty() => f.distribution.map_or_else(
-            || gettext("Edition"),
-            |d| format::distribution(d).to_owned(),
-        ),
-        v => v,
-    }
+    let cover = match f.variant.as_str() {
+        "" => gettext("Standard Cover"),
+        variant => variant.to_owned(),
+    };
+    format::joined([
+        version(&cover, f.printing),
+        f.distribution
+            .map(format::distribution)
+            .unwrap_or_default()
+            .to_owned(),
+    ])
 }
 
 /// Every copy of the issue but `current`, in brief, each opening the
@@ -668,15 +660,10 @@ fn other_copies(
 ) -> Option<adw::PreferencesGroup> {
     let group = group(&gettext("My Other Copies"));
     let mut any = false;
-    for (index, e) in d.editions.iter().enumerate() {
+    for e in &d.editions {
         for copy in &e.copies {
             if copy.copy.id != current {
-                group.add(&other_copy_row(
-                    copy,
-                    &edition_name(e, index),
-                    category,
-                    links,
-                ));
+                group.add(&other_copy_row(copy, &edition_name(e), category, links));
                 any = true;
             }
         }

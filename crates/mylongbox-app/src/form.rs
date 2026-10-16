@@ -146,11 +146,8 @@ pub struct Hooks {
 
 const DISTRIBUTIONS: [(&str, Option<Distribution>); 3] = [
     (gettext_noop("Not noted"), None),
-    (gettext_noop("Direct edition"), Some(Distribution::Direct)),
-    (
-        gettext_noop("Newsstand edition"),
-        Some(Distribution::Newsstand),
-    ),
+    (gettext_noop("Direct"), Some(Distribution::Direct)),
+    (gettext_noop("Newsstand"), Some(Distribution::Newsstand)),
 ];
 
 pub(crate) const FORMATS: [(&str, Option<MagazineFormat>); 4] = [

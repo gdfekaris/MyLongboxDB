@@ -265,8 +265,8 @@ pub fn binding(binding: Binding) -> &'static str {
 
 pub fn distribution(distribution: Distribution) -> &'static str {
     match distribution {
-        Distribution::Direct => label(gettext_noop("Direct edition")),
-        Distribution::Newsstand => label(gettext_noop("Newsstand edition")),
+        Distribution::Direct => label(gettext_noop("Direct")),
+        Distribution::Newsstand => label(gettext_noop("Newsstand")),
     }
 }
 
