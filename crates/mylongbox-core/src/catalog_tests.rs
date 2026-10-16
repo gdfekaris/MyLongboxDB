@@ -66,6 +66,7 @@ fn every_field_round_trips() {
     series.magazine_format = Some(MagazineFormat::Standard);
     series.black_and_white = Some(true);
     series.notes = "Curtis, then Marvel".into();
+    series.imprint = "Curtis Magazines".into();
     let series_id = db.create_series(&series).unwrap();
     let read = db.series(series_id).unwrap();
     assert_eq!(read.fields, series);
@@ -658,4 +659,30 @@ fn trash_names_copies_and_editions_apart_from_their_issue() {
             "X-Men (1963) #1, standard edition",
         ]
     );
+}
+
+#[test]
+fn imprints_are_suggested_from_the_publisher_first() {
+    let db = db();
+    let dc = db.create_lookup::<PublisherId>("DC").unwrap();
+    let marvel = db.create_lookup::<PublisherId>("Marvel").unwrap();
+    for (name, publisher, imprint) in [
+        ("Sandman", dc, "Vertigo"),
+        ("Hellblazer", dc, "vertigo"),
+        ("Moonshadow", marvel, "Epic"),
+        ("Punisher", marvel, "MAX"),
+        ("Planetary", dc, "WildStorm"),
+    ] {
+        let mut f = SeriesFields::new(name, Category::Comic);
+        f.publisher = Some(publisher);
+        f.imprint = format!("  {imprint} ");
+        db.create_series(&f).unwrap();
+    }
+    assert_eq!(
+        db.suggest_imprints("marvel", "", 9).unwrap(),
+        ["Epic", "MAX", "Vertigo", "WildStorm"]
+    );
+    assert_eq!(db.suggest_imprints("", "ti", 9).unwrap(), ["Vertigo"]);
+    assert_eq!(db.suggest_imprints("DC", "", 1).unwrap(), ["Vertigo"]);
+    assert!(db.suggest_imprints("", "%", 9).unwrap().is_empty());
 }

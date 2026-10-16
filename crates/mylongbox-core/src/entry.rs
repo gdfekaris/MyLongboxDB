@@ -28,6 +28,8 @@ pub enum SeriesChoice {
         start_year: Option<u16>,
         volume: Option<u32>,
         publisher: Option<String>,
+        /// Such as Vertigo; empty when none.
+        imprint: String,
         /// Magazines only.
         magazine_format: Option<MagazineFormat>,
         /// Magazines only.
@@ -348,6 +350,7 @@ impl Database {
                 start_year,
                 volume,
                 publisher,
+                imprint,
                 magazine_format,
                 black_and_white,
             } => {
@@ -371,6 +374,7 @@ impl Database {
                         fields.volume = *volume;
                         fields.magazine_format = *magazine_format;
                         fields.black_and_white = *black_and_white;
+                        fields.imprint.clone_from(imprint);
                         fields.publisher = publisher
                             .as_deref()
                             .filter(|p| !p.trim().is_empty())

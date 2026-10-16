@@ -15,6 +15,7 @@ fn add(db: &Database, series: &str, year: u16, n: &str, writer: &str) -> crate::
             start_year: Some(year),
             volume: None,
             publisher: None,
+            imprint: String::new(),
             magazine_format: None,
             black_and_white: None,
         },

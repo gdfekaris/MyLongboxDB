@@ -196,6 +196,10 @@ pub(crate) fn generate(db: &Database, spec: FixtureSpec) -> Result<FixtureSummar
         fields.start_year = Some(1960 + rng.below(66) as u16);
         fields.volume = Some(1 + rng.below(3) as u32);
         fields.publisher = Some(*rng.pick(&publishers));
+        // Without drawing on the generator, so other fields stay as they were.
+        if series_number % 5 == 0 {
+            fields.imprint = "Mature Readers".into();
+        }
         if category == Category::Magazine {
             fields.magazine_format = Some(*rng.pick(MagazineFormat::ALL));
             fields.black_and_white = Some(rng.chance(60));

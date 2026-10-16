@@ -18,6 +18,7 @@ fn new_series(name: &str, year: u16, publisher: Option<&str>) -> SeriesChoice {
         start_year: Some(year),
         volume: None,
         publisher: publisher.map(Into::into),
+        imprint: String::new(),
         magazine_format: None,
         black_and_white: None,
     }

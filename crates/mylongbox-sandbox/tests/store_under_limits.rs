@@ -44,6 +44,7 @@ fn exporting_checking_and_compacting_stay_in_the_app_folders() {
                 start_year: None,
                 volume: None,
                 publisher: None,
+                imprint: String::new(),
                 magazine_format: None,
                 black_and_white: None,
             },

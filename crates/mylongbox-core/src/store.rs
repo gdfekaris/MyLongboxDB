@@ -761,6 +761,7 @@ mod tests {
                 start_year: None,
                 volume: None,
                 publisher: None,
+                imprint: String::new(),
                 magazine_format: None,
                 black_and_white: None,
             },

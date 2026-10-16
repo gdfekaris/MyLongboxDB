@@ -17,6 +17,7 @@ struct Fields {
     start_year: adw::EntryRow,
     volume: adw::EntryRow,
     publisher: adw::EntryRow,
+    imprint: adw::EntryRow,
     known_issue_count: adw::EntryRow,
     format: adw::ComboRow,
     color: adw::ComboRow,
@@ -68,6 +69,7 @@ impl Fields {
             magazine_format: FORMATS[pick(&self.format)].1.filter(|_| magazine),
             black_and_white: COLORS[pick(&self.color)].1.filter(|_| magazine),
             notes: self.notes.text().trim().to_owned(),
+            imprint: self.imprint.text().trim().to_owned(),
             ..self.current.clone()
         };
         Some((fields, self.publisher.text().trim().to_owned()))
@@ -98,6 +100,8 @@ pub fn ask(
     );
     let volume = row(&gettext("Volume"), number(f.volume));
     let publisher = row(&gettext("Publisher"), publisher.to_owned());
+    let imprint = row(&gettext("Imprint"), f.imprint.clone());
+    crate::form::imprint_completion(&imprint, &publisher, &db);
     autocomplete::attach(
         &publisher,
         move |text| {
@@ -145,7 +149,14 @@ pub fn ask(
         .selection_mode(gtk::SelectionMode::None)
         .css_classes(["boxed-list"])
         .build();
-    for row in [&name, &start_year, &volume, &publisher, &known_issue_count] {
+    for row in [
+        &name,
+        &start_year,
+        &volume,
+        &publisher,
+        &imprint,
+        &known_issue_count,
+    ] {
         list.append(row);
     }
     if f.category == Category::Magazine {
@@ -160,6 +171,7 @@ pub fn ask(
         start_year,
         volume,
         publisher,
+        imprint,
         known_issue_count,
         format,
         color,

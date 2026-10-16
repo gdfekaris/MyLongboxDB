@@ -20,6 +20,7 @@ fn new_series(name: &str) -> SeriesChoice {
         start_year: Some(1963),
         volume: None,
         publisher: Some("Marvel".into()),
+        imprint: String::new(),
         magazine_format: None,
         black_and_white: None,
     }
@@ -297,6 +298,7 @@ fn book(line: &str, n: Option<&str>) -> BookEntry {
             start_year: Some(2014),
             volume: None,
             publisher: None,
+            imprint: String::new(),
             magazine_format: None,
             black_and_white: None,
         },
@@ -314,6 +316,7 @@ fn magazines_keep_their_format_and_article_credits() {
             start_year: Some(1974),
             volume: None,
             publisher: None,
+            imprint: String::new(),
             magazine_format: Some(MagazineFormat::Standard),
             black_and_white: Some(true),
         },

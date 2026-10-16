@@ -626,6 +626,7 @@ fn plan(cells: &Cells<'_>, today: Date) -> std::result::Result<Planned, String> 
             start_year,
             volume,
             publisher: Some(cells.get("Publisher").to_owned()).filter(|p| !p.is_empty()),
+            imprint: cells.get("Imprint").to_owned(),
             magazine_format: cells
                 .read("Magazine Format", |t| code(t, MagazineFormat::from_code))?,
             black_and_white: cells.read("Black and White", yes_no)?,

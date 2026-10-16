@@ -366,6 +366,7 @@ fn summary(d: &IssueDetail, current: Option<CopyId>, links: &Links) -> adw::Pref
     let facts = [
         format::joined([
             d.publisher.clone().unwrap_or_default(),
+            s.imprint.clone(),
             volume,
             legacy,
             kind,

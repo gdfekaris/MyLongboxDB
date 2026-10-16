@@ -41,6 +41,7 @@ fn book(db: &Database, series: &str, number: &str, writer: &str, character: &str
             start_year: None,
             volume: None,
             publisher: None,
+            imprint: String::new(),
             magazine_format: None,
             black_and_white: None,
         },

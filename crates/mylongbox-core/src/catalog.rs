@@ -17,7 +17,8 @@ macro_rules! select_series {
     ($rest:literal) => {
         concat!(
             "SELECT id, uuid, trash_id, name, category, publisher_id, volume,
-    start_year, known_issue_count, magazine_format, black_and_white, notes FROM series",
+    start_year, known_issue_count, magazine_format, black_and_white, notes, imprint
+    FROM series",
             " ",
             $rest
         )
@@ -71,8 +72,8 @@ impl Database {
         let f = clean_series(fields)?;
         self.conn.execute(
             "INSERT INTO series (uuid, name, category, publisher_id, volume, start_year,
-                 known_issue_count, magazine_format, black_and_white, notes)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                 known_issue_count, magazine_format, black_and_white, notes, imprint)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 RowUuid::new_random(),
                 f.name,
@@ -84,6 +85,7 @@ impl Database {
                 f.magazine_format,
                 f.black_and_white,
                 f.notes,
+                f.imprint,
             ],
         )?;
         Ok(SeriesId(self.conn.last_insert_rowid()))
@@ -108,7 +110,7 @@ impl Database {
         tx.execute(
             "UPDATE series SET name = ?2, category = ?3, publisher_id = ?4, volume = ?5,
                  start_year = ?6, known_issue_count = ?7, magazine_format = ?8,
-                 black_and_white = ?9, notes = ?10
+                 black_and_white = ?9, notes = ?10, imprint = ?11
              WHERE id = ?1",
             params![
                 id,
@@ -121,6 +123,7 @@ impl Database {
                 f.magazine_format,
                 f.black_and_white,
                 f.notes,
+                f.imprint,
             ],
         )?;
         self.series_rules_follow(&before.fields.name, &f.name)?;
@@ -140,6 +143,27 @@ impl Database {
             self.rules_follow_rename(crate::shelves::Named::Series, old, new)?;
         }
         Ok(())
+    }
+
+    /// Imprints already given to a series that contain `text`, ignoring
+    /// case, those of `publisher`'s series first, then by name.
+    pub fn suggest_imprints(&self, publisher: &str, text: &str, limit: u32) -> Result<Vec<String>> {
+        query_all(
+            &self.conn,
+            "SELECT s.imprint FROM series s LEFT JOIN publisher p ON p.id = s.publisher_id
+             WHERE s.imprint <> '' AND s.trash_id IS NULL
+                 AND s.imprint LIKE ?1 ESCAPE '\\'
+             GROUP BY s.imprint COLLATE NOCASE
+             ORDER BY max(coalesce(p.name = ?2 COLLATE NOCASE, 0)) DESC,
+                 s.imprint COLLATE NOCASE
+             LIMIT ?3",
+            params![
+                format!("%{}%", crate::search::like_escaped(text.trim())),
+                publisher.trim(),
+                limit
+            ],
+            |row| row.get(0),
+        )
     }
 
     /// Every series not in Trash, by name.
@@ -769,6 +793,7 @@ fn check_amount(amount: Option<Amount>, what: &str) -> Result<()> {
 fn clean_series(fields: &SeriesFields) -> Result<SeriesFields> {
     let mut f = fields.clone();
     f.name = trimmed(&f.name);
+    f.imprint = trimmed(&f.imprint);
     if f.name.is_empty() {
         return refuse("enter a series name");
     }
@@ -945,6 +970,7 @@ fn series_from_row(row: &Row<'_>) -> rusqlite::Result<Series> {
             magazine_format: row.get(9)?,
             black_and_white: row.get(10)?,
             notes: row.get(11)?,
+            imprint: row.get(12)?,
         },
     })
 }

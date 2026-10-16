@@ -16,6 +16,7 @@ fn entry(series: &str, year: u16, number: &str) -> BookEntry {
             start_year: Some(year),
             volume: None,
             publisher: None,
+            imprint: String::new(),
             magazine_format: None,
             black_and_white: None,
         },
@@ -67,6 +68,7 @@ fn collection() -> Shelf8 {
         start_year: Some(1968),
         volume: None,
         publisher: Some("Marvel".into()),
+        imprint: String::new(),
         magazine_format: None,
         black_and_white: None,
     };
@@ -172,6 +174,22 @@ fn issue_numbers_are_found_as_whole_words() {
     assert_eq!(every, [three_hundred, hulk]);
     assert!(found(&db, "spider 3000").is_empty());
     assert!(found(&db, "#").is_empty());
+}
+
+#[test]
+fn imprints_find_their_series_books() {
+    let db = db();
+    let mut sandman = entry("Sandman", 1989, "47");
+    if let SeriesChoice::New { imprint, .. } = &mut sandman.series {
+        *imprint = "Vértigo".into();
+    }
+    let sandman = add(&db, &sandman);
+    add(&db, &entry("Batman", 1940, "1"));
+    assert_eq!(found(&db, "vertigo"), [sandman]);
+    assert_eq!(found(&db, "VERT"), [sandman]);
+    // Short words must begin a word of the imprint.
+    assert_eq!(found(&db, "ve"), [sandman]);
+    assert!(found(&db, "ti").is_empty());
 }
 
 #[test]

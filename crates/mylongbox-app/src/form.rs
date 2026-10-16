@@ -68,6 +68,7 @@ pub struct Form {
     start_year: adw::EntryRow,
     volume: adw::EntryRow,
     publisher: adw::EntryRow,
+    imprint: adw::EntryRow,
     /// New magazine series only.
     magazine_format: adw::ComboRow,
     color: adw::ComboRow,
@@ -240,6 +241,7 @@ impl Form {
         let start_year = entry_row(&gettext("Start Year of New Series"));
         let volume = entry_row(&gettext("Volume of New Series"));
         let publisher = entry_row(&gettext("Publisher of New Series"));
+        let imprint = entry_row(&gettext("Imprint of New Series"));
         let magazine_format = combo_row(
             &gettext("Format of New Series"),
             FORMATS.map(|(name, _)| name),
@@ -278,7 +280,7 @@ impl Form {
             .sync_create()
             .build();
         let synopsis = text_view();
-        for row in [&series, &start_year, &volume, &publisher] {
+        for row in [&series, &start_year, &volume, &publisher, &imprint] {
             issue.append(row);
         }
         issue.append(&magazine_format);
@@ -292,7 +294,7 @@ impl Form {
         issue.append(&key);
         issue.append(&key_reason);
         issue.append(&text_row(&gettext("Notes About This Issue"), &synopsis));
-        for row in [&start_year, &volume, &publisher] {
+        for row in [&start_year, &volume, &publisher, &imprint] {
             row.set_visible(false);
         }
         magazine_format.set_visible(false);
@@ -306,9 +308,14 @@ impl Form {
             // A book line numbers its volumes itself, so a series-level
             // volume would only confuse.
             let new_rows: Vec<adw::EntryRow> = if category == Category::CollectedEdition {
-                vec![start_year.clone(), publisher.clone()]
+                vec![start_year.clone(), publisher.clone(), imprint.clone()]
             } else {
-                vec![start_year.clone(), volume.clone(), publisher.clone()]
+                vec![
+                    start_year.clone(),
+                    volume.clone(),
+                    publisher.clone(),
+                    imprint.clone(),
+                ]
             };
             let magazine_rows = [magazine_format.clone(), color.clone()];
             let labels = Rc::new(move || series_labels(&db, category));
@@ -347,6 +354,7 @@ impl Form {
             );
         }
         lookup_completion::<PublisherId>(&publisher, &db);
+        imprint_completion(&imprint, &publisher, &db);
 
         let collects = entry_row(&gettext("Issues Reprinted"));
         if category == Category::CollectedEdition {
@@ -593,6 +601,7 @@ impl Form {
             start_year,
             volume,
             publisher,
+            imprint,
             magazine_format,
             color,
             number,
@@ -680,6 +689,7 @@ impl Form {
             &self.start_year,
             &self.volume,
             &self.publisher,
+            &self.imprint,
             &self.number,
             &self.legacy,
             &self.title,
@@ -837,6 +847,7 @@ impl Form {
                     volume: optional(&self.volume, &gettext("Enter the volume as a number"))?,
                     publisher: Some(self.publisher.text().trim().to_owned())
                         .filter(|p| !p.is_empty()),
+                    imprint: self.imprint.text().trim().to_owned(),
                     magazine_format: FORMATS[selected(&self.magazine_format)]
                         .1
                         .filter(|_| self.category == Category::Magazine),
@@ -1221,6 +1232,26 @@ fn completion<I: LookupId + 'static>(db: &Weak<Database>) -> Suggest {
             .map(|l| l.name)
             .collect()
     })
+}
+
+/// Offers the imprints already in use, those of the publisher in
+/// `publisher` first.
+pub fn imprint_completion(row: &adw::EntryRow, publisher: &adw::EntryRow, db: &Weak<Database>) {
+    let db = db.clone();
+    let publisher = publisher.downgrade();
+    autocomplete::attach(
+        row,
+        move |text| {
+            let publisher = publisher.upgrade().map(|p| p.text()).unwrap_or_default();
+            db.upgrade()
+                .and_then(|db| {
+                    db.suggest_imprints(&publisher, text, autocomplete::LIMIT as u32 + 1)
+                        .ok()
+                })
+                .unwrap_or_default()
+        },
+        |_| {},
+    );
 }
 
 fn lookup_completion<I: LookupId + 'static>(row: &adw::EntryRow, db: &Weak<Database>) {

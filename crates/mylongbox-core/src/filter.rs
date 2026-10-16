@@ -58,6 +58,7 @@ pub enum Compare<T> {
 pub enum TextField {
     SeriesName,
     Publisher,
+    Imprint,
     Title,
     Synopsis,
     KeyReason,
@@ -313,6 +314,12 @@ impl TextField {
                 "issue i JOIN series s ON s.id = i.series_id
                  JOIN publisher p ON p.id = s.publisher_id",
                 "p.name"
+            ),
+            Self::Imprint => text_sql!(
+                true,
+                "i.id",
+                "issue i JOIN series s ON s.id = i.series_id",
+                "s.imprint"
             ),
             Self::Title => text_sql!(true, "id", "issue", "title"),
             Self::Synopsis => text_sql!(true, "id", "issue", "synopsis"),

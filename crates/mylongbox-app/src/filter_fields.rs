@@ -61,6 +61,7 @@ pub const FIELDS: &[Field] = &[
     field(gettext_noop("Issue Number"), Kind::IssueNumber),
     field(gettext_noop("Story Title"), Kind::Text(TextField::Title)),
     field(gettext_noop("Publisher"), Kind::Text(TextField::Publisher)),
+    field(gettext_noop("Imprint"), Kind::Text(TextField::Imprint)),
     field(gettext_noop("Creator"), Kind::Person),
     field(
         gettext_noop("Characters"),

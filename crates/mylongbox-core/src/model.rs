@@ -537,6 +537,8 @@ pub struct SeriesFields {
     pub name: String,
     pub category: Category,
     pub publisher: Option<PublisherId>,
+    /// Such as Vertigo for DC; empty when none.
+    pub imprint: String,
     pub volume: Option<u32>,
     pub start_year: Option<u16>,
     /// For gap detection, when known.
@@ -554,6 +556,7 @@ impl SeriesFields {
             name: name.into(),
             category,
             publisher: None,
+            imprint: String::new(),
             volume: None,
             start_year: None,
             known_issue_count: None,

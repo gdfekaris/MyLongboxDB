@@ -40,6 +40,7 @@ fn series(name: &str, year: u16, publisher: Option<&str>) -> SeriesChoice {
         start_year: Some(year),
         volume: None,
         publisher: publisher.map(Into::into),
+        imprint: String::new(),
         magazine_format: None,
         black_and_white: None,
     }
@@ -70,6 +71,9 @@ fn sample() -> Sample {
     e.issue.release_date = Some(date("1973-03-13"));
     e.issue.page_count = Some(36);
     e.issue.legacy_number = Some(121);
+    if let SeriesChoice::New { imprint, .. } = &mut e.series {
+        *imprint = "Marvel Comics Group".into();
+    }
     e.issue.is_key = true;
     e.issue.key_reason = "Death of Gwen Stacy".into();
     e.credits = vec![
@@ -151,6 +155,7 @@ fn sample() -> Sample {
             start_year: Some(1974),
             volume: None,
             publisher: Some("Curtis".into()),
+            imprint: String::new(),
             magazine_format: Some(MagazineFormat::Standard),
             black_and_white: Some(true),
         },
@@ -247,6 +252,7 @@ fn text_fields_contain_are_and_resemble() {
         ),
         (text(SeriesName, SimilarTo, "Savage Sword"), set(&[])),
         (text(Publisher, Is, "curtis"), set(&[s.d])),
+        (text(Imprint, Contains, "comics group"), set(&[s.a, s.b])),
         (text(Title, Contains, "gwen"), set(&[s.a])),
         (text(KeyReason, Contains, "wolverine"), set(&[s.c])),
         (text(Variant, Is, "newsstand"), set(&[s.b])),

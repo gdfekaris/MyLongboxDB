@@ -196,6 +196,7 @@ mod tests {
                     start_year: Some(1966),
                     volume: None,
                     publisher: None,
+                    imprint: String::new(),
                     magazine_format: None,
                     black_and_white: None,
                 },

@@ -121,6 +121,8 @@ impl Database {
         tx.execute(
             "UPDATE series SET
                  publisher_id = coalesce(publisher_id, (SELECT publisher_id FROM series WHERE id = ?1)),
+                 imprint = CASE WHEN imprint = ''
+                     THEN (SELECT imprint FROM series WHERE id = ?1) ELSE imprint END,
                  volume = coalesce(volume, (SELECT volume FROM series WHERE id = ?1)),
                  start_year = coalesce(start_year, (SELECT start_year FROM series WHERE id = ?1)),
                  known_issue_count = coalesce(known_issue_count,
