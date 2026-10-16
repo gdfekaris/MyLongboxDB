@@ -169,6 +169,18 @@ impl Amount {
     }
 }
 
+/// Reads a price in dollars and cents, such as `0.75`, as whole cents,
+/// for the prices kept outside [`Currency`].
+pub fn parse_cents(text: &str) -> Result<i64, ParseAmountError> {
+    Amount::parse(Currency::Usd, text).map(Amount::units)
+}
+
+/// Whole cents as dollars and cents, such as `0.75`; [`parse_cents`]
+/// reads it back.
+pub fn cents_string(cents: i64) -> String {
+    Amount::new(Currency::Usd, cents).to_decimal_string()
+}
+
 impl fmt::Display for Amount {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let n = self.to_decimal_string();
@@ -358,6 +370,17 @@ mod tests {
 
     fn usd(text: &str) -> Amount {
         Amount::parse(Currency::Usd, text).unwrap()
+    }
+
+    #[test]
+    fn cents_read_and_write_as_dollars_and_cents() {
+        assert_eq!(parse_cents("0.75"), Ok(75));
+        assert_eq!(parse_cents(" 1.5 "), Ok(150));
+        assert_eq!(parse_cents("2"), Ok(200));
+        assert!(parse_cents("0.755").is_err());
+        assert!(parse_cents("-1").is_err());
+        assert_eq!(cents_string(75), "0.75");
+        assert_eq!(cents_string(1200), "12.00");
     }
 
     fn date(s: &str) -> Date {

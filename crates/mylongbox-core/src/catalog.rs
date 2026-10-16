@@ -44,7 +44,7 @@ macro_rules! select_edition {
         concat!(
             "SELECT id, uuid, issue_id, trash_id, variant, printing,
     distribution, cover_price_units, cover_price_currency, barcode, isbn, binding,
-    has_dust_jacket, has_slipcase FROM edition",
+    has_dust_jacket, has_slipcase, canadian_cover_price_cents FROM edition",
             " ",
             $rest
         )
@@ -275,8 +275,8 @@ impl Database {
         self.conn.execute(
             "INSERT INTO edition (uuid, issue_id, variant, printing, distribution,
                  cover_price_units, cover_price_currency, barcode, isbn, binding,
-                 has_dust_jacket, has_slipcase)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                 has_dust_jacket, has_slipcase, canadian_cover_price_cents)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 RowUuid::new_random(),
                 issue,
@@ -290,6 +290,7 @@ impl Database {
                 f.binding,
                 f.has_dust_jacket,
                 f.has_slipcase,
+                f.canadian_cover_price_cents,
             ],
         )?;
         Ok(EditionId(self.conn.last_insert_rowid()))
@@ -312,7 +313,8 @@ impl Database {
         self.conn.execute(
             "UPDATE edition SET variant = ?2, printing = ?3, distribution = ?4,
                  cover_price_units = ?5, cover_price_currency = ?6, barcode = ?7, isbn = ?8,
-                 binding = ?9, has_dust_jacket = ?10, has_slipcase = ?11
+                 binding = ?9, has_dust_jacket = ?10, has_slipcase = ?11,
+                 canadian_cover_price_cents = ?12
              WHERE id = ?1",
             params![
                 id,
@@ -326,6 +328,7 @@ impl Database {
                 f.binding,
                 f.has_dust_jacket,
                 f.has_slipcase,
+                f.canadian_cover_price_cents,
             ],
         )?;
         Ok(())
@@ -836,6 +839,9 @@ fn clean_edition(fields: &EditionFields, category: Category) -> Result<EditionFi
         return refuse("printings start at 1");
     }
     check_amount(f.cover_price, "a cover price")?;
+    if f.canadian_cover_price_cents.is_some_and(|c| c < 0) {
+        return refuse("a Canadian cover price cannot be negative");
+    }
     Ok(f)
 }
 
@@ -1028,6 +1034,7 @@ fn edition_from_row(row: &Row<'_>) -> rusqlite::Result<Edition> {
             binding: row.get(11)?,
             has_dust_jacket: row.get(12)?,
             has_slipcase: row.get(13)?,
+            canadian_cover_price_cents: row.get(14)?,
         },
     })
 }

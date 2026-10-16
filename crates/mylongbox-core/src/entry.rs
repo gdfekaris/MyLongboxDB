@@ -287,6 +287,7 @@ impl Database {
                 e.edition = EditionFields {
                     distribution: e.edition.distribution,
                     cover_price: e.edition.cover_price,
+                    canadian_cover_price_cents: e.edition.canadian_cover_price_cents,
                     binding: e.edition.binding,
                     has_dust_jacket: e.edition.has_dust_jacket,
                     has_slipcase: e.edition.has_slipcase,
@@ -593,6 +594,9 @@ fn merge_edition(old: &EditionFields, new: &EditionFields) -> EditionFields {
         printing: old.printing,
         distribution: old.distribution,
         cover_price: new.cover_price.or(old.cover_price),
+        canadian_cover_price_cents: new
+            .canadian_cover_price_cents
+            .or(old.canadian_cover_price_cents),
         barcode: new.barcode.clone().or_else(|| old.barcode.clone()),
         isbn: new.isbn.clone().or_else(|| old.isbn.clone()),
         binding: new.binding.or(old.binding),

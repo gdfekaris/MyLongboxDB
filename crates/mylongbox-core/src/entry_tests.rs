@@ -432,6 +432,7 @@ fn described(db: &Database, n: &str) -> crate::SavedBook {
     e.edition.variant = "Cover B".into();
     e.edition.distribution = Some(Distribution::Newsstand);
     e.edition.cover_price = Some(Amount::new(Currency::Usd, 12));
+    e.edition.canadian_cover_price_cents = Some(15);
     e.cover_artists = vec!["Don Heck".into()];
     e.copy.grade = Grade::parse("7.0");
     e.copy.purchase_date = Some(crate::Date::new(2024, 5, 1).unwrap());
@@ -467,6 +468,7 @@ fn next_issue_carries_the_run_forward() {
         next.edition.cover_price,
         Some(Amount::new(Currency::Usd, 12))
     );
+    assert_eq!(next.edition.canadian_cover_price_cents, Some(15));
     assert!(next.cover_artists.is_empty());
     assert_eq!(next.copy.grade, None);
     assert_eq!(next.copy.purchase_price, None);

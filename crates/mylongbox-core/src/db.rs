@@ -337,7 +337,7 @@ mod tests {
         }
         let before = dir.join("before.sqlite");
         let db = Database::open_keeping(&path, Some(&before)).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 7);
+        assert_eq!(db.schema_version().unwrap(), 8);
         assert!(db.saved_shelves().unwrap().is_empty());
         db.add_saved_shelf("Everything", &crate::FilterSet::default())
             .unwrap();
@@ -380,7 +380,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 7);
+        assert_eq!(db.schema_version().unwrap(), 8);
         let copy = db.copy(crate::model::CopyId(1)).unwrap();
         let mut fields = CopyFields {
             grade: Grade::from_tenths(94),
@@ -451,7 +451,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 7);
+        assert_eq!(db.schema_version().unwrap(), 8);
         assert!(db.integrity_check().unwrap().is_empty());
         let copy = CopyId(1);
         let signatures = db.signatures(copy).unwrap();
@@ -525,7 +525,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 7);
+        assert_eq!(db.schema_version().unwrap(), 8);
         assert!(db.integrity_check().unwrap().is_empty());
         let numbers: Vec<String> = db
             .browse(Shelf::Everything)

@@ -92,6 +92,7 @@ pub struct Form {
     printing: adw::EntryRow,
     distribution: adw::ComboRow,
     cover_price: MoneyRow,
+    canadian_price: adw::EntryRow,
     barcode: adw::EntryRow,
     cover_artists: NameList,
     isbn: adw::EntryRow,
@@ -427,6 +428,8 @@ impl Form {
             DISTRIBUTIONS.map(|(name, _)| name),
         );
         let cover_price = MoneyRow::new(&gettext("Cover Price"));
+        // Translators: CA$ marks Canadian dollars.
+        let canadian_price = entry_row(&gettext("Canadian Cover Price (CA$)"));
         let barcode = entry_row(&gettext("Barcode"));
         let isbn = entry_row(&gettext("ISBN"));
         let binding = combo_row(&gettext("Binding"), BINDINGS.map(|(name, _)| name));
@@ -446,6 +449,7 @@ impl Form {
             edition.append(&distribution);
         }
         edition.append(&cover_price.row);
+        edition.append(&canadian_price);
         edition.append(&barcode);
         let cover_artists = NameList::new(
             &edition,
@@ -621,6 +625,7 @@ impl Form {
             printing,
             distribution,
             cover_price,
+            canadian_price,
             barcode,
             cover_artists,
             isbn,
@@ -708,6 +713,7 @@ impl Form {
             &self.storage_box,
             &self.box_position,
             &self.cover_price.row,
+            &self.canadian_price,
             &self.purchase_price.row,
             &self.isbn,
             &self.collects,
@@ -782,6 +788,11 @@ impl Form {
             .set_text(&ed.printing.map(|p| p.to_string()).unwrap_or_default());
         select(&self.distribution, &DISTRIBUTIONS, ed.distribution);
         self.cover_price.set(ed.cover_price);
+        self.canadian_price.set_text(
+            &ed.canadian_cover_price_cents
+                .map(mylongbox_core::cents_string)
+                .unwrap_or_default(),
+        );
         self.barcode.set_text(ed.barcode.as_deref().unwrap_or(""));
         self.isbn
             .set_text(ed.isbn.as_ref().map_or("", |i| i.as_str()));
@@ -957,6 +968,23 @@ impl Form {
             ed.has_slipcase = self.slipcase.is_active().then_some(true);
         }
         ed.cover_price = self.cover_price.amount()?;
+        ed.canadian_cover_price_cents = match self
+            .canadian_price
+            .text()
+            .trim()
+            .trim_start_matches(['C', 'A', '$'])
+        {
+            "" => None,
+            text => match mylongbox_core::parse_cents(text) {
+                Ok(cents) => Some(cents),
+                Err(_) => {
+                    return invalid(
+                        &self.canadian_price,
+                        &gettext("Enter the Canadian price in dollars and cents, such as 0.75"),
+                    );
+                }
+            },
+        };
         ed.barcode = Some(self.barcode.text().trim().to_owned()).filter(|b| !b.is_empty());
         e.cover_artists = self
             .cover_artists

@@ -105,7 +105,7 @@ pub use model::{
 };
 pub use money::{
     Amount, ConversionError, Currency, ExchangeRate, ParseAmountError, RateError, RateTable,
-    STALE_AFTER_DAYS,
+    STALE_AFTER_DAYS, cents_string, parse_cents,
 };
 pub use photos::{CoverPhoto, MAX_PHOTO_SIDE};
 pub use search::SearchResults;

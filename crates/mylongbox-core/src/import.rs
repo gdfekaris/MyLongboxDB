@@ -305,6 +305,9 @@ const ALIASES: &[(&str, &str)] = &[
     ("upc", "Barcode"),
     ("isbn13", "ISBN"),
     ("key", "Key Issue"),
+    ("canadian price", "Canadian Cover Price"),
+    ("cad price", "Canadian Cover Price"),
+    ("cover price cad", "Canadian Cover Price"),
     ("legacy", "Legacy Number"),
     ("legacy issue number", "Legacy Number"),
     ("lgy", "Legacy Number"),
@@ -675,6 +678,9 @@ fn plan(cells: &Cells<'_>, today: Date) -> std::result::Result<Planned, String> 
         cells.read("Distribution", |t| code(t, Distribution::from_code))?;
     entry.edition.cover_price = cells.read("Cover Price", |t| {
         money(t, cells.get("Cover Price Currency"))
+    })?;
+    entry.edition.canadian_cover_price_cents = cells.read("Canadian Cover Price", |t| {
+        crate::money::parse_cents(t.trim_start_matches(['C', 'A', '$'])).ok()
     })?;
     entry.edition.barcode = Some(cells.get("Barcode").to_owned()).filter(|b| !b.is_empty());
     entry.edition.isbn = cells.read("ISBN", Isbn::parse)?;

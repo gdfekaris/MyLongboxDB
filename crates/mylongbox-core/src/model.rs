@@ -625,6 +625,9 @@ pub struct EditionFields {
     pub printing: Option<u32>,
     pub distribution: Option<Distribution>,
     pub cover_price: Option<Amount>,
+    /// The Canadian price printed beside the US one, in Canadian cents.
+    /// Shown as printed and never converted or totalled.
+    pub canadian_cover_price_cents: Option<i64>,
     pub barcode: Option<String>,
     /// Collected editions only.
     pub isbn: Option<Isbn>,

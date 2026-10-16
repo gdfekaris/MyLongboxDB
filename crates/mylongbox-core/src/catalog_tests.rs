@@ -93,6 +93,7 @@ fn every_field_round_trips() {
         printing: Some(1),
         distribution: Some(Distribution::Newsstand),
         cover_price: Some(usd("1.00")),
+        canadian_cover_price_cents: Some(125),
         barcode: Some("071486".into()),
         ..EditionFields::default()
     };

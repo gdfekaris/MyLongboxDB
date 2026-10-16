@@ -543,6 +543,15 @@ fn edition_group(
                 )
             })
             .unwrap_or_default(),
+        f.canadian_cover_price_cents
+            .map(|c| {
+                // Translators: CA$ marks Canadian dollars.
+                gettext_f(
+                    "Canadian price CA${amount}",
+                    &[("amount", &mylongbox_core::cents_string(c))],
+                )
+            })
+            .unwrap_or_default(),
     ]);
 
     let group = adw::PreferencesGroup::new();

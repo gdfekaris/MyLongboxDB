@@ -389,6 +389,8 @@ fn edition_fields(rng: &mut Rng, category: Category, variant: u32) -> EditionFie
             Some(*rng.pick(Distribution::ALL))
         },
         cover_price: Some(Amount::new(Currency::Usd, 12 + rng.below(500) as i64)),
+        // Without drawing on the generator, so other fields stay as they were.
+        canadian_cover_price_cents: (variant == 1).then_some(75),
         ..EditionFields::default()
     };
     if category == Category::CollectedEdition {
