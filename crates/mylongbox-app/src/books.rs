@@ -213,13 +213,18 @@ pub fn version(variant: &str, printing: Option<u32>) -> String {
     format::joined([variant.to_owned(), printing.unwrap_or_default()])
 }
 
-/// The line under the cover: number and version, or a book's own title.
+/// The line under the cover: number, cover date, and version, or a
+/// book's own title in place of the number.
 fn issue_line(row: &CopyRow) -> String {
     let first = match &row.number {
         Some(_) => number(row),
         None => row.title.clone(),
     };
-    format::joined([first, version(&row.variant, row.printing)])
+    format::joined([
+        first,
+        format::cover_date(row.cover_date),
+        version(&row.variant, row.printing),
+    ])
 }
 
 fn location(row: &CopyRow) -> String {
@@ -479,13 +484,18 @@ mod tests {
     }
 
     #[test]
-    fn issue_lines_join_number_and_version() {
+    fn issue_lines_join_number_date_and_version() {
         let r = CopyRow {
             variant: "Cover B".into(),
             printing: Some(2),
             ..row()
         };
         assert_eq!(issue_line(&r), "#1 · Cover B · 2nd printing");
+        let dated = CopyRow {
+            cover_date: mylongbox_core::CoverDate::new(1988, Some(5)),
+            ..r
+        };
+        assert_eq!(issue_line(&dated), "#1 · May 1988 · Cover B · 2nd printing");
         let book = CopyRow {
             number: None,
             title: "Spider-Man Omnibus".into(),
