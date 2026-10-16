@@ -153,6 +153,10 @@ pub const FIELDS: &[Field] = &[
     ),
     field(gettext_noop("Key Reason"), Kind::Text(TextField::KeyReason)),
     field(
+        gettext_noop("Legacy Number"),
+        Kind::Number(NumberField::LegacyNumber),
+    ),
+    field(
         gettext_noop("Page Count"),
         Kind::Number(NumberField::PageCount),
     ),

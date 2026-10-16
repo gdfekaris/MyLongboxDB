@@ -72,6 +72,8 @@ pub struct Form {
     magazine_format: adw::ComboRow,
     color: adw::ComboRow,
     number: adw::EntryRow,
+    /// Comics and magazines only.
+    legacy: adw::EntryRow,
     title: adw::EntryRow,
     cover_date: adw::EntryRow,
     release_date: adw::EntryRow,
@@ -259,6 +261,8 @@ impl Form {
             .build();
         joins.add_prefix(&gtk::Image::from_icon_name("dialog-information-symbolic"));
         joins.add_css_class("property");
+        let legacy = entry_row(&gettext("Legacy Number"));
+        legacy.set_visible(category != Category::CollectedEdition);
         let title = entry_row(&gettext("Story Title"));
         let cover_date = entry_row(&match category {
             Category::CollectedEdition => gettext("Publication Date (e.g. Mar 2014)"),
@@ -281,6 +285,7 @@ impl Form {
         issue.append(&color);
         issue.append(&number);
         issue.append(&joins);
+        issue.append(&legacy);
         for row in [&title, &cover_date, &release_date, &pages] {
             issue.append(row);
         }
@@ -591,6 +596,7 @@ impl Form {
             magazine_format,
             color,
             number,
+            legacy,
             title,
             cover_date,
             release_date,
@@ -675,6 +681,7 @@ impl Form {
             &self.volume,
             &self.publisher,
             &self.number,
+            &self.legacy,
             &self.title,
             &self.cover_date,
             &self.release_date,
@@ -735,6 +742,8 @@ impl Form {
         let i = &e.issue;
         self.number
             .set_text(i.number.as_ref().map_or("", |n| n.as_str()));
+        self.legacy
+            .set_text(&i.legacy_number.map(|n| n.to_string()).unwrap_or_default());
         self.title.set_text(&i.title);
         self.cover_date.set_text(&format::cover_date(i.cover_date));
         self.release_date
@@ -863,6 +872,18 @@ impl Form {
         };
         i.release_date = date(&self.release_date)?;
         i.page_count = optional(&self.pages, &gettext("Enter the page count as a number"))?;
+        i.legacy_number = match self.legacy.text().trim().trim_start_matches('#').trim() {
+            "" => None,
+            text => match text.parse() {
+                Ok(n) => Some(n),
+                Err(_) => {
+                    return invalid(
+                        &self.legacy,
+                        &gettext("Enter the legacy number as a whole number, such as 846"),
+                    );
+                }
+            },
+        };
         i.is_key = self.key.is_active();
         i.key_reason = if i.is_key {
             self.key_reason.text().trim().to_owned()

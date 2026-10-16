@@ -17,7 +17,7 @@ use crate::date::Date;
 use crate::db::Database;
 use crate::entry::{BookEntry, SeriesChoice};
 use crate::error::{Error, Result};
-use crate::export::{COLUMNS, ROLE_COLUMNS, split, split_items, split_parts};
+use crate::export::{COLUMNS, ROLE_COLUMN_NAMES, ROLE_COLUMNS, split, split_items, split_parts};
 use crate::issue_number::IssueNumber;
 use crate::model::{
     Binding, BookCondition, Category, CopyId, CoverDate, Distribution, Grade, GradeType, Isbn,
@@ -305,6 +305,9 @@ const ALIASES: &[(&str, &str)] = &[
     ("upc", "Barcode"),
     ("isbn13", "ISBN"),
     ("key", "Key Issue"),
+    ("legacy", "Legacy Number"),
+    ("legacy issue number", "Legacy Number"),
+    ("lgy", "Legacy Number"),
 ];
 
 /// The column each header most likely means, by its name or a common
@@ -633,10 +636,13 @@ fn plan(cells: &Cells<'_>, today: Date) -> std::result::Result<Planned, String> 
     entry.issue.cover_date = cells.read("Cover Date", cover_date)?;
     entry.issue.release_date = cells.read("Release Date", |t| t.parse().ok())?;
     entry.issue.page_count = cells.read("Page Count", number)?;
+    entry.issue.legacy_number = cells.read("Legacy Number", |t| {
+        number(t.trim_start_matches('#').trim())
+    })?;
     entry.issue.is_key = cells.read("Key Issue", yes_no)?.unwrap_or(false);
     entry.issue.key_reason = cells.get("Key Reason").to_owned();
     entry.issue.synopsis = cells.get("Synopsis").to_owned();
-    for (role, column) in ROLE_COLUMNS.iter().zip(&COLUMNS[21..30]) {
+    for (role, column) in ROLE_COLUMNS.iter().zip(ROLE_COLUMN_NAMES) {
         for name in cells.list(column) {
             entry.credits.push((name, *role));
         }

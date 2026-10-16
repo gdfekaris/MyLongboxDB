@@ -357,8 +357,19 @@ fn summary(d: &IssueDetail, current: Option<CopyId>, links: &Links) -> adw::Pref
         // Translators: a series' volume number, as in "Vol. 2".
         .map(|v| gettext_f("Vol. {number}", &[("number", &v.to_string())]))
         .unwrap_or_default();
+    let legacy = f
+        .legacy_number
+        // Translators: the issue's number across a title's relaunches,
+        // as in "Legacy #846".
+        .map(|n| gettext_f("Legacy #{number}", &[("number", &n.to_string())]))
+        .unwrap_or_default();
     let facts = [
-        format::joined([d.publisher.clone().unwrap_or_default(), volume, kind]),
+        format::joined([
+            d.publisher.clone().unwrap_or_default(),
+            volume,
+            legacy,
+            kind,
+        ]),
         format::joined([
             f.cover_date
                 .map(|c| {

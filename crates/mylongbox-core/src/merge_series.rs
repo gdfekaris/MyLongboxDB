@@ -62,6 +62,8 @@ const COMBINE_ISSUE: &[&str] = &[
          cover_year = coalesce(cover_year, (SELECT cover_year FROM issue WHERE id = ?1)),
          release_date = coalesce(release_date, (SELECT release_date FROM issue WHERE id = ?1)),
          page_count = coalesce(page_count, (SELECT page_count FROM issue WHERE id = ?1)),
+         legacy_number = coalesce(legacy_number,
+             (SELECT legacy_number FROM issue WHERE id = ?1)),
          synopsis = CASE WHEN synopsis = ''
              THEN (SELECT synopsis FROM issue WHERE id = ?1) ELSE synopsis END,
          key_reason = CASE WHEN key_reason = ''

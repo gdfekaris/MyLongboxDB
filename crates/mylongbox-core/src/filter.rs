@@ -84,6 +84,7 @@ pub enum TextCondition {
 #[serde(rename_all = "snake_case")]
 pub enum NumberField {
     PageCount,
+    LegacyNumber,
     Printing,
     Volume,
     StartYear,
@@ -375,6 +376,7 @@ impl NumberField {
     fn sql(self) -> CompareSql {
         match self {
             Self::PageCount => compare_sql!(true, "id", "issue", "page_count"),
+            Self::LegacyNumber => compare_sql!(true, "id", "issue", "legacy_number"),
             Self::Printing => compare_sql!(
                 false,
                 "c.id",

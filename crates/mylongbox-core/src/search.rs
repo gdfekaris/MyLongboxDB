@@ -455,12 +455,16 @@ impl Database {
         }
         // A word finds an issue when it is the number or a word of it,
         // so "300" finds #300 but not #30 or #3000, "#300" works as
-        // typed, and "annual" finds Annual 15.
+        // typed, and "annual" finds Annual 15. A legacy number counts
+        // as a number of the issue.
         let wanted = number_word(term.strip_prefix('#').unwrap_or(term));
         if !wanted.is_empty() {
             let numbers = query_all(
                 &self.conn,
-                "SELECT id, number FROM issue WHERE instr(lower(number), ?1) > 0",
+                "SELECT id, number FROM issue WHERE instr(lower(number), ?1) > 0
+                 UNION ALL
+                 SELECT id, CAST(legacy_number AS TEXT) FROM issue
+                 WHERE CAST(legacy_number AS TEXT) = ?1",
                 [&wanted],
                 |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
             )?;

@@ -73,6 +73,7 @@ fn every_field_round_trips() {
 
     let issue = IssueFields {
         number: number("1"),
+        legacy_number: Some(1),
         title: "Curse of the Cat-Goddess".into(),
         cover_date: CoverDate::new(1974, Some(8)),
         release_date: Some("1974-05-14".parse().unwrap()),

@@ -31,6 +31,7 @@ pub const COLUMNS: &[&str] = &[
     "Black and White",
     "Series Notes",
     "Issue Number",
+    "Legacy Number",
     "Story Title",
     "Cover Date",
     "Release Date",
@@ -87,6 +88,19 @@ pub const COLUMNS: &[&str] = &[
     "Front Photo",
     "Back Photo",
     "Signature Photo",
+];
+
+/// The columns of the credit roles, in the order of [`ROLE_COLUMNS`].
+pub(crate) const ROLE_COLUMN_NAMES: [&str; 9] = [
+    "Writers",
+    "Pencillers",
+    "Inkers",
+    "Colorists",
+    "Letterers",
+    "Cover Artists",
+    "Editors",
+    "Article Writers",
+    "Interviews",
 ];
 
 /// The credit roles in the order of their columns.
@@ -352,6 +366,7 @@ impl Database {
             yes_no(s.black_and_white),
             s.notes.clone(),
             text(i.number.as_ref().map(|n| n.as_str().to_owned())),
+            text(i.legacy_number),
             i.title.clone(),
             i.cover_date.map(cover_date).unwrap_or_default(),
             text(i.release_date),

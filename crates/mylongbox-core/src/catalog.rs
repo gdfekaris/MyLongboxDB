@@ -29,7 +29,8 @@ macro_rules! select_issue {
     ($rest:literal) => {
         concat!(
             "SELECT id, uuid, series_id, trash_id, number, title, cover_year,
-    cover_month, release_date, page_count, synopsis, is_key, key_reason FROM issue",
+    cover_month, release_date, page_count, synopsis, is_key, key_reason, legacy_number
+    FROM issue",
             " ",
             $rest
         )
@@ -164,8 +165,9 @@ impl Database {
         check_number_free(&tx, series, &f, None)?;
         tx.execute(
             "INSERT INTO issue (uuid, series_id, number, number_sort, title, cover_year,
-                 cover_month, release_date, page_count, synopsis, is_key, key_reason)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                 cover_month, release_date, page_count, synopsis, is_key, key_reason,
+                 legacy_number)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 RowUuid::new_random(),
                 series,
@@ -179,6 +181,7 @@ impl Database {
                 f.synopsis,
                 f.is_key,
                 f.key_reason,
+                f.legacy_number,
             ],
         )?;
         let id = IssueId(tx.last_insert_rowid());
@@ -205,7 +208,7 @@ impl Database {
         tx.execute(
             "UPDATE issue SET number = ?2, number_sort = ?3, title = ?4, cover_year = ?5,
                  cover_month = ?6, release_date = ?7, page_count = ?8, synopsis = ?9,
-                 is_key = ?10, key_reason = ?11
+                 is_key = ?10, key_reason = ?11, legacy_number = ?12
              WHERE id = ?1",
             params![
                 id,
@@ -219,6 +222,7 @@ impl Database {
                 f.synopsis,
                 f.is_key,
                 f.key_reason,
+                f.legacy_number,
             ],
         )?;
         tx.commit()?;
@@ -970,6 +974,7 @@ fn issue_from_row(row: &Row<'_>) -> rusqlite::Result<Issue> {
         trash: row.get(3)?,
         fields: IssueFields {
             number: row.get(4)?,
+            legacy_number: row.get(13)?,
             title: row.get(5)?,
             cover_date,
             release_date: row.get(8)?,

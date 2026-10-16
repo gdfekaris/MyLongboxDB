@@ -420,6 +420,7 @@ fn described(db: &Database, n: &str) -> crate::SavedBook {
     e.issue.title = "The Sentinels Live".into();
     e.issue.cover_date = CoverDate::new(1967, Some(12));
     e.issue.synopsis = "A synopsis.".into();
+    e.issue.legacy_number = Some(500);
     e.issue.is_key = true;
     e.credits = vec![("Roy Thomas".into(), Role::Writer)];
     e.characters = vec![("Cyclops".into(), true)];
@@ -448,6 +449,7 @@ fn next_issue_carries_the_run_forward() {
 
     assert_eq!(next.series, SeriesChoice::Existing(saved.series));
     assert_eq!(next.issue.number, number("42"));
+    assert_eq!(next.issue.legacy_number, Some(501));
     assert_eq!(next.issue.cover_date, CoverDate::new(1968, Some(1)));
     assert_eq!(next.issue.title, "");
     assert_eq!(next.issue.synopsis, "");

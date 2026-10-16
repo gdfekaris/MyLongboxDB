@@ -434,3 +434,10 @@ fn a_full_export_of_chosen_copies_holds_only_their_photos() {
         .count();
     assert_eq!(photos, 1);
 }
+
+#[test]
+fn credit_columns_are_named_in_the_header() {
+    for name in crate::export::ROLE_COLUMN_NAMES {
+        assert!(COLUMNS.contains(&name), "{name}");
+    }
+}

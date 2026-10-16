@@ -276,6 +276,7 @@ impl Database {
         match kind {
             Prefill::NextIssue => {
                 let mut issue = IssueFields::new(e.issue.number.as_ref().and_then(|n| n.next()));
+                issue.legacy_number = e.issue.legacy_number.and_then(|n| n.checked_add(1));
                 issue.cover_date = e.issue.cover_date.and_then(|d| d.next_month());
                 e.issue = issue;
                 e.characters.clear();
@@ -571,6 +572,7 @@ fn text_or(new: &str, old: &str) -> String {
 fn merge_issue(old: &IssueFields, new: &IssueFields) -> IssueFields {
     IssueFields {
         number: old.number.clone(),
+        legacy_number: new.legacy_number.or(old.legacy_number),
         title: text_or(&new.title, &old.title),
         cover_date: new.cover_date.or(old.cover_date),
         release_date: new.release_date.or(old.release_date),

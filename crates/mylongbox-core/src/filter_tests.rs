@@ -69,6 +69,7 @@ fn sample() -> Sample {
     e.issue.cover_date = CoverDate::new(1973, Some(6));
     e.issue.release_date = Some(date("1973-03-13"));
     e.issue.page_count = Some(36);
+    e.issue.legacy_number = Some(121);
     e.issue.is_key = true;
     e.issue.key_reason = "Death of Gwen Stacy".into();
     e.credits = vec![
@@ -353,6 +354,13 @@ fn numbers_grades_and_issue_numbers_compare() {
                 compare: Compare::AtLeast(100),
             },
             set(&[s.e]),
+        ),
+        (
+            Filter::Number {
+                field: NumberField::LegacyNumber,
+                compare: Compare::AtLeast(100),
+            },
+            set(&[s.a]),
         ),
         (
             Filter::Number {

@@ -244,6 +244,11 @@ pub(crate) fn generate(db: &Database, spec: FixtureSpec) -> Result<FixtureSummar
             } else {
                 32 + rng.below(40) as u32
             });
+            // Every tenth comic as if from a relaunched run, without
+            // drawing on the generator, so other fields stay as they were.
+            if category == Category::Comic && n % 10 == 0 {
+                issue_fields.legacy_number = Some(400 + n);
+            }
             issue_fields.is_key = rng.chance(4);
             if issue_fields.is_key {
                 issue_fields.key_reason = "First appearance".into();

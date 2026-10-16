@@ -577,6 +577,9 @@ pub struct Series {
 pub struct IssueFields {
     /// `None` only for a standalone collected edition.
     pub number: Option<IssueNumber>,
+    /// The number across the title's relaunches, as in Amazing
+    /// Spider-Man (2018) #45, legacy #846.
+    pub legacy_number: Option<u32>,
     pub title: String,
     pub cover_date: Option<CoverDate>,
     pub release_date: Option<Date>,
@@ -590,6 +593,7 @@ impl IssueFields {
     pub fn new(number: Option<IssueNumber>) -> Self {
         Self {
             number,
+            legacy_number: None,
             title: String::new(),
             cover_date: None,
             release_date: None,

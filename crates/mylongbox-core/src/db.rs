@@ -337,7 +337,7 @@ mod tests {
         }
         let before = dir.join("before.sqlite");
         let db = Database::open_keeping(&path, Some(&before)).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 5);
+        assert_eq!(db.schema_version().unwrap(), 6);
         assert!(db.saved_shelves().unwrap().is_empty());
         db.add_saved_shelf("Everything", &crate::FilterSet::default())
             .unwrap();
@@ -380,7 +380,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 5);
+        assert_eq!(db.schema_version().unwrap(), 6);
         let copy = db.copy(crate::model::CopyId(1)).unwrap();
         let mut fields = CopyFields {
             grade: Grade::from_tenths(94),
@@ -451,7 +451,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 5);
+        assert_eq!(db.schema_version().unwrap(), 6);
         assert!(db.integrity_check().unwrap().is_empty());
         let copy = CopyId(1);
         let signatures = db.signatures(copy).unwrap();
@@ -525,7 +525,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 5);
+        assert_eq!(db.schema_version().unwrap(), 6);
         assert!(db.integrity_check().unwrap().is_empty());
         let numbers: Vec<String> = db
             .browse(Shelf::Everything)
@@ -534,6 +534,13 @@ mod tests {
             .map(|r| r.number.unwrap_or_default())
             .collect();
         assert_eq!(numbers, ["NN", "1", "Alpha"]);
+        assert_eq!(
+            db.issue(crate::model::IssueId(1))
+                .unwrap()
+                .fields
+                .legacy_number,
+            None
+        );
         // The stored key is the one the number makes now, so the issue
         // is still found as a duplicate when entered again.
         let key: String = db

@@ -175,6 +175,20 @@ fn issue_numbers_are_found_as_whole_words() {
 }
 
 #[test]
+fn legacy_numbers_are_found_like_issue_numbers() {
+    let db = db();
+    let mut relaunched = entry("Amazing Spider-Man", 2018, "45");
+    relaunched.issue.legacy_number = Some(846);
+    let relaunched = add(&db, &relaunched);
+    let original = add(&db, &entry("Amazing Spider-Man", 1963, "84"));
+    assert_eq!(found(&db, "spider-man 846"), [relaunched]);
+    assert_eq!(found(&db, "#846"), [relaunched]);
+    assert_eq!(found(&db, "spider 45"), [relaunched]);
+    // Only the whole number, as with issue numbers.
+    assert_eq!(found(&db, "spider 84"), [original]);
+}
+
+#[test]
 fn names_rank_above_notes_and_whole_matches_above_parts() {
     let db = db();
     let mut noted = entry("Avengers", 1963, "4");
