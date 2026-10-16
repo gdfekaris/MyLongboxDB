@@ -121,8 +121,10 @@ pub fn page(d: &IssueDetail, links: &Links, current: Option<CopyId>) -> adw::Nav
                 .iter()
                 .enumerate()
                 .find(|(_, e)| e.copies.iter().any(|c| c.copy.id == current));
-            if let Some((n, edition)) = mine {
-                prefs.add(&edition_group(edition, n, category, links, Some(current)));
+            if let Some((n, edition)) = mine
+                && let Some(copy) = edition.copies.iter().find(|c| c.copy.id == current)
+            {
+                prefs.add(&this_copy(edition, n, copy, category, links));
             }
             if let Some(group) = other_copies(d, current, category, links) {
                 prefs.add(&group);
@@ -132,7 +134,7 @@ pub fn page(d: &IssueDetail, links: &Links, current: Option<CopyId>) -> adw::Nav
         // reprints, has editions but no copies to choose between.
         None => {
             for (n, edition) in d.editions.iter().enumerate() {
-                prefs.add(&edition_group(edition, n, category, links, None));
+                prefs.add(&edition_group(edition, n, links));
             }
         }
     }
@@ -510,13 +512,15 @@ fn appearances(d: &IssueDetail) -> Option<adw::PreferencesGroup> {
 }
 
 /// An edition's own facts, then one expandable row per copy.
-fn edition_group(
+/// The edition's name and facts, with its cover art and codes. Trashing
+/// an edition trashes its copies, so that is offered only where it
+/// touches no copy but `current`, if any.
+fn edition_rows(
     e: &EditionDetail,
     index: usize,
-    category: Category,
     links: &Links,
     current: Option<CopyId>,
-) -> adw::PreferencesGroup {
+) -> Vec<adw::ActionRow> {
     let f = &e.edition.fields;
     let name = edition_name(e, index);
     let artists: Vec<_> = e.cover_artists.iter().map(|a| a.name.as_str()).collect();
@@ -554,15 +558,13 @@ fn edition_group(
             .unwrap_or_default(),
     ]);
 
-    let group = adw::PreferencesGroup::new();
+    let mut rows = Vec::new();
     // A header row rather than the group title, so the name can be bold
     // while the variant, which the user typed, is escaped.
     let header = row("", &facts);
     header.set_use_markup(true);
     header.set_title(&format!("<b>{}</b>", glib::markup_escape_text(&name)));
     header.set_subtitle(&glib::markup_escape_text(&facts));
-    // Trashing an edition trashes its copies, so it is offered only
-    // where that touches no copy but the one being viewed.
     let only_this = e.copies.iter().all(|c| Some(c.copy.id) == current);
     if only_this {
         let trash = gtk::Button::builder()
@@ -576,15 +578,25 @@ fn edition_group(
         trash.connect_clicked(move |_| hook(edition));
         header.add_suffix(&trash);
     }
-    group.add(&header);
+    rows.push(header);
     if !artists.is_empty() {
-        group.add(&property(&gettext("Cover Art"), &artists.join(", ")));
+        rows.push(property(&gettext("Cover Art"), &artists.join(", ")));
     }
     if let Some(isbn) = &f.isbn {
-        group.add(&property(&gettext("ISBN"), isbn.as_str()));
+        rows.push(property(&gettext("ISBN"), isbn.as_str()));
     }
     if let Some(barcode) = &f.barcode {
-        group.add(&property(&gettext("Barcode"), barcode));
+        rows.push(property(&gettext("Barcode"), barcode));
+    }
+    rows
+}
+
+/// An edition of an issue known only from the catalog, which has no
+/// copies to show.
+fn edition_group(e: &EditionDetail, index: usize, links: &Links) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    for row in edition_rows(e, index, links, None) {
+        group.add(&row);
     }
     if e.copies.is_empty() {
         let none = row(
@@ -594,11 +606,39 @@ fn edition_group(
         none.add_css_class("dim-label");
         group.add(&none);
     }
-    // Copies keep their number within the edition, whichever is shown.
-    for (copy, number) in e.copies.iter().zip(1..) {
-        if Some(copy.copy.id) == current {
-            group.add(&copy_row(copy, number, category, links));
-        }
+    group
+}
+
+/// The copy being viewed: what it is, its edition, its photos,
+/// everything about it, and the ways to change it.
+fn this_copy(
+    e: &EditionDetail,
+    index: usize,
+    c: &CopyDetail,
+    category: Category,
+    links: &Links,
+) -> adw::PreferencesGroup {
+    let group = group(&gettext("This Copy"));
+    let copy = c.copy.id;
+    let edit = gtk::Button::builder()
+        .icon_name("document-edit-symbolic")
+        .valign(gtk::Align::Center)
+        .tooltip_text(gettext("Edit This Copy"))
+        .css_classes(["flat"])
+        .build();
+    let hook = links.edit.clone();
+    edit.connect_clicked(move |_| hook(copy));
+    let buttons = gtk::Box::builder().valign(gtk::Align::Center).build();
+    buttons.append(&edit);
+    buttons.append(&more_menu(&group, copy, category, links));
+    group.set_header_suffix(Some(&buttons));
+    group.add(&row(&copy_summary(c, category), ""));
+    for row in edition_rows(e, index, links, Some(copy)) {
+        group.add(&row);
+    }
+    group.add(&photo_row(c, links));
+    for row in copy_details(c, links) {
+        group.add(&row);
     }
     group
 }
@@ -629,11 +669,10 @@ fn other_copies(
     let group = group(&gettext("My Other Copies"));
     let mut any = false;
     for (index, e) in d.editions.iter().enumerate() {
-        for (copy, number) in e.copies.iter().zip(1..) {
+        for copy in &e.copies {
             if copy.copy.id != current {
                 group.add(&other_copy_row(
                     copy,
-                    number,
                     &edition_name(e, index),
                     category,
                     links,
@@ -645,9 +684,8 @@ fn other_copies(
     any.then_some(group)
 }
 
-/// A copy's name and state in one line, and where it is and what it is
-/// worth in another.
-fn copy_summary(c: &CopyDetail, number: usize, category: Category) -> (String, String) {
+/// A copy's condition, and whether it is signed, in one line.
+fn copy_summary(c: &CopyDetail, category: Category) -> String {
     let f = &c.copy.fields;
     let condition = match category {
         Category::CollectedEdition => f
@@ -659,19 +697,7 @@ fn copy_summary(c: &CopyDetail, number: usize, category: Category) -> (String, S
             g => g,
         },
     };
-    let value = c
-        .values
-        .last()
-        .map(|v| {
-            gettext_f(
-                "Worth {amount}",
-                &[("amount", &format::money(v.value, None))],
-            )
-        })
-        .unwrap_or_default();
-    let title = format::joined([
-        // Translators: copies of one edition are numbered 1, 2, 3...
-        gettext_f("Copy {number}", &[("number", &number.to_string())]),
+    format::joined([
         condition,
         match c.signatures.len() {
             0 => String::new(),
@@ -683,11 +709,7 @@ fn copy_summary(c: &CopyDetail, number: usize, category: Category) -> (String, S
                 &[("count", &n.to_string())],
             ),
         },
-    ]);
-    (
-        title,
-        format::joined([location(c).as_str(), value.as_str()]),
-    )
+    ])
 }
 
 /// Where a copy is kept, if that was noted.
@@ -706,13 +728,12 @@ fn location(c: &CopyDetail) -> String {
 /// that copy.
 fn other_copy_row(
     c: &CopyDetail,
-    number: usize,
     edition: &str,
     category: Category,
     links: &Links,
 ) -> adw::ActionRow {
-    let (title, subtitle) = copy_summary(c, number, category);
-    let row = row(&format::joined([edition.to_owned(), title]), &subtitle);
+    let title = format::joined([edition.to_owned(), copy_summary(c, category)]);
+    let row = row(&title, &location(c));
     row.set_activatable(true);
     row.set_tooltip_text(Some(&gettext("View This Copy")));
     row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
@@ -722,36 +743,14 @@ fn other_copy_row(
     row
 }
 
-/// The copy being viewed, unfolded, with its photos, everything about
-/// it, and the ways to change it.
-fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) -> adw::ExpanderRow {
+/// Everything recorded about a copy, as rows, ending with its value
+/// history.
+fn copy_details(c: &CopyDetail, links: &Links) -> Vec<gtk::Widget> {
     let f = &c.copy.fields;
-    let (title, subtitle) = copy_summary(c, number, category);
-    let row = expander(&title, &subtitle);
-    row.set_expanded(true);
-    // Translators: marks the copy being viewed among the copies of an
-    // issue.
-    let this = gtk::Label::builder()
-        .label(gettext("This copy"))
-        .valign(gtk::Align::Center)
-        .css_classes(["accent", "caption-heading"])
-        .build();
-    row.add_prefix(&this);
-    let edit = gtk::Button::builder()
-        .icon_name("document-edit-symbolic")
-        .valign(gtk::Align::Center)
-        .tooltip_text(gettext("Edit This Copy"))
-        .css_classes(["flat"])
-        .build();
-    let hook = links.edit.clone();
-    let copy = c.copy.id;
-    edit.connect_clicked(move |_| hook(copy));
-    row.add_suffix(&edit);
-    row.add_suffix(&more_menu(&row, copy, category, links));
-    row.add_row(&photo_row(c, links));
-    let add = |label: &str, value: String| {
+    let mut rows: Vec<gtk::Widget> = Vec::new();
+    let mut add = |label: &str, value: String| {
         if !value.is_empty() {
-            row.add_row(&property(label, &value));
+            rows.push(property(label, &value).upcast());
         }
     };
     add(
@@ -829,8 +828,8 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
             .map(format::date)
             .unwrap_or_default(),
     );
-    value_history(&row, c, links);
-    row
+    rows.extend(value_history(c, links));
+    rows
 }
 
 /// The copy's front and back photos and the photo of its signature,
@@ -960,15 +959,17 @@ fn photo_slot(copy: CopyId, side: Side, has_photo: bool, links: &Links) -> gtk::
 
 /// The copy's values over time: a small chart once there are two, each
 /// value with a way to delete it, and a way to add one.
-fn value_history(row: &adw::ExpanderRow, c: &CopyDetail, links: &Links) {
+fn value_history(c: &CopyDetail, links: &Links) -> Vec<gtk::Widget> {
+    let mut rows: Vec<gtk::Widget> = Vec::new();
     if c.values.len() >= 2 {
         let chart = chart::value_chart(&c.values);
-        row.add_row(
-            &gtk::ListBoxRow::builder()
+        rows.push(
+            gtk::ListBoxRow::builder()
                 .child(&chart)
                 .activatable(false)
                 .selectable(false)
-                .build(),
+                .build()
+                .upcast(),
         );
     }
     for v in c.values.iter().rev() {
@@ -989,7 +990,7 @@ fn value_history(row: &adw::ExpanderRow, c: &CopyDetail, links: &Links) {
         let (copy, entry_data) = (c.copy.id, v.clone());
         delete.connect_clicked(move |_| hook(copy, entry_data.clone()));
         entry.add_suffix(&delete);
-        row.add_row(&entry);
+        rows.push(entry.upcast());
     }
     let add = adw::ButtonRow::builder()
         .title(gettext("Add Value"))
@@ -998,7 +999,8 @@ fn value_history(row: &adw::ExpanderRow, c: &CopyDetail, links: &Links) {
     let hook = links.add_value.clone();
     let copy = c.copy.id;
     add.connect_activated(move |_| hook(copy));
-    row.add_row(&add);
+    rows.push(add.upcast());
+    rows
 }
 
 fn plain_row(title: &str, subtitle: &str) -> adw::ActionRow {
@@ -1046,7 +1048,7 @@ fn issue_menu(
 /// The ways to start a new book from this copy, as a menu of actions
 /// that belong to the copy's row.
 fn more_menu(
-    row: &adw::ExpanderRow,
+    row: &impl IsA<gtk::Widget>,
     copy: CopyId,
     category: Category,
     links: &Links,
