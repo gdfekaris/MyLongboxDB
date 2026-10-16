@@ -643,13 +643,13 @@ fn this_copy(
     group
 }
 
-/// e.g. `Cover B, 2nd printing`, or `Standard Edition` for the first
+/// e.g. `Cover B, 2nd printing`, or `Standard Cover` for the first
 /// edition with neither; a later one is told apart by how it was sold
 /// when it can be.
 fn edition_name(e: &EditionDetail, index: usize) -> String {
     let f = &e.edition.fields;
     match version(&f.variant, f.printing) {
-        v if v.is_empty() && index == 0 => gettext("Standard Edition"),
+        v if v.is_empty() && index == 0 => gettext("Standard Cover"),
         v if v.is_empty() => f.distribution.map_or_else(
             || gettext("Edition"),
             |d| format::distribution(d).to_owned(),
