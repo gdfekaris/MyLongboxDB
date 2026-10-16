@@ -286,7 +286,7 @@ impl Form {
         }
         issue.append(&key);
         issue.append(&key_reason);
-        issue.append(&text_row(&gettext("Synopsis"), &synopsis));
+        issue.append(&text_row(&gettext("Notes About This Issue"), &synopsis));
         for row in [&start_year, &volume, &publisher] {
             row.set_visible(false);
         }
@@ -483,7 +483,7 @@ impl Form {
             &dirty,
         );
         let notes = text_view();
-        copy.append(&text_row(&gettext("Notes"), &notes));
+        copy.append(&text_row(&gettext("Notes on This Copy"), &notes));
 
         let signed = entry.is_some_and(|e| !e.signatures.is_empty());
         let signatures = SignatureList::new(

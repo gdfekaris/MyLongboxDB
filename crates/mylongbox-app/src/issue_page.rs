@@ -60,7 +60,7 @@ pub fn page(d: &IssueDetail, links: &Links, current: Option<CopyId>) -> adw::Nav
     let prefs = adw::PreferencesPage::new();
     prefs.add(&summary(d, current, links));
     if !d.issue.fields.synopsis.is_empty() {
-        let group = group(&gettext("Synopsis"));
+        let group = group(&gettext("Notes About This Issue"));
         group.add(&paragraph(&d.issue.fields.synopsis));
         prefs.add(&group);
     }
@@ -800,7 +800,7 @@ fn copy_row(c: &CopyDetail, number: usize, category: Category, links: &Links) ->
             .collect::<Vec<_>>()
             .join(", "),
     );
-    add(&gettext("Notes"), f.notes.clone());
+    add(&gettext("Notes on This Copy"), f.notes.clone());
     add(
         // Translators: when the copy was added to the collection.
         &gettext("Added"),

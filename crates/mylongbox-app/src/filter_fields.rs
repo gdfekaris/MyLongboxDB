@@ -143,8 +143,14 @@ pub const FIELDS: &[Field] = &[
     ),
     field(gettext_noop("Label"), Kind::Text(TextField::LabelType)),
     field(gettext_noop("Seller"), Kind::Text(TextField::Seller)),
-    field(gettext_noop("Notes"), Kind::Text(TextField::Notes)),
-    field(gettext_noop("Synopsis"), Kind::Text(TextField::Synopsis)),
+    field(
+        gettext_noop("Notes on This Copy"),
+        Kind::Text(TextField::Notes),
+    ),
+    field(
+        gettext_noop("Notes About This Issue"),
+        Kind::Text(TextField::Synopsis),
+    ),
     field(gettext_noop("Key Reason"), Kind::Text(TextField::KeyReason)),
     field(
         gettext_noop("Page Count"),
@@ -219,7 +225,10 @@ pub const FIELDS: &[Field] = &[
         Kind::Has(Presence::ReleaseDate),
     ),
     field(gettext_noop("Any Tags"), Kind::Has(Presence::Tags)),
-    field(gettext_noop("Any Notes"), Kind::Has(Presence::Notes)),
+    field(
+        gettext_noop("Any Notes on This Copy"),
+        Kind::Has(Presence::Notes),
+    ),
     field(gettext_noop("Date Added"), Kind::Date(DateField::Added)),
 ];
 
