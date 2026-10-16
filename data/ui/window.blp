@@ -66,6 +66,8 @@ template $MainWindow: Adw.ApplicationWindow {
         name: "collection";
 
         child: Adw.NavigationSplitView split_view {
+          max-sidebar-width: 220;
+
           sidebar: Adw.NavigationPage {
             title: _("MyLongboxDB");
 
