@@ -333,7 +333,7 @@ fn a_full_export_holds_the_csv_photos_and_readme() {
     let mut out = Cursor::new(Vec::new());
     assert_eq!(db.export_zip(None, &mut out).unwrap(), 3);
     let mut zip = zip::ZipArchive::new(Cursor::new(out.into_inner())).unwrap();
-    let mut names: Vec<String> = zip.file_names().map(str::to_owned).collect();
+    let mut names: Vec<String> = zip.file_names().map(|n| n.unwrap().into_owned()).collect();
     names.sort();
     let mut wanted = vec![
         "README.txt".to_owned(),
@@ -431,7 +431,7 @@ fn a_full_export_of_chosen_copies_holds_only_their_photos() {
     let zip = zip::ZipArchive::new(Cursor::new(out.into_inner())).unwrap();
     let photos = zip
         .file_names()
-        .filter(|n| n.starts_with("images/"))
+        .filter(|n| n.as_ref().unwrap().starts_with("images/"))
         .count();
     assert_eq!(photos, 1);
 }
