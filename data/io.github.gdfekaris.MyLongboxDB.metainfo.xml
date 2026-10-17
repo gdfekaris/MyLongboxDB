@@ -79,6 +79,21 @@
   </supports>
 
   <releases>
+    <release version="0.1.4" date="2026-10-16">
+      <description>
+        <p>Collection Stats, a This Copy section, and more issue details.</p>
+        <ul>
+          <li>A book's page has a This Copy section, and an issue's copies are listed standard covers first, then by printing, Direct or Newsstand, grading, and signatures</li>
+          <li>Record an issue's legacy number, a series' imprint, and a Canadian cover price; quick search finds legacy numbers and imprints</li>
+          <li>Series are labelled by start year, such as "X-Men (1963 series)", or by volume</li>
+          <li>Issues numbered "nn" come before numbered issues</li>
+          <li>The grid shows each issue's cover date</li>
+          <li>A Collection Stats page shows the collection's size, value, condition, and cover dates; the results bar shows the book count</li>
+          <li>Notes are labelled Notes About This Issue and Notes on This Copy, and editions are named Standard Cover, Direct, and Newsstand</li>
+          <li>A narrower sidebar, and an updated zip library</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.3" date="2026-10-13">
       <description>
         <p>Series and name editing, signature details, and an About window.</p>
