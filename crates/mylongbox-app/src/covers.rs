@@ -13,8 +13,8 @@ use adw::prelude::*;
 use gtk::{gdk, glib};
 use mylongbox_core::{CopyId, CoverPhoto, Database, Side};
 use mylongbox_media::{
-    Edit, MAX_SAVED_SIDE, Output, RgbImage, THUMBNAIL_EDGE, apply_edit, decode_bytes, decode_file,
-    decode_saved, encode, preview, upright,
+    Edit, MAX_SAVED_SIDE, Output, RgbImage, THUMBNAIL_EDGE, apply_edit, decode_bytes, decode_saved,
+    encode, preview, read_file, upright,
 };
 
 /// Thumbnails kept decoded: a few screens of the cover grid.
@@ -131,9 +131,34 @@ impl std::fmt::Debug for Loaded {
 /// Reads a photo file and readies it for editing. Slow for large
 /// photos, so it runs away from the window.
 pub fn load(path: &Path) -> Result<Loaded, String> {
-    let full = upright(decode_file(path).map_err(|e| e.to_string())?);
+    let bytes = read_file(path).map_err(|e| e.to_string())?;
+    let full = confined(move || Ok(upright(decode_bytes(&bytes).map_err(|e| e.to_string())?)))?;
     let preview = preview(&full, PREVIEW_EDGE);
     Ok(Loaded { full, preview })
+}
+
+/// Decodes on a thread of its own that can reach no files, sockets, or
+/// other descriptors, so a photo crafted to take over a decoder finds
+/// nothing within reach of that thread. The decoders are the code most
+/// exposed to files from elsewhere, and partly written in C.
+fn confined<T: Send + 'static>(
+    decode: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    let thread = std::thread::Builder::new()
+        .name("photo".into())
+        .spawn(move || {
+            match mylongbox_sandbox::confine_thread() {
+                Ok(mylongbox_sandbox::Enforced::Fully) => {}
+                // The filter still holds where Landlock does not.
+                Ok(level) => eprintln!("mylongboxdb: photo thread file limits: {level:?}"),
+                Err(why) => return Err(format!("the photo could not be read safely: {why}")),
+            }
+            decode()
+        })
+        .map_err(|e| e.to_string())?;
+    thread
+        .join()
+        .unwrap_or_else(|_| Err("the photo could not be read".into()))
 }
 
 /// Applies the editor's changes to the full photo and makes the JPEGs
@@ -158,7 +183,8 @@ pub fn finish(full: &RgbImage, edit: &Edit, output: Output) -> Result<CoverPhoto
 /// decoded with the same limits as a photo picked by hand. Slow, so it
 /// runs away from the window.
 pub fn prepare(bytes: &[u8], output: Output) -> Result<CoverPhoto, String> {
-    let full = upright(decode_bytes(bytes).map_err(|e| e.to_string())?);
+    let bytes = bytes.to_vec();
+    let full = confined(move || Ok(upright(decode_bytes(&bytes).map_err(|e| e.to_string())?)))?;
     finish(&full, &Edit::default(), output)
 }
 

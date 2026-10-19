@@ -917,6 +917,7 @@ dependencies = [
  "image",
  "libheif-rs",
  "moxcms",
+ "mylongbox-sandbox",
  "sha2",
 ]
 

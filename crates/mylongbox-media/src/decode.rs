@@ -101,6 +101,12 @@ impl From<std::io::Error> for DecodeError {
 
 /// Reads the photo at `path`. The file is only read, never changed.
 pub fn decode_file(path: &Path) -> Result<Decoded, DecodeError> {
+    decode_bytes(&read_file(path)?)
+}
+
+/// The bytes of the photo at `path`, refused without reading it all if
+/// it is too large to decode, for decoding apart from reading.
+pub fn read_file(path: &Path) -> Result<Vec<u8>, DecodeError> {
     let file = File::open(path)?;
     let bytes = file.metadata()?.len();
     if bytes > MAX_FILE_BYTES {
@@ -109,7 +115,11 @@ pub fn decode_file(path: &Path) -> Result<Decoded, DecodeError> {
     // The size is checked again while reading, in case the file grows.
     let mut data = Vec::new();
     file.take(MAX_FILE_BYTES + 1).read_to_end(&mut data)?;
-    decode_bytes(&data)
+    let bytes = u64::try_from(data.len()).unwrap_or(u64::MAX);
+    if bytes > MAX_FILE_BYTES {
+        return Err(DecodeError::TooLarge { bytes });
+    }
+    Ok(data)
 }
 
 /// Reads a photo held in memory.
@@ -516,6 +526,33 @@ mod tests {
     #[test]
     fn heic_needs_the_heic_feature() {
         assert!(matches!(decode_bytes(HEIC), Err(DecodeError::Unsupported)));
+    }
+
+    /// Decodes and readies `data` on a thread confined as the app
+    /// confines its photo threads.
+    fn decode_confined(data: Vec<u8>) -> Result<(u32, u32), DecodeError> {
+        std::thread::spawn(move || {
+            mylongbox_sandbox::confine_thread().unwrap();
+            decode_bytes(&data).map(|d| crate::upright(d).dimensions())
+        })
+        .join()
+        .unwrap()
+    }
+
+    #[test]
+    fn photos_decode_on_a_confined_thread() {
+        for format in [ImageFormat::Jpeg, ImageFormat::Png, ImageFormat::WebP] {
+            assert_eq!(decode_confined(encoded(format)).unwrap(), (30, 20));
+        }
+        assert!(decode_confined(b"not a photo".to_vec()).is_err());
+    }
+
+    #[cfg(feature = "heic")]
+    #[test]
+    #[ignore = "needs libheif with an HEVC decoder, as built into the Flatpak"]
+    fn heic_decodes_on_a_confined_thread() {
+        let (width, height) = decode_confined(HEIC.to_vec()).unwrap();
+        assert!(width > 0 && height > 0);
     }
 
     #[cfg(feature = "heic")]
