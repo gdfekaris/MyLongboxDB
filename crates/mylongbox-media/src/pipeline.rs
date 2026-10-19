@@ -60,20 +60,20 @@ pub(crate) fn is_deep(image: &DynamicImage) -> bool {
 }
 
 /// The photo with any transparency laid over white, as a cover would sit
-/// on a white page.
+/// on a white page. An RGBA picture is narrowed to RGB in its own buffer,
+/// so a large photo is never held twice.
 fn flatten_8(image: DynamicImage) -> RgbImage {
     if !image.color().has_alpha() {
         return image.into_rgb8();
     }
     let rgba = image.into_rgba8();
+    let (width, height) = rgba.dimensions();
     let over_white = |c: u8, a: u8| {
         let (c, a) = (u32::from(c), u32::from(a));
         u8::try_from((c * a + 255 * (255 - a) + 127) / 255).unwrap_or(u8::MAX)
     };
-    RgbImage::from_fn(rgba.width(), rgba.height(), |x, y| {
-        let [r, g, b, a] = rgba.get_pixel(x, y).0;
-        Rgb([over_white(r, a), over_white(g, a), over_white(b, a)])
-    })
+    let rgb = drop_alpha(rgba.into_raw(), over_white);
+    RgbImage::from_raw(width, height, rgb).unwrap_or_else(|| RgbImage::new(width, height))
 }
 
 fn flatten_16(image: DynamicImage) -> ImageBuffer<Rgb<u16>, Vec<u16>> {
@@ -81,14 +81,29 @@ fn flatten_16(image: DynamicImage) -> ImageBuffer<Rgb<u16>, Vec<u16>> {
         return image.into_rgb16();
     }
     let rgba = image.into_rgba16();
+    let (width, height) = rgba.dimensions();
     let over_white = |c: u16, a: u16| {
         let (c, a) = (u64::from(c), u64::from(a));
         u16::try_from((c * a + 65535 * (65535 - a) + 32767) / 65535).unwrap_or(u16::MAX)
     };
-    ImageBuffer::from_fn(rgba.width(), rgba.height(), |x, y| {
-        let [r, g, b, a] = rgba.get_pixel(x, y).0;
-        Rgb([over_white(r, a), over_white(g, a), over_white(b, a)])
-    })
+    let rgb = drop_alpha(rgba.into_raw(), over_white);
+    ImageBuffer::from_raw(width, height, rgb).unwrap_or_else(|| ImageBuffer::new(width, height))
+}
+
+/// RGBA samples made RGB in place, each colour laid over white by its
+/// alpha. Pixel `i` is written at `3i`, never past where pixel `i + 1`
+/// is still to be read from, at `4i + 4`.
+fn drop_alpha<T: Copy>(mut samples: Vec<T>, over_white: impl Fn(T, T) -> T) -> Vec<T> {
+    let pixels = samples.len() / 4;
+    for i in 0..pixels {
+        let [r, g, b, a] = [0, 1, 2, 3].map(|c| samples[4 * i + c]);
+        samples[3 * i] = over_white(r, a);
+        samples[3 * i + 1] = over_white(g, a);
+        samples[3 * i + 2] = over_white(b, a);
+    }
+    samples.truncate(pixels * 3);
+    samples.shrink_to_fit();
+    samples
 }
 
 /// The largest colour profile read. Phones and cameras embed profiles of
@@ -142,15 +157,24 @@ fn srgb_from_8(rgb: RgbImage, profile: Option<&ColorProfile>) -> RgbImage {
     }) else {
         return rgb;
     };
-    let (width, height) = rgb.dimensions();
-    let band = band_len(width);
-    let mut out = vec![0; rgb.as_raw().len()];
-    for (src, dst) in rgb.as_raw().chunks(band).zip(out.chunks_mut(band)) {
+    // Converted in place, a band at a time, so the photo is held once.
+    let mut rgb = rgb;
+    let band = band_len(rgb.width());
+    let mut source = vec![0; band.min(rgb.as_raw().len())];
+    let samples: &mut [u8] = &mut rgb;
+    for (n, dst) in samples.chunks_mut(band).enumerate() {
+        let src = &mut source[..dst.len()];
+        src.copy_from_slice(dst);
         if transform.transform(src, dst).is_err() {
-            return rgb;
+            // A band that cannot be converted is put back as it was. If
+            // the first cannot, none can, and the photo is left as it is.
+            dst.copy_from_slice(src);
+            if n == 0 {
+                break;
+            }
         }
     }
-    RgbImage::from_raw(width, height, out).unwrap_or(rgb)
+    rgb
 }
 
 /// Converts a deep photo while it still has its extra bits, then narrows
