@@ -136,7 +136,11 @@ its authors:
   photo over 50 MB, 100 megapixels, or 40,000 pixels on a side is
   refused before its pixels are decoded. HEIC photos are read by a copy
   of libheif built into the Flatpak with only the libde265 HEVC decoder
-  and with plugin loading off, so no other code is loaded. Each photo is
+  and with plugin loading off, so no other code is loaded. Picked
+  photos are decoded on a thread that first locks itself out of every
+  file, socket, and other descriptor, so a photo crafted to take over a
+  decoder cannot reach your files from it, though the thread still
+  shares the app's memory. Each photo is
   re-encoded from its pixels, so no EXIF, GPS, XMP, camera, or comment
   data from the original file is kept, and the original is never
   changed. Photos stored in a collection are shown through the app's
@@ -144,8 +148,9 @@ its authors:
   JPEGs no larger than the app saves (2,400 pixels a side, 320 for
   thumbnails), so a collection file from elsewhere cannot feed hostile
   images to any other decoder. Verify with
-  `sdk cargo test -p mylongbox-media --features heic` and the `libheif`
-  module in the Flatpak manifest.
+  `cargo test -p mylongbox-sandbox`,
+  `sdk cargo test -p mylongbox-media --features heic -- --include-ignored`,
+  and the `libheif` module in the Flatpak manifest.
 - **Imported spreadsheets and archives are treated as untrusted.** A
   CSV file over 100 MB is refused without being read whole. A full
   export is never unpacked to disk: only the files its CSV names are
