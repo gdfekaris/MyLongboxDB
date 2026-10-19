@@ -15,6 +15,12 @@ publish = false
 disallowed_methods = "deny"
 disallowed_types = "deny"
 
+# Arithmetic that overflows stops the app rather than wrapping into a
+# wrong size or index, as it does in development builds. Hostile files
+# reach code that counts pixels and bytes.
+[profile.release]
+overflow-checks = true
+
 # Photos are resized and converted in loops that run far too slowly
 # unoptimized, which would make tests and debug builds crawl.
 [profile.dev.package.mylongbox-media]
