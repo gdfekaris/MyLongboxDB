@@ -91,12 +91,20 @@ fn flatten_16(image: DynamicImage) -> ImageBuffer<Rgb<u16>, Vec<u16>> {
     })
 }
 
+/// The largest colour profile read. Phones and cameras embed profiles of
+/// well under 100 KB.
+pub(crate) const MAX_PROFILE_BYTES: usize = 1024 * 1024;
+
 /// The profile to convert from, or `None` when the pixels are already
 /// sRGB or their colour space cannot be used, in which case they are
 /// kept as they are rather than refusing the photo.
 pub(crate) fn source_profile(colour: &Colour) -> Option<ColorProfile> {
     match colour {
         Colour::Unstated => None,
+        // A photo's profile is a few kilobytes; one far larger is not
+        // worth handing to the profile reader, which a hostile one could
+        // keep busy.
+        Colour::Icc(icc) if icc.len() > MAX_PROFILE_BYTES => None,
         Colour::Icc(icc) => ColorProfile::new_from_slice(icc)
             .ok()
             .filter(|p| p.color_space == DataColorSpace::Rgb),

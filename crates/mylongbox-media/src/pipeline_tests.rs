@@ -10,7 +10,7 @@ use moxcms::ColorProfile;
 use sha2::{Digest, Sha256};
 
 use crate::fixtures::crc32;
-use crate::pipeline::{is_deep, source_profile};
+use crate::pipeline::{MAX_PROFILE_BYTES, is_deep, source_profile};
 use crate::{
     Colour, Decoded, Format, LONG_EDGES, Output, QUALITIES, THUMBNAIL_EDGE, decode_bytes, encode,
     upright,
@@ -380,6 +380,47 @@ fn srgb_and_unusable_profiles_leave_colours_alone() {
     let image = upright(decode_bytes(&file).unwrap());
     for (got, want) in image.pixels().zip(SAMPLES) {
         assert!(near(got.0, want, 1));
+    }
+}
+
+#[test]
+fn an_oversized_profile_is_not_read() {
+    let mut p3 = ColorProfile::new_display_p3().encode().unwrap();
+    p3.resize(MAX_PROFILE_BYTES + 1, 0);
+    assert!(source_profile(&Colour::Icc(p3)).is_none());
+}
+
+#[test]
+fn damaged_profiles_leave_the_photo_whole() {
+    // Every truncation of a real profile, and every byte of it set to
+    // each extreme, as a hostile or damaged file might carry.
+    let p3 = ColorProfile::new_display_p3().encode().unwrap();
+    let mut damaged: Vec<Vec<u8>> = (0..p3.len()).map(|n| p3[..n].to_vec()).collect();
+    for at in 0..p3.len() {
+        for value in [0x00, 0xFF] {
+            let mut profile = p3.clone();
+            profile[at] = value;
+            damaged.push(profile);
+        }
+    }
+    let pixels = RgbImage::from_fn(4, 4, |x, y| Rgb([(x * 60) as u8, (y * 60) as u8, 128]));
+    let deep = DynamicImage::ImageRgb8(pixels.clone()).into_rgb16();
+    for (n, icc) in damaged.into_iter().enumerate() {
+        let mut images = vec![DynamicImage::ImageRgb8(pixels.clone())];
+        // A deep transform takes far longer to set up, so a sample of
+        // the damaged profiles is tried at 16 bits too.
+        if n % 16 == 0 {
+            images.push(DynamicImage::ImageRgb16(deep.clone()));
+        }
+        for image in images {
+            let decoded = Decoded {
+                image,
+                format: Format::Png,
+                colour: Colour::Icc(icc.clone()),
+                orientation: Orientation::NoTransforms,
+            };
+            assert_eq!(upright(decoded).dimensions(), (4, 4));
+        }
     }
 }
 
