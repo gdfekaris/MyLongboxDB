@@ -437,6 +437,15 @@ pub fn copy_name(collection: &str, now: &glib::DateTime) -> String {
     )
 }
 
+/// `text` made fit to suggest as part of a file's name: a slash, as in a
+/// shelf named "Batman/Superman", would name a folder instead, and
+/// control characters belong in no name.
+pub fn file_name_part(text: &str) -> String {
+    text.chars()
+        .map(|c| if c == '/' || c.is_control() { '-' } else { c })
+        .collect()
+}
+
 /// Today's date on this computer.
 pub fn today() -> Option<Date> {
     let now = glib::DateTime::now_local().ok()?;
@@ -608,6 +617,13 @@ mod tests {
         // Gold has no rate here, so that pair cannot count.
         let gold = Amount::new(Currency::Gold, 10_000);
         assert_eq!(gain([((gold, None), (usd(100), None))]), None);
+    }
+
+    #[test]
+    fn file_name_parts_name_no_folders() {
+        assert_eq!(file_name_part("Batman/Superman"), "Batman-Superman");
+        assert_eq!(file_name_part("../x\n"), "..-x-");
+        assert_eq!(file_name_part("Key Issues"), "Key Issues");
     }
 
     #[test]

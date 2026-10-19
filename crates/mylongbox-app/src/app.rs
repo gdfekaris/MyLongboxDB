@@ -861,7 +861,10 @@ impl Component for App {
                     }
                     (
                         Some(ids),
-                        format!("{name} \u{2013} {}.csv", self.shown_title()),
+                        format!(
+                            "{name} \u{2013} {}.csv",
+                            format::file_name_part(&self.shown_title())
+                        ),
                     )
                 } else {
                     (None, format!("{name}.csv"))
