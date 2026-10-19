@@ -188,7 +188,9 @@ its authors:
   before any other thread runs, Landlock limits every way of changing
   files (writing, creating, deleting, renaming, emptying) to the app's
   data, cache, and settings folders, the files you pick in the file
-  chooser, and the graphics devices under `/dev`, and refuses TCP
+  chooser (which the Flatpak hands over through its document portal;
+  a build run outside the Flatpak cannot save exports elsewhere), and
+  the graphics devices under `/dev`, and refuses TCP
   connections as a second line behind the socket filter. Reading is left
   to the Flatpak, which shows the app only its own folders and the
   system files GTK needs. Verify with `cargo test -p mylongbox-sandbox`,
@@ -196,6 +198,42 @@ its authors:
   allowed folder while reading still works. On a kernel without
   Landlock the app prints a note and runs with the Flatpak's limits
   alone.
+
+### What the sandbox cannot stop
+
+These limits come from the desktop rather than the app, so they hold
+for every Flatpak app. Each one matters only if hostile code is
+already running inside the app, for instance through a flaw in a photo
+decoder.
+
+- **Files you picked stay reachable.** Each file picked in the file
+  chooser stays shared with the app, for reading and writing, until
+  you take it back; the app cannot give it up itself. List what the app
+  can reach with
+  `flatpak permission-show io.github.gdfekaris.MyLongboxDB` (the
+  `documents` lines), and take it all back with
+  `flatpak permission-reset io.github.gdfekaris.MyLongboxDB`. Ticking
+  "Open files read-only" in the file chooser shares a file for reading
+  only. Keep backups somewhere the app has never been shown.
+- **Links open in your browser.** Any Flatpak app can ask the desktop
+  to open a web or mail link, and when a default browser or mail app is
+  set it opens without asking, so a hijacked app could send data out
+  inside a link. To be asked first, set the app to always ask for each
+  kind of link:
+
+  ```sh
+  for kind in http https mailto; do
+      flatpak permission-set desktop-used-apps x-scheme-handler/$kind \
+          io.github.gdfekaris.MyLongboxDB "" 0 2147483647
+  done
+  ```
+
+  Undo with `flatpak permission-remove desktop-used-apps
+  x-scheme-handler/<kind> io.github.gdfekaris.MyLongboxDB`.
+- **X11 sessions do not separate windows.** On an X11 desktop session
+  the app can read other windows and send them keystrokes, as every X11
+  program can. A Wayland session does not allow this, and there the app
+  uses Wayland only. Check which you run with `echo $XDG_SESSION_TYPE`.
 
 ## Reporting vulnerabilities
 
