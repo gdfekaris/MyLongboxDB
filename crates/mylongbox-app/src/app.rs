@@ -1476,7 +1476,7 @@ impl Component for App {
             }
             AppMsg::RenameEntry => {
                 if let Some(entry) = &self.managed {
-                    let initial = rename_text(entry);
+                    let initial = self.rename_text(entry);
                     let s = sender.clone();
                     prompt::ask_text(
                         root,
@@ -2301,6 +2301,18 @@ impl App {
     }
 
     /// Runs `f` on the open collection.
+    /// The name to start renaming from. A series is listed with the
+    /// start year or volume that tells it apart, which is not part of
+    /// its name, so its own name is read back instead.
+    fn rename_text(&self, entry: &ShelfEntry) -> String {
+        match entry.shelf {
+            Shelf::Series(id) => self
+                .with_db(|db| db.series(id))
+                .map_or_else(|_| entry.name.clone(), |series| series.fields.name),
+            _ => entry.name.clone(),
+        }
+    }
+
     fn with_db<T>(
         &self,
         f: impl FnOnce(&Database) -> mylongbox_core::Result<T>,
@@ -3627,19 +3639,6 @@ fn confirm_discard(root: &MainWindow, sender: &ComponentSender<App>, then: Optio
             }
         }
     });
-}
-
-/// The name to start renaming from: a series without the year its
-/// listing adds.
-fn rename_text(entry: &ShelfEntry) -> String {
-    match entry.shelf {
-        Shelf::Series(_) => entry
-            .name
-            .rsplit_once(" (")
-            .filter(|(_, year)| year.len() == 5 && year.ends_with(')'))
-            .map_or(entry.name.clone(), |(name, _)| name.to_owned()),
-        _ => entry.name.clone(),
-    }
 }
 
 fn capitalized(text: &str) -> String {
