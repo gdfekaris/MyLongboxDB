@@ -147,6 +147,7 @@ fn confined<T: Send + 'static>(
     let thread = std::thread::Builder::new()
         .name("photo".into())
         .spawn(move || {
+            let _decoders = mylongbox_media::load_decoders();
             match mylongbox_sandbox::confine_thread() {
                 Ok(mylongbox_sandbox::Enforced::Fully) => {}
                 // The filter still holds where Landlock does not.

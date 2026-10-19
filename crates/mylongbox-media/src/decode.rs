@@ -188,6 +188,24 @@ pub fn decode_saved(data: &[u8], max_side: u32) -> Result<RgbImage, DecodeError>
     Ok(image.into_rgb8())
 }
 
+/// Keeps the photo decoders loaded for as long as it lives.
+///
+/// libheif may load its decoders as plugins when it starts, which reads
+/// files, so a thread that will lose file access starts it first and
+/// keeps this until its decoding is done. Where plugin loading is off,
+/// as in the Flatpak, it costs nothing.
+pub struct Decoders {
+    #[cfg(feature = "heic")]
+    _heif: libheif_rs::LibHeif,
+}
+
+pub fn load_decoders() -> Decoders {
+    Decoders {
+        #[cfg(feature = "heic")]
+        _heif: libheif_rs::LibHeif::new(),
+    }
+}
+
 /// The largest side of a full photo the pipeline saves.
 pub const MAX_SAVED_SIDE: u32 = *crate::LONG_EDGES.end();
 
@@ -532,6 +550,7 @@ mod tests {
     /// confines its photo threads.
     fn decode_confined(data: Vec<u8>) -> Result<(u32, u32), DecodeError> {
         std::thread::spawn(move || {
+            let _decoders = load_decoders();
             mylongbox_sandbox::confine_thread().unwrap();
             decode_bytes(&data).map(|d| crate::upright(d).dimensions())
         })
