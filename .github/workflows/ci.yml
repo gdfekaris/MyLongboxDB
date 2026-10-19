@@ -142,24 +142,42 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      # Signing the build provenance: a short-lived Sigstore certificate
+      # for this workflow run, and recording the attestation with GitHub.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mylongboxdb-flatpak
-      - name: Publish the bundle and its checksum
+      - name: Name the bundle for the release
+        id: bundle
         env:
-          GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           bundle="MyLongboxDB-${TAG#v}.flatpak"
           mv mylongboxdb.flatpak "$bundle"
           sha256sum "$bundle" > "$bundle.sha256"
+          echo "path=$bundle" >> "$GITHUB_OUTPUT"
+      # A signed statement that this run built the bundle from the tagged
+      # commit, which anyone can check with `gh attestation verify`.
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.bundle.outputs.path }}
+      - name: Publish the bundle and its checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          BUNDLE: ${{ steps.bundle.outputs.path }}
+        run: |
           cat > notes.md <<NOTES
           Install with:
 
-              flatpak install --user $bundle
+              flatpak install --user $BUNDLE
 
-          Check the download first with \`sha256sum -c $bundle.sha256\`.
+          Check the download first with \`sha256sum -c $BUNDLE.sha256\`, and
+          that this repository's CI built it from the tagged source with
+          \`gh attestation verify $BUNDLE --repo $GITHUB_REPOSITORY\`.
           NOTES
-          gh release create "$TAG" "$bundle" "$bundle.sha256" \
+          gh release create "$TAG" "$BUNDLE" "$BUNDLE.sha256" \
               --repo "$GITHUB_REPOSITORY" --title "MyLongboxDB ${TAG#v}" --notes-file notes.md

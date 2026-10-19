@@ -18,6 +18,14 @@ sha256sum -c MyLongboxDB-0.1.4.flatpak.sha256
 flatpak install --user MyLongboxDB-0.1.4.flatpak
 ```
 
+From 0.1.5 on, GitHub also keeps a signed statement, made by the
+repository's CI, that each bundle was built from the tagged source.
+With the GitHub CLI installed, check it with:
+
+```sh
+gh attestation verify MyLongboxDB-0.1.5.flatpak --repo gdfekaris/MyLongboxDB
+```
+
 A newer release installs over an older one the same way. A collection
 opened by a newer release cannot be opened by an older one, so keep a
 copy (Export a Copy) before upgrading if you may want to go back.
