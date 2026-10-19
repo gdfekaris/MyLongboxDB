@@ -95,17 +95,20 @@ pub(crate) fn run(conn: &mut Connection, migrations: &[Migration]) -> Result<()>
 /// Whether opening would upgrade an existing collection: it has a
 /// schema, at a version older than the newest migration.
 pub(crate) fn pending(conn: &Connection, migrations: &[Migration]) -> Result<bool> {
+    let latest = migrations.last().map_or(0, |m| m.version);
+    let current = stored_version(conn)?;
+    Ok(current > 0 && current < latest)
+}
+
+/// The schema version a file records, or 0 for one with no schema yet,
+/// read without changing it.
+pub(crate) fn stored_version(conn: &Connection) -> Result<u32> {
     let has_meta: bool = conn.query_row(
         "SELECT count(*) > 0 FROM sqlite_schema WHERE type = 'table' AND name = 'meta'",
         [],
         |row| row.get(0),
     )?;
-    if !has_meta {
-        return Ok(false);
-    }
-    let latest = migrations.last().map_or(0, |m| m.version);
-    let current = read_version(conn)?;
-    Ok(current > 0 && current < latest)
+    if has_meta { read_version(conn) } else { Ok(0) }
 }
 
 /// The schema version recorded in `meta`, or 0 for a new collection.

@@ -51,6 +51,7 @@ impl Database {
         // window or process cannot write to it at the same time.
         conn.pragma_update(None, "locking_mode", "EXCLUSIVE")?;
         let conn = connect(conn)?;
+        verify_stored_schema(&conn)?;
         if let Some(copy) = before_upgrade
             && migrate::pending(&conn, MIGRATIONS)?
         {
@@ -142,7 +143,9 @@ impl Database {
     }
 
     fn init(conn: Connection) -> Result<Self> {
-        Self::migrate(connect(conn)?)
+        let conn = connect(conn)?;
+        verify_stored_schema(&conn)?;
+        Self::migrate(conn)
     }
 
     fn migrate(mut conn: Connection) -> Result<Self> {
@@ -289,8 +292,28 @@ fn read_schema(conn: &Connection) -> Result<Vec<SchemaEntry>> {
 /// migrations build, such as an added trigger or view, or a loosened
 /// constraint. Such a file was edited outside the app and may be hostile.
 fn verify_schema(conn: &Connection) -> Result<()> {
+    verify_schema_at(conn, MIGRATIONS)
+}
+
+/// Refuses a collection whose schema differs from the one the migrations
+/// build up to the version it records, before any migration runs on it.
+/// Checked only after upgrading, a hostile file's triggers would fire on
+/// the upgrade's own statements, and an extra object on a table that an
+/// upgrade rebuilds would vanish with it unnoticed. A file newer than
+/// every migration is left for the upgrade to refuse.
+fn verify_stored_schema(conn: &Connection) -> Result<()> {
+    let version = migrate::stored_version(conn)?;
+    match usize::try_from(version) {
+        Ok(n) if n <= MIGRATIONS.len() => verify_schema_at(conn, &MIGRATIONS[..n]),
+        _ => Ok(()),
+    }
+}
+
+fn verify_schema_at(conn: &Connection, migrations: &[migrate::Migration]) -> Result<()> {
     let mut reference = connect(Connection::open_in_memory()?)?;
-    migrate::run(&mut reference, MIGRATIONS)?;
+    if !migrations.is_empty() {
+        migrate::run(&mut reference, migrations)?;
+    }
     if read_schema(conn)? == read_schema(&reference)? {
         Ok(())
     } else {
@@ -552,6 +575,77 @@ mod tests {
         assert_eq!(key, crate::IssueNumber::new("nn").unwrap().sort_key());
         drop(db);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A collection at `version` with `extra` run on it, as if edited
+    /// outside the app, in a fresh folder named for `name`.
+    fn edited_collection(name: &str, version: usize, extra: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("mlbx-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("edited.sqlite");
+        let mut conn = connect(Connection::open(&path).unwrap()).unwrap();
+        migrate::run(&mut conn, &MIGRATIONS[..version]).unwrap();
+        conn.execute_batch(extra).unwrap();
+        path
+    }
+
+    #[test]
+    fn an_edited_older_collection_is_refused_before_its_upgrade_runs() {
+        // The trigger would fire on the upgrade's re-keying of "nn" issues.
+        let path = edited_collection(
+            "trigger",
+            4,
+            "INSERT INTO series (id, uuid, name, category)
+                 VALUES (1, '00000000-0000-4000-8000-000000000001', 'Bone', 'comic');
+             INSERT INTO issue (id, uuid, series_id, number, number_sort)
+                 VALUES (1, '00000000-0000-4000-8000-000000000002', 1, 'nn', '2nn');
+             CREATE TRIGGER planted AFTER UPDATE ON issue BEGIN
+                 INSERT INTO tag (uuid, name)
+                 VALUES ('00000000-0000-4000-8000-000000000003', 'ran');
+             END;",
+        );
+        let before = path.with_file_name("before.sqlite");
+        assert!(matches!(
+            Database::open_keeping(&path, Some(&before)),
+            Err(Error::UnexpectedSchema)
+        ));
+        assert!(!before.exists(), "no copy is kept of a refused file");
+        let conn = Connection::open(&path).unwrap();
+        assert_eq!(migrate::schema_version(&conn).unwrap(), 4, "not upgraded");
+        let tags: i64 = conn
+            .query_row("SELECT count(*) FROM tag", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(tags, 0, "the planted trigger never ran");
+        drop(conn);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn an_extra_object_on_a_table_an_upgrade_rebuilds_is_still_found() {
+        // Upgrading from 3 rebuilds the signature table, which would drop
+        // this index along with it.
+        let path = edited_collection(
+            "rebuilt",
+            3,
+            "CREATE INDEX planted ON signature (cert_number)",
+        );
+        assert!(matches!(
+            Database::open(&path),
+            Err(Error::UnexpectedSchema)
+        ));
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn an_unupgraded_collection_of_every_version_opens() {
+        for version in 1..=MIGRATIONS.len() {
+            let path = edited_collection(&format!("v{version}"), version, "");
+            let db = Database::open(&path).unwrap();
+            assert_eq!(db.schema_version().unwrap(), 8, "from version {version}");
+            drop(db);
+            std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+        }
     }
 
     #[test]
