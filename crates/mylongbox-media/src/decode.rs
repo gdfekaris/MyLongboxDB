@@ -136,7 +136,7 @@ pub fn decode_bytes(data: &[u8]) -> Result<Decoded, DecodeError> {
     let (width, height) = reader
         .into_dimensions()
         .map_err(|e| DecodeError::Damaged(e.to_string()))?;
-    check_size(width, height)?;
+    check_shown_size(width, height)?;
     let (image, colour, orientation) = decode_limited(data, width, height)?;
     Ok(Decoded {
         image,
@@ -180,6 +180,16 @@ fn is_heic(data: &[u8]) -> bool {
     std::iter::once(&[data[8], data[9], data[10], data[11]])
         .chain(compatible)
         .any(|brand| BRANDS.contains(&brand))
+}
+
+/// Like [`check_size`], for the size a photo is shown at, which must
+/// also have at least one pixel each way: code further on divides by it
+/// and steps through rows of it.
+pub(crate) fn check_shown_size(width: u32, height: u32) -> Result<(), DecodeError> {
+    if width == 0 || height == 0 {
+        return Err(DecodeError::Damaged("the photo has no pixels".into()));
+    }
+    check_size(width, height)
 }
 
 pub(crate) fn check_size(width: u32, height: u32) -> Result<(), DecodeError> {
@@ -329,6 +339,21 @@ mod tests {
             decode_bytes(&png_header(10_000, 10_000)),
             Err(DecodeError::Damaged(_))
         ));
+    }
+
+    #[test]
+    fn a_photo_without_pixels_is_damaged() {
+        for (width, height) in [(0, 0), (0, 10), (10, 0)] {
+            assert!(matches!(
+                check_shown_size(width, height),
+                Err(DecodeError::Damaged(_))
+            ));
+            assert!(matches!(
+                decode_bytes(&png_header(width, height)),
+                Err(DecodeError::Damaged(_))
+            ));
+        }
+        assert!(check_shown_size(1, 1).is_ok());
     }
 
     #[test]

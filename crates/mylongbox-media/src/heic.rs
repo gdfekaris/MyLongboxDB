@@ -7,7 +7,9 @@ use libheif_rs::{
     SecurityLimits,
 };
 
-use crate::decode::{Colour, DecodeError, Decoded, Format, MAX_PIXELS, check_size, max_alloc};
+use crate::decode::{
+    Colour, DecodeError, Decoded, Format, MAX_PIXELS, check_shown_size, check_size, max_alloc,
+};
 
 /// Decodes the main picture of a HEIC file, turned the way the file
 /// says to show it. libheif applies the file's own rotation and mirroring,
@@ -18,7 +20,7 @@ pub(crate) fn decode(data: &[u8]) -> Result<Decoded, DecodeError> {
     let context = open(data)?;
     let handle = context.primary_image_handle().map_err(damaged)?;
     let (width, height) = (handle.width(), handle.height());
-    check_size(width, height)?;
+    check_shown_size(width, height)?;
     // The picture is decoded whole before any crop, so its full stored
     // size must fit too.
     let stored = |n: i32| u32::try_from(n).unwrap_or(0);
@@ -111,9 +113,16 @@ fn pixels(lib: &LibHeif, handle: &ImageHandle) -> Result<Option<DynamicImage>, H
         return Ok(None);
     };
     // Checked so the slicing below cannot panic should libheif hand back
-    // less than it describes.
-    if plane.stride < row_bytes
-        || plane.data.len() < plane.stride.saturating_mul(rows.saturating_sub(1)) + row_bytes
+    // less than it describes, or an empty plane, whose zero-byte rows
+    // could not be stepped through.
+    let needed = plane
+        .stride
+        .checked_mul(rows.saturating_sub(1))
+        .and_then(|n| n.checked_add(row_bytes));
+    if rows == 0
+        || row_bytes == 0
+        || plane.stride < row_bytes
+        || needed.is_none_or(|n| plane.data.len() < n)
     {
         return Ok(None);
     }
