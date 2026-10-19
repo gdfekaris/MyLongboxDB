@@ -139,3 +139,121 @@ pub fn limit_writes(writable: &[&Path]) -> Result<Enforced, Error> {
         RulesetStatus::NotEnforced => Enforced::Not,
     })
 }
+
+/// Stops the calling thread, and every thread it starts, from reaching
+/// anything outside the process, for work on untrusted bytes already in
+/// memory, such as decoding a photo. Files cannot be opened, read,
+/// written, or created; no socket can be made or used; and nothing can
+/// be written but to standard output and error. Like the other limits it
+/// cannot be undone, so call it only on a thread made for the work.
+///
+/// The thread still shares memory with the rest of the process, so this
+/// does not hold against code able to take over another thread too; it
+/// stops what a payload in a decoder would try first.
+pub fn confine_thread() -> Result<Enforced, Error> {
+    let fail = |e: landlock::RulesetError| error("the kernel refused the file limits", e);
+    let status = Ruleset::default()
+        .handle_access(AccessFs::from_all(ABI::V5))
+        .map_err(fail)?
+        .handle_access(AccessNet::from_all(ABI::V5))
+        .map_err(fail)?
+        .create()
+        .map_err(fail)?
+        .restrict_self()
+        .map_err(fail)?;
+    let program = confining_filter()?;
+    seccompiler::apply_filter(&program).map_err(|e| error("the kernel refused the filter", e))?;
+    Ok(match status.ruleset {
+        RulesetStatus::FullyEnforced => Enforced::Fully,
+        RulesetStatus::PartiallyEnforced => Enforced::Partly,
+        RulesetStatus::NotEnforced => Enforced::Not,
+    })
+}
+
+/// The confined thread's filter, which also holds where the kernel has
+/// no Landlock: every way of opening a file or making, using, or passing
+/// a socket is refused, and writing is allowed only to descriptors 0 to
+/// 2, which the thread may neither close nor replace, so an open socket,
+/// such as the one to the session bus, cannot be written to either.
+fn confining_filter() -> Result<BpfProgram, Error> {
+    let rule = |conditions: Vec<SeccompCondition>| -> Result<Vec<SeccompRule>, Error> {
+        let rule = SeccompRule::new(conditions).map_err(|e| error("building the filter", e))?;
+        Ok(vec![rule])
+    };
+    let arg = |index: u8, op: SeccompCmpOp, value: u64| {
+        SeccompCondition::new(index, SeccompCmpArgLen::Dword, op, value)
+            .map_err(|e| error("building the filter", e))
+    };
+    let not_standard = || rule(vec![arg(0, SeccompCmpOp::Gt, 2)?]);
+    let standard = || rule(vec![arg(0, SeccompCmpOp::Le, 2)?]);
+    let mut rules: BTreeMap<i64, Vec<SeccompRule>> = BTreeMap::new();
+    // No conditions: always refused.
+    for call in [
+        libc::SYS_openat,
+        libc::SYS_openat2,
+        libc::SYS_open_by_handle_at,
+        libc::SYS_socket,
+        libc::SYS_socketpair,
+        libc::SYS_connect,
+        libc::SYS_bind,
+        libc::SYS_listen,
+        libc::SYS_accept,
+        libc::SYS_accept4,
+        libc::SYS_sendto,
+        libc::SYS_sendmsg,
+        libc::SYS_sendmmsg,
+        libc::SYS_sendfile,
+        libc::SYS_splice,
+        libc::SYS_tee,
+        libc::SYS_vmsplice,
+        libc::SYS_copy_file_range,
+        libc::SYS_io_uring_setup,
+        libc::SYS_execve,
+        libc::SYS_execveat,
+        libc::SYS_dup,
+        libc::SYS_dup3,
+    ] {
+        rules.insert(call, Vec::new());
+    }
+    #[cfg(target_arch = "x86_64")]
+    for call in [libc::SYS_open, libc::SYS_creat, libc::SYS_dup2] {
+        rules.insert(call, Vec::new());
+    }
+    for call in [
+        libc::SYS_write,
+        libc::SYS_writev,
+        libc::SYS_pwrite64,
+        libc::SYS_pwritev,
+        libc::SYS_pwritev2,
+    ] {
+        rules.insert(call, not_standard()?);
+    }
+    rules.insert(libc::SYS_close, standard()?);
+    // Duplicating a descriptor through fcntl, the one way left to put a
+    // socket in place of standard output.
+    rules.insert(
+        libc::SYS_fcntl,
+        vec![
+            SeccompRule::new(vec![arg(1, SeccompCmpOp::Eq, libc::F_DUPFD as u64)?])
+                .map_err(|e| error("building the filter", e))?,
+            SeccompRule::new(vec![arg(
+                1,
+                SeccompCmpOp::Eq,
+                libc::F_DUPFD_CLOEXEC as u64,
+            )?])
+            .map_err(|e| error("building the filter", e))?,
+        ],
+    );
+    let arch = TargetArch::try_from(std::env::consts::ARCH)
+        .map_err(|e| error("this processor is not supported", e))?;
+    let filter = SeccompFilter::new(
+        rules,
+        SeccompAction::Allow,
+        SeccompAction::Errno(libc::EACCES as u32),
+        arch,
+    )
+    .map_err(|e| error("building the filter", e))?;
+    filter
+        .try_into()
+        .map_err(|e: seccompiler::BackendError| error("compiling the filter", e))
+}
