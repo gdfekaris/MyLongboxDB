@@ -43,17 +43,28 @@ pub(crate) fn whole_number(text: &str) -> Option<u32> {
     text.parse().ok()
 }
 
-/// The numbers from `first` to `last` not in `owned`, as ranges.
+/// The numbers from `first` to `last` not in `owned`, as ranges. Only
+/// the owned numbers are visited, as a number typed or imported can be
+/// in the billions.
 pub(crate) fn missing_ranges(owned: &BTreeSet<u32>, first: u32, last: u32) -> Vec<(u32, u32)> {
-    let mut ranges: Vec<(u32, u32)> = Vec::new();
-    for n in first..=last {
-        if owned.contains(&n) {
-            continue;
+    let mut ranges = Vec::new();
+    if first > last {
+        return ranges;
+    }
+    // The lowest number not yet known to be owned or missing, if any.
+    let mut next = Some(first);
+    for &n in owned.range(first..=last) {
+        if let Some(from) = next
+            && from < n
+        {
+            ranges.push((from, n - 1));
         }
-        match ranges.last_mut() {
-            Some((_, end)) if *end + 1 == n => *end = n,
-            _ => ranges.push((n, n)),
-        }
+        next = n.checked_add(1);
+    }
+    if let Some(from) = next
+        && from <= last
+    {
+        ranges.push((from, last));
     }
     ranges
 }

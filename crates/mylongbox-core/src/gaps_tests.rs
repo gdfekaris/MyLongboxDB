@@ -74,6 +74,35 @@ fn missing_numbers_are_grouped_into_ranges() {
     assert_eq!(missing_ranges(&owned, 1, 12), [(3, 4), (6, 8), (11, 12)]);
     assert_eq!(missing_ranges(&owned, 1, 2), []);
     assert_eq!(missing_ranges(&[4].into(), 1, 4), [(1, 3)]);
+    assert_eq!(missing_ranges(&[2].into(), 1, 4), [(1, 1), (3, 4)]);
+    assert_eq!(missing_ranges(&[].into(), 1, 3), [(1, 3)]);
+}
+
+#[test]
+fn huge_issue_numbers_make_one_range_at_once() {
+    // A run is read range by range, not number by number, so numbers in
+    // the billions, typed or imported, cannot stall the Gaps view.
+    let owned: BTreeSet<u32> = [1, 4_000_000_000].into();
+    assert_eq!(
+        missing_ranges(&owned, 1, u32::MAX),
+        [(2, 3_999_999_999), (4_000_000_001, u32::MAX)]
+    );
+    assert_eq!(
+        missing_ranges(&[u32::MAX].into(), 1, u32::MAX),
+        [(1, u32::MAX - 1)]
+    );
+    assert_eq!(
+        missing_ranges(&[0, u32::MAX].into(), 0, u32::MAX),
+        [(1, u32::MAX - 1)]
+    );
+
+    let db = db();
+    for n in ["1", "4000000000"] {
+        add(&db, "X-Men", n);
+    }
+    let found = db.gaps(false).unwrap().remove(0);
+    assert_eq!(found.missing, [(2, 3_999_999_999)]);
+    assert_eq!(found.missing_count(), 3_999_999_998);
 }
 
 #[test]
