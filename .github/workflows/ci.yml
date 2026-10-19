@@ -87,7 +87,9 @@ jobs:
         run: sdk cargo test --locked --workspace
       - name: Test photo reading with libheif
         shell: bash
-        run: sdk cargo test --locked -p mylongbox-media --features heic
+        # The SDK's libheif decodes HEVC, so the tests that decode real
+        # HEIC pictures run here too.
+        run: sdk cargo test --locked -p mylongbox-media --features heic -- --include-ignored
 
   flatpak:
     name: Flatpak build and permissions
