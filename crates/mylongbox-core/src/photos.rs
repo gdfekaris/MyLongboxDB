@@ -144,9 +144,12 @@ impl Database {
         let front = self.photo(copy, Side::Front)?;
         let back = self.photo(copy, Side::Back)?;
         // Each side is unique per copy, and checked row by row, so the
-        // photos are taken out and put back rather than relabelled.
-        self.conn
-            .execute("DELETE FROM cover_photo WHERE copy_id = ?1", [copy])?;
+        // photos are taken out and put back rather than relabelled. Only
+        // these two sides: a signature photo is no side of the cover.
+        self.conn.execute(
+            "DELETE FROM cover_photo WHERE copy_id = ?1 AND side IN (?2, ?3)",
+            params![copy, Side::Front, Side::Back],
+        )?;
         if let Some(back) = back {
             self.set_photo(copy, Side::Front, &back)?;
         }

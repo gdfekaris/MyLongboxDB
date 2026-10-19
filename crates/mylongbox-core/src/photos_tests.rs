@@ -99,14 +99,18 @@ fn swapping_exchanges_or_moves_the_sides() {
     let copy = copy(&db);
     db.set_photo(copy, Side::Front, &photo(1)).unwrap();
     db.set_photo(copy, Side::Back, &photo(2)).unwrap();
+    db.set_photo(copy, Side::Signature, &photo(3)).unwrap();
     db.swap_photos(copy).unwrap();
     assert_eq!(db.photo(copy, Side::Front).unwrap(), Some(photo(2)));
     assert_eq!(db.photo(copy, Side::Back).unwrap(), Some(photo(1)));
+    // The signature photo is not a side of the cover and stays put.
+    assert_eq!(db.photo(copy, Side::Signature).unwrap(), Some(photo(3)));
 
     db.remove_photo(copy, Side::Back).unwrap();
     db.swap_photos(copy).unwrap();
     assert_eq!(db.photo(copy, Side::Front).unwrap(), None);
     assert_eq!(db.photo(copy, Side::Back).unwrap(), Some(photo(2)));
+    assert_eq!(db.photo(copy, Side::Signature).unwrap(), Some(photo(3)));
 }
 
 #[test]
