@@ -7,7 +7,7 @@ use std::io::{Cursor, Read};
 use std::path::Path;
 
 use image::metadata::Orientation;
-use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader, Limits};
+use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader, Limits, RgbImage};
 
 /// Largest file accepted.
 pub const MAX_FILE_BYTES: u64 = 50 * 1024 * 1024;
@@ -146,6 +146,41 @@ pub fn decode_bytes(data: &[u8]) -> Result<Decoded, DecodeError> {
     })
 }
 
+/// Reads a photo kept in a collection, which the pipeline saved as a
+/// JPEG no larger than `max_side` either way, such as
+/// [`MAX_SAVED_SIDE`] for a full photo or
+/// [`THUMBNAIL_EDGE`](crate::THUMBNAIL_EDGE) for a thumbnail.
+///
+/// A collection may come from someone else, so anything the pipeline
+/// would not have written is refused before decoding: another format,
+/// HEIC included, would reach a decoder the app's own photos never
+/// need, and an oversized picture would take memory on every screen
+/// that shows it.
+pub fn decode_saved(data: &[u8], max_side: u32) -> Result<RgbImage, DecodeError> {
+    let bytes = u64::try_from(data.len()).unwrap_or(u64::MAX);
+    if bytes > MAX_FILE_BYTES {
+        return Err(DecodeError::TooLarge { bytes });
+    }
+    let reader = ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .map_err(DecodeError::Io)?;
+    if reader.format() != Some(ImageFormat::Jpeg) {
+        return Err(DecodeError::Unsupported);
+    }
+    let (width, height) = reader
+        .into_dimensions()
+        .map_err(|e| DecodeError::Damaged(e.to_string()))?;
+    check_shown_size(width, height)?;
+    if width > max_side || height > max_side {
+        return Err(DecodeError::TooManyPixels { width, height });
+    }
+    let (image, _, _) = decode_limited(data, width, height)?;
+    Ok(image.into_rgb8())
+}
+
+/// The largest side of a full photo the pipeline saves.
+pub const MAX_SAVED_SIDE: u32 = *crate::LONG_EDGES.end();
+
 #[cfg(feature = "heic")]
 fn decode_heic(data: &[u8]) -> Result<Decoded, DecodeError> {
     crate::heic::decode(data)
@@ -251,7 +286,7 @@ mod tests {
     use super::*;
     use image::codecs::jpeg::JpegEncoder;
     use image::codecs::webp::WebPEncoder;
-    use image::{ExtendedColorType, ImageEncoder, RgbImage};
+    use image::{ExtendedColorType, ImageEncoder};
 
     /// A small generated picture, so tests never need real photos.
     fn picture() -> RgbImage {
@@ -339,6 +374,44 @@ mod tests {
             decode_bytes(&png_header(10_000, 10_000)),
             Err(DecodeError::Damaged(_))
         ));
+    }
+
+    #[test]
+    fn saved_photos_must_be_jpegs_the_pipeline_could_have_written() {
+        let jpeg = |width, height| {
+            let mut out = Vec::new();
+            JpegEncoder::new(&mut out)
+                .write_image(
+                    RgbImage::new(width, height).as_raw(),
+                    width,
+                    height,
+                    ExtendedColorType::Rgb8,
+                )
+                .unwrap();
+            out
+        };
+        let read = decode_saved(&jpeg(30, 20), 30).unwrap();
+        assert_eq!(read.dimensions(), (30, 20));
+        assert!(matches!(
+            decode_saved(&jpeg(31, 20), 30),
+            Err(DecodeError::TooManyPixels { .. })
+        ));
+        assert!(matches!(
+            decode_saved(&jpeg(20, MAX_SAVED_SIDE + 1), MAX_SAVED_SIDE),
+            Err(DecodeError::TooManyPixels { .. })
+        ));
+        for other in [ImageFormat::Png, ImageFormat::WebP] {
+            assert!(matches!(
+                decode_saved(&encoded(other), 100),
+                Err(DecodeError::Unsupported)
+            ));
+        }
+        assert!(matches!(
+            decode_saved(HEIC, 100),
+            Err(DecodeError::Unsupported)
+        ));
+        assert!(decode_saved(b"\xFF\xD8\xFF not really a JPEG", 100).is_err());
+        assert!(decode_saved(b"", 100).is_err());
     }
 
     #[test]

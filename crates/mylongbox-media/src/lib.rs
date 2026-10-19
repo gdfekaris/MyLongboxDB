@@ -16,8 +16,8 @@ mod pipeline;
 mod pipeline_tests;
 
 pub use decode::{
-    Colour, DecodeError, Decoded, Format, MAX_FILE_BYTES, MAX_PIXELS, MAX_SIDE, decode_bytes,
-    decode_file,
+    Colour, DecodeError, Decoded, Format, MAX_FILE_BYTES, MAX_PIXELS, MAX_SAVED_SIDE, MAX_SIDE,
+    decode_bytes, decode_file, decode_saved,
 };
 pub use edit::{Crop, Edit, MAX_STRAIGHTEN, MIN_CROP, apply as apply_edit, preview, turned_size};
 /// The picture types the pipeline works in.

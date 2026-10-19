@@ -13,7 +13,8 @@ use adw::prelude::*;
 use gtk::{gdk, glib};
 use mylongbox_core::{CopyId, CoverPhoto, Database, Side};
 use mylongbox_media::{
-    Edit, Output, RgbImage, apply_edit, decode_bytes, decode_file, encode, preview, upright,
+    Edit, MAX_SAVED_SIDE, Output, RgbImage, THUMBNAIL_EDGE, apply_edit, decode_bytes, decode_file,
+    decode_saved, encode, preview, upright,
 };
 
 /// Thumbnails kept decoded: a few screens of the cover grid.
@@ -67,7 +68,7 @@ pub fn thumbnail_of(copy: CopyId, side: Side) -> Option<gdk::Texture> {
         .photo_thumbnail(copy, side)
         .ok()
         .flatten()
-        .and_then(|jpeg| texture(&jpeg));
+        .and_then(|jpeg| thumbnail_texture(&jpeg));
     if side == Side::Front {
         CACHE.with_borrow_mut(|c| {
             if c.order.len() >= CACHED
@@ -82,9 +83,16 @@ pub fn thumbnail_of(copy: CopyId, side: Side) -> Option<gdk::Texture> {
     texture
 }
 
-/// Decodes a stored JPEG for display, or `None` if it cannot be read.
+/// Decodes a stored full-size photo for display, or `None` if it cannot
+/// be read or is not one the app could have saved.
 pub fn texture(jpeg: &[u8]) -> Option<gdk::Texture> {
-    texture_of(&decode_bytes(jpeg).ok()?.image.into_rgb8())
+    texture_of(&decode_saved(jpeg, MAX_SAVED_SIDE).ok()?)
+}
+
+/// Decodes a stored thumbnail for display, like [`texture`], held to the
+/// thumbnail's own size, since so many are kept at once.
+pub fn thumbnail_texture(jpeg: &[u8]) -> Option<gdk::Texture> {
+    texture_of(&decode_saved(jpeg, THUMBNAIL_EDGE).ok()?)
 }
 
 /// Hands pixels to GTK to show.
@@ -300,7 +308,8 @@ mod tests {
         let photo = finish(&loaded.full, &Edit::default(), Output::default()).unwrap();
         assert_eq!((photo.width, photo.height), (533, 1600));
         assert!(photo.full_jpeg.starts_with(&[0xFF, 0xD8, 0xFF]));
-        let thumbnail = texture(&photo.thumb_jpeg).unwrap();
+        let thumbnail = thumbnail_texture(&photo.thumb_jpeg).unwrap();
+        assert!(thumbnail_texture(&photo.full_jpeg).is_none(), "too large");
         assert_eq!((thumbnail.width(), thumbnail.height()), (107, 320));
 
         // The edit is applied to the full photo: turned, then halved.

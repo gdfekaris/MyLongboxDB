@@ -131,9 +131,11 @@ its authors:
   and with plugin loading off, so no other code is loaded. Each photo is
   re-encoded from its pixels, so no EXIF, GPS, XMP, camera, or comment
   data from the original file is kept, and the original is never
-  changed. Photos stored in a collection are shown through the same
-  limited decoder, never through GTK's image loaders, so a collection
-  file from elsewhere cannot feed them hostile images. Verify with
+  changed. Photos stored in a collection are shown through the app's
+  own decoder, never through GTK's image loaders, and only if they are
+  JPEGs no larger than the app saves (2,400 pixels a side, 320 for
+  thumbnails), so a collection file from elsewhere cannot feed hostile
+  images to any other decoder. Verify with
   `sdk cargo test -p mylongbox-media --features heic` and the `libheif`
   module in the Flatpak manifest.
 - **Imported spreadsheets and archives are treated as untrusted.** A
