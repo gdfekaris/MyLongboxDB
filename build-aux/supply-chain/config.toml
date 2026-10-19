@@ -30,10 +30,6 @@ criteria = "safe-to-deploy"
 version = "0.12.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.bytemuck]]
-version = "1.25.2"
-criteria = "safe-to-deploy"
-
 [[exemptions.byteorder-lite]]
 version = "0.1.0"
 criteria = "safe-to-deploy"
@@ -53,14 +49,6 @@ criteria = "safe-to-deploy"
 [[exemptions.cfg-expr]]
 version = "0.20.10"
 criteria = "safe-to-deploy"
-
-[[exemptions.cfg-if]]
-version = "1.0.5"
-criteria = "safe-to-deploy"
-
-[[exemptions.chacha20]]
-version = "0.10.2"
-criteria = "safe-to-run"
 
 [[exemptions.cpufeatures]]
 version = "0.3.1"
@@ -86,10 +74,6 @@ criteria = "safe-to-deploy"
 version = "0.7.12"
 criteria = "safe-to-deploy"
 
-[[exemptions.fastrand]]
-version = "2.5.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.field-offset]]
 version = "0.3.6"
 criteria = "safe-to-deploy"
@@ -112,30 +96,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.fragile]]
 version = "2.1.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures]]
-version = "0.3.34"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-channel]]
-version = "0.3.34"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-executor]]
-version = "0.3.34"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-io]]
-version = "0.3.34"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-macro]]
-version = "0.3.34"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-sink]]
-version = "0.3.34"
 criteria = "safe-to-deploy"
 
 [[exemptions.futures-task]]
@@ -306,10 +266,6 @@ criteria = "safe-to-deploy"
 version = "0.22.9"
 criteria = "safe-to-deploy"
 
-[[exemptions.pin-project-lite]]
-version = "0.2.17"
-criteria = "safe-to-deploy"
-
 [[exemptions.png]]
 version = "0.18.1"
 criteria = "safe-to-deploy"
@@ -338,14 +294,6 @@ criteria = "safe-to-deploy"
 version = "0.10.3"
 criteria = "safe-to-run"
 
-[[exemptions.rand_core]]
-version = "0.10.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.rand_xorshift]]
-version = "0.5.0"
-criteria = "safe-to-run"
-
 [[exemptions.relm4]]
 version = "0.11.0"
 criteria = "safe-to-deploy"
@@ -372,10 +320,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.simd-adler32]]
 version = "0.3.10"
-criteria = "safe-to-deploy"
-
-[[exemptions.slab]]
-version = "0.4.12"
 criteria = "safe-to-deploy"
 
 [[exemptions.smallvec]]
@@ -422,10 +366,6 @@ criteria = "safe-to-deploy"
 version = "0.1.44"
 criteria = "safe-to-deploy"
 
-[[exemptions.tracing-attributes]]
-version = "0.1.31"
-criteria = "safe-to-deploy"
-
 [[exemptions.typed-path]]
 version = "0.12.3"
 criteria = "safe-to-deploy"
@@ -436,10 +376,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.uuid]]
 version = "1.28.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.version-compare]]
-version = "0.2.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen]]
