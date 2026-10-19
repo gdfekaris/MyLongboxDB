@@ -231,6 +231,7 @@ fn rules_from_a_newer_version_are_kept_but_not_read() {
     // Values that are not what they claim are refused rather than read.
     for bad in [
         r#"{"rules":[{"grade":{"at_least":"11.0"}}],"owned_as":"either"}"#,
+        r#"{"rules":[{"grade":{"at_least":"99.9"}}],"owned_as":"either"}"#,
         r#"{"rules":[{"money":{"field":"cover_price","compare":{"equal":{"currency":"USD","units":-1}}}}],"owned_as":"either"}"#,
         r#"{"rules":[{"choice":{"grade_type":["slabbed"]}}],"owned_as":"either"}"#,
         r#"{"rules":[{"issue_number":{"equal":""}}],"owned_as":"either"}"#,

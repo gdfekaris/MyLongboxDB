@@ -422,7 +422,13 @@ impl Grade {
         {
             return None;
         }
-        let tenths = whole.parse::<u8>().ok()? * 10 + tenth.parse::<u8>().ok()?;
+        // Two digits can pass for a whole grade, and 26 tenfold already
+        // overflows a u8, so the sum is checked rather than assumed small.
+        let tenths = whole
+            .parse::<u8>()
+            .ok()?
+            .checked_mul(10)?
+            .checked_add(tenth.parse::<u8>().ok()?)?;
         Self::from_tenths(tenths)
     }
 }
@@ -717,7 +723,9 @@ mod tests {
         assert_eq!(Grade::parse("9.8").map(Grade::tenths), Some(98));
         assert_eq!(Grade::parse("10").map(Grade::tenths), Some(100));
         assert_eq!(Grade::parse("0.5").map(Grade::tenths), Some(5));
-        for bad in ["0.4", "10.1", "9.85", "9.", ".5", "-1", "nm", "", "100"] {
+        for bad in [
+            "0.4", "10.1", "9.85", "9.", ".5", "-1", "nm", "", "100", "11", "26", "25.6", "99.9",
+        ] {
             assert_eq!(Grade::parse(bad), None, "{bad}");
         }
         assert_eq!(Grade::parse("9.8").unwrap().to_string(), "9.8");
