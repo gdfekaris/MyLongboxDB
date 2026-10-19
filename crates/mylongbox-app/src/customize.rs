@@ -41,6 +41,7 @@ pub fn dialog(
         .build();
     for entry in entries {
         let row = adw::SwitchRow::builder()
+            .use_markup(false)
             .title(&entry.name)
             .active(!entry.hidden || entry.locked)
             .sensitive(!entry.locked)
@@ -87,8 +88,8 @@ fn fill_shelves(
     let count = order.borrow().len();
     for (at, (id, name)) in order.borrow().iter().cloned().enumerate() {
         let row = adw::ActionRow::builder()
-            .title(&name)
             .use_markup(false)
+            .title(&name)
             .build();
         let named = [("name", name.as_str())];
         for (earlier, icon, tip, spoken, possible) in [

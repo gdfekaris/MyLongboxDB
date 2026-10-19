@@ -416,9 +416,9 @@ impl Wizard {
                     .build();
                 for (title, why) in &part.rows {
                     let row = adw::ActionRow::builder()
+                        .use_markup(false)
                         .title(title)
                         .subtitle(why)
-                        .use_markup(false)
                         .subtitle_lines(3)
                         .build();
                     expander.add_row(&row);
@@ -599,8 +599,9 @@ pub fn open(
     let mapping = auto_mapping(source.headers());
     let samples = source.preview(SAMPLED).to_vec();
 
+    // A group's title is read as markup, and a file's name is anyone's.
     let file = adw::PreferencesGroup::builder()
-        .title(file_name)
+        .title(glib::markup_escape_text(file_name))
         .description({
             let n = source.len();
             let count = grouped(n);
@@ -654,13 +655,13 @@ pub fn open(
         .enumerate()
         .map(|(i, header)| {
             let row = adw::ComboRow::builder()
+                .use_markup(false)
                 .title(if header.is_empty() {
                     gettext("(no heading)")
                 } else {
                     header.clone()
                 })
                 .subtitle(examples(&samples, i))
-                .use_markup(false)
                 .model(&model)
                 .enable_search(true)
                 .expression(gtk::PropertyExpression::new(

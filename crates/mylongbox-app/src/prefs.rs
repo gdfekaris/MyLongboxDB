@@ -352,11 +352,11 @@ fn safety_group(
     group.add(&switch);
     if let Some(name) = state.current {
         let row = adw::ActionRow::builder()
+            .use_markup(false)
             .title(gettext_f(
                 "Safety Copy of \u{201c}{collection}\u{201d}",
                 &[("collection", name)],
             ))
-            .use_markup(false)
             .build();
         match &state.safety {
             Some(copy) => {
