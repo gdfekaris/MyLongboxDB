@@ -266,13 +266,16 @@ fn compress(numbers: &[&IssueNumber]) -> Vec<String> {
     while i < numbers.len() {
         let mut end = i + 1;
         if let Some((prefix, first)) = as_counted(numbers[i]) {
+            // A run stops at the largest number, which nothing follows.
+            let mut last = first;
             while end < numbers.len()
-                && as_counted(numbers[end]) == Some((prefix, first + (end - i) as u32))
+                && let Some(next) = last.checked_add(1)
+                && as_counted(numbers[end]) == Some((prefix, next))
             {
+                last = next;
                 end += 1;
             }
-            if end - i > 1 {
-                let last = first + (end - i - 1) as u32;
+            if last > first {
                 let space = if prefix.is_empty() { "" } else { " " };
                 out.push(format!("{prefix}{space}{first}–{last}"));
                 i = end;
@@ -404,6 +407,21 @@ mod tests {
             format_collects(&entries),
             "Amazing Spider-Man (1963) 1–10, Annual 1; Fantastic Four (1961) 48, 50, ½"
         );
+    }
+
+    #[test]
+    fn the_largest_numbers_end_a_range_rather_than_overflow() {
+        let entries = [
+            entry("Zot!", Some(1984), "4294967294"),
+            entry("Zot!", Some(1984), "4294967295"),
+            entry("Zot!", Some(1984), "Annual 1"),
+        ];
+        assert_eq!(
+            format_collects(&entries),
+            "Zot! (1984) 4294967294–4294967295, Annual 1"
+        );
+        let back = parse_collects(&format_collects(&entries)).unwrap();
+        assert_eq!(back, entries);
     }
 
     #[test]
