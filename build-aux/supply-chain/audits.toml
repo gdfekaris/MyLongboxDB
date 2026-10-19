@@ -2,3 +2,171 @@
 # cargo-vet audits file
 
 [audits]
+
+[[trusted.autocfg]]
+criteria = "safe-to-deploy"
+user-id = 539 # Josh Stone (cuviper)
+start = "2019-05-22"
+end = "2027-10-19"
+
+[[trusted.csv]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-04-05"
+end = "2027-10-19"
+
+[[trusted.csv-core]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-06-26"
+end = "2027-10-19"
+
+[[trusted.enumn]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-08-18"
+end = "2027-10-19"
+
+[[trusted.itoa]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-05-02"
+end = "2027-10-19"
+
+[[trusted.memchr]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-07-07"
+end = "2027-10-19"
+
+[[trusted.proc-macro2]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-04-23"
+end = "2027-10-19"
+
+[[trusted.regex-syntax]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-03-30"
+end = "2027-10-19"
+
+[[trusted.rustversion]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-07-08"
+end = "2027-10-19"
+
+[[trusted.ryu]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-05-02"
+end = "2027-10-19"
+
+[[trusted.same-file]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-07-16"
+end = "2027-10-19"
+
+[[trusted.scopeguard]]
+criteria = "safe-to-deploy"
+user-id = 2915 # Amanieu d'Antras (Amanieu)
+start = "2020-02-16"
+end = "2027-10-19"
+
+[[trusted.serde]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-03-01"
+end = "2027-10-19"
+
+[[trusted.serde_core]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2025-09-13"
+end = "2027-10-19"
+
+[[trusted.serde_derive]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-03-01"
+end = "2027-10-19"
+
+[[trusted.serde_json]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-02-28"
+end = "2027-10-19"
+
+[[trusted.serde_spanned]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2023-01-20"
+end = "2027-10-19"
+
+[[trusted.syn]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-03-01"
+end = "2027-10-19"
+
+[[trusted.thiserror]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-10-09"
+end = "2027-10-19"
+
+[[trusted.thiserror-impl]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-10-09"
+end = "2027-10-19"
+
+[[trusted.toml_datetime]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2022-10-21"
+end = "2027-10-19"
+
+[[trusted.toml_parser]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2025-07-08"
+end = "2027-10-19"
+
+[[trusted.toml_writer]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2025-07-08"
+end = "2027-10-19"
+
+[[trusted.unicode-ident]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2021-10-02"
+end = "2027-10-19"
+
+[[trusted.walkdir]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-06-09"
+end = "2027-10-19"
+
+[[trusted.winapi-util]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2020-01-11"
+end = "2027-10-19"
+
+[[trusted.winnow]]
+criteria = "safe-to-deploy"
+user-id = 6743 # Ed Page (epage)
+start = "2023-02-22"
+end = "2027-10-19"
+
+[[trusted.zmij]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2025-12-18"
+end = "2027-10-19"
