@@ -257,6 +257,9 @@ pub struct App {
     opened: u64,
     /// The add or edit form, while one is open.
     form: Option<Form>,
+    /// What changed beneath the form while it was open, shown once it
+    /// closes.
+    behind_form: Option<Behind>,
     /// The copy saved or shown most recently, which "add next issue"
     /// follows on from.
     recent_copy: Option<CopyId>,
@@ -754,6 +757,7 @@ impl Component for App {
             open: None,
             opened: 0,
             form: None,
+            behind_form: None,
             recent_copy: None,
             open_copy: None,
             settings: Settings::load(&settings::path()),
@@ -1031,6 +1035,11 @@ impl Component for App {
                 }
             }
             AppMsg::SectionSelected(index) => {
+                if !self.leave_form(root, &sender, AppMsg::SectionSelected(index)) {
+                    // The section shown stays marked while the form is kept.
+                    self.mark_sidebar(root);
+                    return;
+                }
                 let Some(place) = self.places.get(index).copied() else {
                     return;
                 };
@@ -1041,6 +1050,9 @@ impl Component for App {
                     }
                     Place::Saved(id) => self.saved = Some(id),
                 }
+                // Marked afresh, as a choice made after discarding a form
+                // arrives once the sidebar went back to the old one.
+                self.mark_sidebar(root);
                 self.shelf = None;
                 // Choosing a section starts it at the top, even the one shown.
                 self.books_view = None;
@@ -1091,11 +1103,7 @@ impl Component for App {
                 Some(_) => sender.input(AppMsg::FormClose),
                 None => {}
             },
-            AppMsg::FormClose => {
-                if self.form.take().is_some() {
-                    root.pop_page();
-                }
-            }
+            AppMsg::FormClose => self.close_form(root, &sender),
             AppMsg::AddValue(copy) => ask_value(root, &sender, copy),
             AppMsg::SaveValue(copy, date, value, source) => {
                 match self.with_db(|db| db.add_value(copy, date, value, &source)) {
@@ -1239,7 +1247,11 @@ impl Component for App {
                     }
                 }
             }
-            AppMsg::EditShelf(id) => self.edit_shelf(id, root),
+            AppMsg::EditShelf(id) => {
+                if self.leave_form(root, &sender, AppMsg::EditShelf(id)) {
+                    self.edit_shelf(id, root);
+                }
+            }
             AppMsg::ConfirmRemoveShelf(id) => {
                 let Some(shelf) = self.with_db(|db| db.saved_shelf(id)).ok() else {
                     return;
@@ -1266,8 +1278,7 @@ impl Component for App {
                     self.end_search(root);
                 }
                 if self.refresh_sidebar(root) {
-                    root.pop_to_section();
-                    self.show(root);
+                    self.back_to_section(root);
                 }
             }
             AppMsg::CustomizeSidebar => self.customize_sidebar(root),
@@ -1276,8 +1287,7 @@ impl Component for App {
                     root.toast(&why);
                 }
                 if self.refresh_sidebar(root) {
-                    root.pop_to_section();
-                    self.show(root);
+                    self.back_to_section(root);
                 }
             }
             AppMsg::MoveShelf(id, earlier) => {
@@ -1321,15 +1331,17 @@ impl Component for App {
                     ));
                 }
                 self.refresh_display(root);
-                root.pop_to_section();
-                self.show(root);
+                self.back_to_section(root);
             }
             AppMsg::RatesChanged => {
                 self.refresh_display(root);
-                root.pop_to_section();
-                self.show(root);
+                self.back_to_section(root);
             }
-            AppMsg::OpenCollectionNamed(name) => self.open_collection(&name, root),
+            AppMsg::OpenCollectionNamed(name) => {
+                if self.leave_form(root, &sender, AppMsg::OpenCollectionNamed(name.clone())) {
+                    self.open_collection(&name, root);
+                }
+            }
             AppMsg::RenameCollection(name) => {
                 let s = sender.clone();
                 let old = name.clone();
@@ -1692,8 +1704,7 @@ impl Component for App {
             }
             AppMsg::Restore(trash) => match self.with_db(|db| db.restore(trash)) {
                 Ok(()) => {
-                    root.pop_to_section();
-                    self.show(root);
+                    self.back_to_section(root);
                     root.toast(&gettext("Restored"));
                 }
                 Err(why) => root.toast(&gettext_f(
@@ -1835,11 +1846,19 @@ impl Component for App {
                 &[("reason", &why)],
             )),
             CommandMsg::Imported(Ok(info)) => {
-                self.open_collection(&info.name, root);
-                root.toast(&gettext_f(
-                    "Imported \u{201c}{name}\u{201d}",
-                    &[("name", &info.name)],
-                ));
+                let message = gettext_f("Imported \u{201c}{name}\u{201d}", &[("name", &info.name)]);
+                // A form opened while the import ran is not closed under
+                // the owner's hands; the collection opens when asked.
+                if self.form.is_some() {
+                    root.end_working();
+                    let open = sender.clone();
+                    root.toast_button(&message, &gettext("_Open"), move || {
+                        open.input(AppMsg::OpenCollectionNamed(info.name.clone()));
+                    });
+                } else {
+                    self.open_collection(&info.name, root);
+                    root.toast(&message);
+                }
             }
             CommandMsg::Imported(Err(why)) => {
                 root.end_working();
@@ -2326,6 +2345,13 @@ impl App {
     /// Replaces the open page of a copy's issue with a fresh one, and the
     /// section beneath, after the copy changed.
     fn refresh_copy(&mut self, copy: CopyId, root: &MainWindow, sender: &ComponentSender<Self>) {
+        // Only Save and Cancel close the form, so the page waits for it.
+        if self.form.is_some() {
+            if !matches!(self.behind_form, Some(Behind::Section)) {
+                self.behind_form = Some(Behind::Copy(copy));
+            }
+            return;
+        }
         let Ok(issue) = self.with_db(|db| Ok(db.edition(db.copy(copy)?.edition)?.issue)) else {
             return;
         };
@@ -2540,6 +2566,55 @@ impl App {
         );
         root.push_page(&form.page);
         self.form = Some(form);
+        self.update_actions(root);
+    }
+
+    /// Closes the form, unsaved, and shows afresh what changed beneath
+    /// it meanwhile.
+    fn close_form(&mut self, root: &MainWindow, sender: &ComponentSender<Self>) {
+        if self.form.take().is_none() {
+            return;
+        }
+        root.pop_page();
+        self.update_actions(root);
+        match self.behind_form.take() {
+            Some(Behind::Section) => self.back_to_section(root),
+            Some(Behind::Copy(copy)) => self.refresh_copy(copy, root, sender),
+            None => {}
+        }
+    }
+
+    /// Whether the way is clear to go somewhere other than the form. A
+    /// form without changes is closed; one with changes asks first, and
+    /// goes on with `then` once they are discarded.
+    fn leave_form(
+        &mut self,
+        root: &MainWindow,
+        sender: &ComponentSender<Self>,
+        then: AppMsg,
+    ) -> bool {
+        match &self.form {
+            None => true,
+            Some(form) if form.is_dirty() => {
+                confirm_discard(root, sender, Some(then));
+                false
+            }
+            Some(_) => {
+                self.close_form(root, sender);
+                true
+            }
+        }
+    }
+
+    /// Closes the pages over the section and shows it afresh, or, while
+    /// the form is open, once it closes: only Save and Cancel close it.
+    fn back_to_section(&mut self, root: &MainWindow) {
+        if self.form.is_some() {
+            self.behind_form = Some(Behind::Section);
+            return;
+        }
+        root.pop_to_section();
+        self.show(root);
     }
 
     fn save_form(&mut self, root: &MainWindow, sender: &ComponentSender<Self>) {
@@ -2561,6 +2636,8 @@ impl App {
         match saved {
             Ok(saved) => {
                 self.form = None;
+                // The saved book's page is shown afresh below anyway.
+                self.behind_form = None;
                 self.recent_copy = Some(saved.copy);
                 // The page shows the copy just saved, not whichever copy
                 // of the issue comes first.
@@ -2579,6 +2656,7 @@ impl App {
     fn open_collection(&mut self, name: &str, root: &MainWindow) {
         // Release the current collection's lock before taking another.
         self.form = None;
+        self.behind_form = None;
         self.recent_copy = None;
         self.open = None;
         // An entry and a shelf name rows of the old collection.
@@ -2611,28 +2689,42 @@ impl App {
         self.show(root);
     }
 
-    /// Shows the welcome page, or the current section of the open
-    /// collection, reading it afresh.
-    fn show(&mut self, root: &MainWindow) {
-        root.show_welcome(self.open.is_none());
-        for name in [
-            "export-collection",
-            "export-csv",
-            "export-shown-csv",
-            "export-zip",
-            "import-books",
-            "customize-sidebar",
-            "add-comic",
-            "add-magazine",
-            "add-collected",
-            "add-next",
+    /// Turns on the actions that fit: most need an open collection, and
+    /// those that would go elsewhere wait while the form is open, as the
+    /// form is left only through Save and Cancel.
+    fn update_actions(&self, root: &MainWindow) {
+        let open = self.open.is_some();
+        let free = self.form.is_none();
+        for (name, enabled) in [
+            ("export-collection", open && free),
+            ("export-csv", open && free),
+            ("export-shown-csv", open && free),
+            ("export-zip", open && free),
+            ("import-books", open && free),
+            ("customize-sidebar", open && free),
+            ("add-comic", open && free),
+            ("add-magazine", open && free),
+            ("add-collected", open && free),
+            ("add-next", open && free),
+            ("new-collection", free),
+            ("import-collection", free),
+            ("preferences", free),
+            ("edit-rates", free),
+            ("search", free),
         ] {
             if let Some(action) = root.lookup_action(name)
                 && let Ok(action) = action.downcast::<gio::SimpleAction>()
             {
-                action.set_enabled(self.open.is_some());
+                action.set_enabled(enabled);
             }
         }
+    }
+
+    /// Shows the welcome page, or the current section of the open
+    /// collection, reading it afresh.
+    fn show(&mut self, root: &MainWindow) {
+        root.show_welcome(self.open.is_none());
+        self.update_actions(root);
         if self.open.is_none() {
             return;
         }
@@ -2936,10 +3028,21 @@ impl App {
             self.section = &SECTIONS[0][0];
             self.shelf = None;
         }
+        self.mark_sidebar(root);
+        moved
+    }
+
+    /// Marks in the sidebar the section or shelf shown.
+    fn mark_sidebar(&self, root: &MainWindow) {
+        let current = self.places.iter().position(|p| match (p, self.saved) {
+            (Place::Saved(id), Some(saved)) => *id == saved,
+            (Place::Section(s), None) => std::ptr::eq(*s, self.section),
+            _ => false,
+        });
+        let sidebar = root.sidebar();
         if let Some(row) = sidebar.row_at_index(i32::try_from(current.unwrap_or(0)).unwrap_or(0)) {
             sidebar.select_row(Some(&row));
         }
-        moved
     }
 
     fn customize_sidebar(&self, root: &MainWindow) {
@@ -3304,6 +3407,15 @@ fn ask_for_name(root: &MainWindow, sender: &ComponentSender<App>) {
             sender.input(AppMsg::CreateCollection(entry.text().into()));
         }
     });
+}
+
+/// What to show afresh once the form closes.
+#[derive(Clone, Copy)]
+enum Behind {
+    /// The page of a copy that changed.
+    Copy(CopyId),
+    /// The section, as after something came back from Trash.
+    Section,
 }
 
 /// What happened to a cover photo, for the message saying so.

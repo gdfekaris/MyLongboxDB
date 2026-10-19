@@ -197,11 +197,16 @@ impl MainWindow {
 
     /// A message with an Undo button that calls `undo`.
     pub fn toast_undo(&self, message: &str, undo: impl Fn() + 'static) {
+        self.toast_button(message, &gettext("_Undo"), undo);
+    }
+
+    /// A message with a button, labelled `label`, that calls `pressed`.
+    pub fn toast_button(&self, message: &str, label: &str, pressed: impl Fn() + 'static) {
         let toast = adw::Toast::new("");
         toast.set_use_markup(false);
         toast.set_title(message);
-        toast.set_button_label(Some(&gettext("_Undo")));
-        toast.connect_button_clicked(move |_| undo());
+        toast.set_button_label(Some(label));
+        toast.connect_button_clicked(move |_| pressed());
         self.show_toast(toast);
     }
 
