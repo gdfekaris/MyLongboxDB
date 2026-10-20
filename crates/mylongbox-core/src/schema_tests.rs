@@ -505,3 +505,36 @@ fn a_reprinted_issue_cannot_be_deleted() {
         .unwrap();
     assert_eq!(count(conn, "collects"), 0);
 }
+
+/// The schema as `sqlite_schema` holds it, one object after another.
+fn schema_text(conn: &Connection) -> String {
+    crate::db::read_schema(conn)
+        .unwrap()
+        .into_iter()
+        .map(|(kind, name, _, sql)| match sql {
+            Some(sql) => format!("-- {kind} {name}\n{sql};\n"),
+            None => format!("-- {kind} {name}, made by SQLite\n"),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn the_stored_schema_is_written_as_it_always_was() {
+    // A collection is refused unless its schema text matches, byte for
+    // byte, what the migrations make. SQLite itself writes the text of a
+    // table changed by ALTER TABLE, so a newer bundled SQLite that wrote
+    // it differently would refuse every collection upgraded by an older
+    // one. This pins the text, so such a change shows up when SQLite is
+    // updated. A new migration changes it too: then update the file from
+    // the one this test writes, after checking that only the migration's
+    // own objects differ.
+    let db = Database::open_in_memory().unwrap();
+    let made = schema_text(&db.conn);
+    let expected = include_str!("expected_schema.sql");
+    if made != expected {
+        let out = std::env::temp_dir().join("mylongboxdb-expected_schema.sql");
+        std::fs::write(&out, &made).unwrap();
+        panic!("the stored schema changed; the new text is in {}", out.display());
+    }
+}

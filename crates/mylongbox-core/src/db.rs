@@ -272,9 +272,9 @@ pub(crate) fn connect(conn: Connection) -> Result<Connection> {
 }
 
 /// One entry of `sqlite_schema`: type, name, table, and defining SQL.
-type SchemaEntry = (String, String, String, Option<String>);
+pub(crate) type SchemaEntry = (String, String, String, Option<String>);
 
-fn read_schema(conn: &Connection) -> Result<Vec<SchemaEntry>> {
+pub(crate) fn read_schema(conn: &Connection) -> Result<Vec<SchemaEntry>> {
     // sqlite_stat tables appear after ANALYZE or PRAGMA optimize and hold
     // only query-planner statistics.
     let mut stmt = conn.prepare(
