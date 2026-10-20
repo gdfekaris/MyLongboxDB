@@ -341,10 +341,45 @@ pub fn cover_date(date: Option<CoverDate>) -> String {
     }
 }
 
-/// Reads a cover date as people write it: `1975`, `1975-03`, `3/1975`,
-/// `Mar 1975`, or `March 1975`. Empty text is no date; `Err` means the
-/// text is not a date.
+/// Reads a cover date as the form shows it, or as people write it:
+/// `1975`, `1975-03`, `3/1975`, `Mar 1975`, or `March 1975`. Empty text
+/// is no date; `Err` means the text is not a date.
 pub fn parse_cover_date(text: &str) -> Result<Option<CoverDate>, ()> {
+    parse_cover_date_shown(text, &|d| cover_date(Some(d)))
+}
+
+/// [`parse_cover_date`], trying first the way `shown` writes a cover
+/// date, as a translation may name months and order the words its own
+/// way, and the form must read back what it shows.
+fn parse_cover_date_shown(
+    text: &str,
+    shown: &dyn Fn(CoverDate) -> String,
+) -> Result<Option<CoverDate>, ()> {
+    match as_shown(text.trim(), shown) {
+        Some(date) => Ok(Some(date)),
+        None => parse_typed_cover_date(text),
+    }
+}
+
+/// The cover date that `shown` writes as `text`, if any. Its year is
+/// the first run of exactly four digits, and each month of that year is
+/// tried.
+fn as_shown(text: &str, shown: &dyn Fn(CoverDate) -> String) -> Option<CoverDate> {
+    let bytes = text.as_bytes();
+    let digit = |i: usize| bytes.get(i).is_some_and(u8::is_ascii_digit);
+    let year: u16 = (0..bytes.len())
+        .find(|&i| (i..i + 4).all(digit) && !digit(i + 4) && (i == 0 || !digit(i - 1)))
+        .and_then(|i| text.get(i..i + 4))?
+        .parse()
+        .ok()?;
+    let text = text.to_lowercase();
+    (1..=12)
+        .filter_map(|month| CoverDate::new(year, Some(month)))
+        .find(|date| shown(*date).to_lowercase() == text)
+}
+
+/// Reads a cover date as people type it, with English month names.
+fn parse_typed_cover_date(text: &str) -> Result<Option<CoverDate>, ()> {
     let text = text.trim();
     if text.is_empty() {
         return Ok(None);
@@ -541,6 +576,39 @@ mod tests {
         }
         // What the form shows reads back as the same date.
         assert_eq!(parse_cover_date(&cover_date(mar)), Ok(mar));
+    }
+
+    #[test]
+    fn cover_dates_read_back_as_a_translation_shows_them() {
+        const FRENCH: [&str; 12] = [
+            "janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.",
+            "nov.", "déc.",
+        ];
+        let french = |d: CoverDate| match d.month() {
+            Some(m) => format!("{} {}", FRENCH[usize::from(m) - 1], d.year()),
+            None => d.year().to_string(),
+        };
+        // A translation may put the year first, with no space.
+        let year_first = |d: CoverDate| match d.month() {
+            Some(m) => format!("{}年{}月", d.year(), m),
+            None => d.year().to_string(),
+        };
+        for shown in [&french as &dyn Fn(CoverDate) -> String, &year_first] {
+            for month in 1..=12 {
+                let date = CoverDate::new(1975, Some(month));
+                let text = shown(date.unwrap());
+                assert_eq!(parse_cover_date_shown(&text, shown), Ok(date), "{text}");
+            }
+            // English still reads, as people may type it.
+            assert_eq!(
+                parse_cover_date_shown("Mar 1975", shown),
+                Ok(CoverDate::new(1975, Some(3)))
+            );
+        }
+        assert_eq!(
+            parse_cover_date_shown("AOÛT 1975", &french),
+            Ok(CoverDate::new(1975, Some(8)))
+        );
     }
 
     #[test]
