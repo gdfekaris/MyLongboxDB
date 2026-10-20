@@ -173,8 +173,12 @@ pub fn confine_thread() -> Result<Enforced, Error> {
 /// The confined thread's filter, which also holds where the kernel has
 /// no Landlock: every way of opening a file or making, using, or passing
 /// a socket is refused, and writing is allowed only to descriptors 0 to
-/// 2, which the thread may neither close nor replace, so an open socket,
-/// such as the one to the session bus, cannot be written to either.
+/// 2, which the thread may not close or replace by the usual calls, so
+/// an open socket, such as the one to the session bus, cannot simply be
+/// written to either. It does not refuse everything: `close_range`,
+/// `pidfd_getfd`, and writing through `mmap` or asynchronous I/O to a
+/// descriptor opened earlier still work, and without Landlock, files can
+/// still be removed or renamed by path.
 fn confining_filter() -> Result<BpfProgram, Error> {
     let rule = |conditions: Vec<SeccompCondition>| -> Result<Vec<SeccompRule>, Error> {
         let rule = SeccompRule::new(conditions).map_err(|e| error("building the filter", e))?;
