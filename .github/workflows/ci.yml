@@ -145,28 +145,6 @@ jobs:
           flatpak info --user --show-permissions "$APP_ID" | normalize > actual
           printf '%s\n' '[Context]' 'shared=ipc;' 'sockets=wayland;fallback-x11;' 'devices=dri;' | normalize > expected
           diff -u expected actual
-      - name: Test photo reading with the app's own libheif
-        shell: bash
-        # The SDK's libheif reads HEVC through plugins from an optional
-        # extension; the app ships its own, with the decoder built in and
-        # plugin loading off. Run with --devel, the app keeps its /app,
-        # whose libheif is found first, and gains the SDK to build with.
-        run: |
-          flatpak install -y --noninteractive --user flathub org.freedesktop.Sdk.Extension.rust-stable//26.08
-          # As in the SDK job, so Cargo can write inside the checkout.
-          chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          in_app() {
-              FLATPAK_ENABLE_SDK_EXT=rust-stable flatpak run --devel "$1" \
-                  --filesystem="$GITHUB_WORKSPACE" --cwd="$GITHUB_WORKSPACE" \
-                  --env=PATH=/usr/lib/sdk/rust-stable/bin:/usr/bin:/bin \
-                  --env=CARGO_HOME="$GITHUB_WORKSPACE/.cargo-ci" \
-                  --env=CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/app" \
-                  --command=sh "$APP_ID" -c "$2"
-          }
-          in_app --share=network 'cargo fetch --locked'
-          in_app --unshare=network 'cargo test --offline --locked -p mylongbox-media --features heic -- --include-ignored'
-          # Prove the tests used the app's libheif, not the SDK's.
-          in_app --unshare=network 'ldd target/app/debug/deps/mylongbox_media-* | grep "libheif.so.1 => /app/lib/"'
 
   release:
     name: Publish the release

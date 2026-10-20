@@ -105,6 +105,9 @@ modules:
     test-commands:
       - cargo --offline test --release --locked -p mylongbox-media --features heic
         -- --include-ignored
+      # The SDK has a libheif of its own, which reads HEVC through plugins;
+      # the tests must have used the one above instead.
+      - ldd target/release/deps/mylongbox_media-* | grep 'libheif.so.1 => /app/lib/'
     sources:
       - type: dir
         path: ..
