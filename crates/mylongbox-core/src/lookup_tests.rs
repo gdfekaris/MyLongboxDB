@@ -129,7 +129,20 @@ fn renaming_to_an_alternate_name_swaps_them() {
     db.rename_lookup(kirby, "Jack Kirby").unwrap();
     let entry = db.lookup(kirby).unwrap();
     assert_eq!(entry.name, "Jack Kirby");
-    assert!(entry.aliases.is_empty());
+    assert_eq!(entry.aliases, ["J. Kirby"]);
+    // The old spelling still finds the creator.
+    assert_eq!(
+        db.find_lookup::<CreatorId>("j. kirby").unwrap(),
+        Some(kirby)
+    );
+
+    // Changing only the case keeps no copy of the old name.
+    db.add_alias(kirby, "JACK KIRBY").unwrap();
+    assert_eq!(db.lookup(kirby).unwrap().aliases, ["J. Kirby"]);
+    db.rename_lookup(kirby, "jack kirby").unwrap();
+    let entry = db.lookup(kirby).unwrap();
+    assert_eq!(entry.name, "jack kirby");
+    assert_eq!(entry.aliases, ["J. Kirby"]);
 }
 
 #[test]

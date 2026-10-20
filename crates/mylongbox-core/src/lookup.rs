@@ -340,9 +340,14 @@ impl Database {
         let tx = self.tx()?;
         let old = self.lookup(id)?.name;
         check_name_free::<I>(&tx, &name, Some(id))?;
-        // Renaming to one of its own alternate names swaps them over.
+        // Renaming to one of its own alternate names swaps them over, so
+        // the old spelling still finds the entry. A change of case alone
+        // keeps no copy of the old name.
         if let Some(aliases) = &sql.aliases {
-            tx.execute(aliases.delete, params![id.raw(), name])?;
+            let was_alias = tx.execute(aliases.delete, params![id.raw(), name])? > 0;
+            if was_alias && !old.eq_ignore_ascii_case(&name) {
+                tx.execute(aliases.insert, params![id.raw(), old])?;
+            }
         }
         tx.execute(sql.rename, params![id.raw(), name])?;
         if let Some(what) = Named::of::<I>() {
