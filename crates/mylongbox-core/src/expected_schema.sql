@@ -226,7 +226,7 @@ CREATE TABLE copy (
     'tan_to_off_white', 'tan_to_cream', 'tan', 'dark_tan_to_off_white',
     'dark_tan', 'brown_to_off_white', 'brown_to_tan', 'brown',
     'brown_brittle'
-)),
+)), pedigree TEXT NOT NULL DEFAULT '',
     CHECK ((purchase_price_units IS NULL) = (purchase_price_currency IS NULL)),
     CHECK (box_position IS NULL OR box_id IS NOT NULL)
 ) STRICT;

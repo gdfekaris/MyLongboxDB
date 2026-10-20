@@ -214,7 +214,7 @@ fn user_tables(conn: &Connection) -> Vec<String> {
 #[test]
 fn schema_is_at_the_newest_version() {
     let db = Database::open_in_memory().unwrap();
-    assert_eq!(db.schema_version().unwrap(), 9);
+    assert_eq!(db.schema_version().unwrap(), 10);
 }
 
 #[test]

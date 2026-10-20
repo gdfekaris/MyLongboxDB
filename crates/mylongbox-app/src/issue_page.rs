@@ -758,6 +758,7 @@ fn copy_details(c: &CopyDetail, links: &Links) -> Vec<gtk::Widget> {
             f.label_type.clone().unwrap_or_default(),
         ]),
     );
+    add(&gettext("Pedigree"), f.pedigree.clone());
     add(
         &gettext("Page Quality"),
         f.page_quality

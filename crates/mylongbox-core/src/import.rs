@@ -731,6 +731,7 @@ fn plan(cells: &Cells<'_>, today: Date) -> std::result::Result<Planned, String> 
     })?;
     entry.copy.purchase_date = cells.read("Purchase Date", |t| t.parse().ok())?;
     entry.copy.seller = cells.get("Seller").to_owned();
+    entry.copy.pedigree = cells.get("Pedigree").to_owned();
     entry.copy.box_position = cells.read("Box Position", number)?;
     entry.copy.notes = cells.get("Notes").to_owned();
     entry.storage_box = Some(cells.get("Storage Box").to_owned()).filter(|b| !b.is_empty());

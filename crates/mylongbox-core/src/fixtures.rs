@@ -445,6 +445,10 @@ fn copy_fields(
         if f.grade_type == Some(GradeType::Cgc) {
             f.cert_number = Some(format!("{:010}", rng.below(10_000_000_000)));
             f.page_quality = Some(*rng.pick(PageQuality::ALL));
+            // From the number already drawn, so other fields stay as they were.
+            if f.cert_number.as_deref().is_some_and(|c| c.ends_with('7')) {
+                f.pedigree = "Mile High".into();
+            }
         }
     }
     if rng.chance(85) {
@@ -626,6 +630,10 @@ mod tests {
                 "SELECT count(*) FROM issue_character WHERE first_appearance = 1",
             ),
             ("series characters", "SELECT count(*) FROM series_character"),
+            (
+                "pedigrees",
+                "SELECT count(*) FROM copy WHERE pedigree <> ''",
+            ),
             ("series teams", "SELECT count(*) FROM series_team"),
             ("tags", "SELECT count(*) FROM copy_tag"),
             ("signatures", "SELECT count(*) FROM signature"),

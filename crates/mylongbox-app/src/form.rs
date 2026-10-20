@@ -110,6 +110,7 @@ pub struct Form {
     purchase_price: MoneyRow,
     purchase_date: adw::EntryRow,
     seller: adw::EntryRow,
+    pedigree: adw::EntryRow,
     storage_box: adw::EntryRow,
     box_position: adw::EntryRow,
     tags: NameList,
@@ -472,6 +473,10 @@ impl Form {
         let purchase_price = MoneyRow::new(&gettext("Purchase Price"));
         let purchase_date = entry_row(&gettext("Purchase Date (YYYY-MM-DD)"));
         let seller = entry_row(&gettext("Bought From"));
+        // Translators: the named collection a copy once belonged to, such
+        // as the Mile High collection, as a grading label gives it.
+        let pedigree = entry_row(&gettext("Pedigree"));
+        pedigree_completion(&pedigree, &db);
         let storage_box = entry_row(&gettext("Storage Box"));
         let box_position = entry_row(&gettext("Position in Box"));
         lookup_completion::<BoxId>(&storage_box, &db);
@@ -491,7 +496,13 @@ impl Form {
             copy.append(&page_quality);
         }
         copy.append(&purchase_price.row);
-        for row in [&purchase_date, &seller, &storage_box, &box_position] {
+        for row in [
+            &purchase_date,
+            &seller,
+            &pedigree,
+            &storage_box,
+            &box_position,
+        ] {
             copy.append(row);
         }
         let tags = NameList::new(
@@ -645,6 +656,7 @@ impl Form {
             purchase_price,
             purchase_date,
             seller,
+            pedigree,
             storage_box,
             box_position,
             tags,
@@ -713,6 +725,7 @@ impl Form {
             &self.label_type,
             &self.purchase_date,
             &self.seller,
+            &self.pedigree,
             &self.storage_box,
             &self.box_position,
             &self.cover_price.row,
@@ -834,6 +847,7 @@ impl Form {
         self.purchase_date
             .set_text(&c.purchase_date.map(|d| d.to_string()).unwrap_or_default());
         self.seller.set_text(&c.seller);
+        self.pedigree.set_text(&c.pedigree);
         self.storage_box
             .set_text(e.storage_box.as_deref().unwrap_or(""));
         self.box_position
@@ -1038,6 +1052,7 @@ impl Form {
         c.purchase_price = self.purchase_price.amount()?;
         c.purchase_date = date(&self.purchase_date)?;
         c.seller = self.seller.text().trim().to_owned();
+        c.pedigree = self.pedigree.text().trim().to_owned();
         e.storage_box = Some(self.storage_box.text().trim().to_owned()).filter(|b| !b.is_empty());
         c.box_position = optional(
             &self.box_position,
@@ -1280,6 +1295,23 @@ pub fn imprint_completion(row: &adw::EntryRow, publisher: &adw::EntryRow, db: &W
             db.upgrade()
                 .and_then(|db| {
                     db.suggest_imprints(&publisher, text, autocomplete::LIMIT as u32 + 1)
+                        .ok()
+                })
+                .unwrap_or_default()
+        },
+        |_| {},
+    );
+}
+
+/// Offers the pedigrees already given to a copy.
+fn pedigree_completion(row: &adw::EntryRow, db: &Weak<Database>) {
+    let db = db.clone();
+    autocomplete::attach(
+        row,
+        move |text| {
+            db.upgrade()
+                .and_then(|db| {
+                    db.suggest_pedigrees(text, autocomplete::LIMIT as u32 + 1)
                         .ok()
                 })
                 .unwrap_or_default()

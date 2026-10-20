@@ -170,12 +170,40 @@ fn text_is_trimmed_and_blank_optionals_become_none() {
     let copy = CopyFields {
         cert_number: Some("   ".into()),
         seller: " eBay ".into(),
+        pedigree: " Mile High ".into(),
         ..CopyFields::default()
     };
     let copy = db.create_copy(edition, &copy).unwrap();
     let read = db.copy(copy).unwrap().fields;
     assert_eq!(read.cert_number, None);
     assert_eq!(read.seller, "eBay");
+    assert_eq!(read.pedigree, "Mile High");
+}
+
+#[test]
+fn pedigrees_in_use_are_suggested_once_each() {
+    let db = db();
+    let id = comic_series(&db, "Batman");
+    for (n, pedigree) in [
+        ("1", "Duke Caldwell Collection"),
+        ("2", "duke caldwell collection"),
+        ("3", "Mile High"),
+        ("4", ""),
+    ] {
+        let (_, edition, _) = comic(&db, id, n);
+        let fields = CopyFields {
+            pedigree: pedigree.into(),
+            ..CopyFields::default()
+        };
+        db.create_copy(edition, &fields).unwrap();
+    }
+    assert_eq!(
+        db.suggest_pedigrees("CALD", 9).unwrap().len(),
+        1,
+        "spellings differing only in case are one"
+    );
+    assert_eq!(db.suggest_pedigrees("", 9).unwrap().len(), 2);
+    assert_eq!(db.suggest_pedigrees("%", 9).unwrap(), Vec::<String>::new());
 }
 
 #[test]

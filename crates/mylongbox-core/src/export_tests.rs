@@ -110,6 +110,7 @@ fn every_field_is_written() {
     e.copy.purchase_price = Some(Amount::parse(Currency::Gold, "1").unwrap());
     e.copy.purchase_date = Some(date("2020-05-01"));
     e.copy.seller = "eBay".into();
+    e.copy.pedigree = "Duke Caldwell Collection".into();
     e.copy.box_position = Some(3);
     e.copy.notes = "Pressed; über-clean ✓".into();
     e.storage_box = Some("Box 1".into());
@@ -188,6 +189,7 @@ fn every_field_is_written() {
     expect("Purchase Currency", "XAU");
     expect("Purchase Date", "2020-05-01");
     expect("Seller", "eBay");
+    expect("Pedigree", "Duke Caldwell Collection");
     expect("Storage Box", "Box 1");
     expect("Box Position", "3");
     expect("Tags", "For sale; Key");

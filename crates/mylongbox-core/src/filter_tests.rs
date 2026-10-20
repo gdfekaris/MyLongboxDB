@@ -90,6 +90,7 @@ fn sample() -> Sample {
     e.copy.purchase_price = Some(usd("1500.00"));
     e.copy.purchase_date = Some(date("2020-09-15"));
     e.copy.seller = "eBay".into();
+    e.copy.pedigree = "Duke Caldwell Collection".into();
     e.copy.box_position = Some(3);
     e.copy.notes = "Pressed; 100% original".into();
     e.storage_box = Some("Box 1".into());
@@ -260,6 +261,7 @@ fn text_fields_contain_are_and_resemble() {
         (text(CertNumber, Is, "1234567001"), set(&[s.a])),
         (text(LabelType, SimilarTo, "Univeral"), set(&[s.a])),
         (text(Seller, Contains, "EBAY"), set(&[s.a])),
+        (text(Pedigree, Contains, "caldwell"), set(&[s.a])),
         (text(StorageBox, Is, "box 1"), set(&[s.a])),
         (text(Notes, Contains, "100%"), set(&[s.a])),
         // Wildcards are taken literally.

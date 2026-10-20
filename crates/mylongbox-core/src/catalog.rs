@@ -58,7 +58,7 @@ macro_rules! select_copy {
             "SELECT id, uuid, edition_id, trash_id, added_at, grade, grade_type,
     cert_number, label_type, book_condition, dust_jacket_condition,
     purchase_price_units, purchase_price_currency, purchase_date, seller, box_id,
-    box_position, notes, page_quality FROM copy",
+    box_position, notes, page_quality, pedigree FROM copy",
             " ",
             $rest
         )
@@ -160,6 +160,24 @@ impl Database {
             params![
                 format!("%{}%", crate::search::like_escaped(text.trim())),
                 publisher.trim(),
+                limit
+            ],
+            |row| row.get(0),
+        )
+    }
+
+    /// Pedigrees already given to a copy that contain `text`, ignoring
+    /// case, by name.
+    pub fn suggest_pedigrees(&self, text: &str, limit: u32) -> Result<Vec<String>> {
+        query_all(
+            &self.conn,
+            "SELECT pedigree FROM copy
+             WHERE pedigree <> '' AND trash_id IS NULL AND pedigree LIKE ?1 ESCAPE '\\'
+             GROUP BY pedigree COLLATE NOCASE
+             ORDER BY pedigree COLLATE NOCASE
+             LIMIT ?2",
+            params![
+                format!("%{}%", crate::search::like_escaped(text.trim())),
                 limit
             ],
             |row| row.get(0),
@@ -364,8 +382,9 @@ impl Database {
             "INSERT INTO copy (uuid, edition_id, grade, grade_type, cert_number, label_type,
                  book_condition, dust_jacket_condition, purchase_price_units,
                  purchase_price_currency, purchase_date, seller, box_id, box_position, notes,
-                 page_quality)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                 page_quality, pedigree)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
+                 ?17)",
             params![
                 RowUuid::new_random(),
                 edition,
@@ -383,6 +402,7 @@ impl Database {
                 f.box_position,
                 f.notes,
                 f.page_quality,
+                f.pedigree,
             ],
         )?;
         let id = CopyId(tx.last_insert_rowid());
@@ -411,7 +431,7 @@ impl Database {
                  book_condition = ?6, dust_jacket_condition = ?7,
                  purchase_price_units = ?8, purchase_price_currency = ?9, purchase_date = ?10,
                  seller = ?11, box_id = ?12, box_position = ?13, notes = ?14,
-                 page_quality = ?15
+                 page_quality = ?15, pedigree = ?16
              WHERE id = ?1",
             params![
                 id,
@@ -429,6 +449,7 @@ impl Database {
                 f.box_position,
                 f.notes,
                 f.page_quality,
+                f.pedigree,
             ],
         )?;
         tx.commit()?;
@@ -899,6 +920,7 @@ fn clean_copy(fields: &CopyFields, category: Category) -> Result<CopyFields> {
     f.cert_number = optional_text(&f.cert_number);
     f.label_type = optional_text(&f.label_type);
     f.seller = trimmed(&f.seller);
+    f.pedigree = trimmed(&f.pedigree);
     let graded = f.grade.is_some()
         || f.grade_type.is_some()
         || f.cert_number.is_some()
@@ -1106,6 +1128,7 @@ fn copy_from_row(row: &Row<'_>) -> rusqlite::Result<Copy> {
             purchase_price: amount_at(row, 11, 12)?,
             purchase_date: row.get(13)?,
             seller: row.get(14)?,
+            pedigree: row.get(19)?,
             storage_box: row.get(15)?,
             box_position: row.get(16)?,
             notes: row.get(17)?,

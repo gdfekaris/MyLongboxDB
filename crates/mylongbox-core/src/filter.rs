@@ -67,6 +67,7 @@ pub enum TextField {
     Isbn,
     CertNumber,
     LabelType,
+    Pedigree,
     Seller,
     StorageBox,
     Notes,
@@ -346,6 +347,7 @@ impl TextField {
             }
             Self::CertNumber => text_sql!(false, "id", "copy", "cert_number"),
             Self::LabelType => text_sql!(false, "id", "copy", "label_type"),
+            Self::Pedigree => text_sql!(false, "id", "copy", "pedigree"),
             Self::Seller => text_sql!(false, "id", "copy", "seller"),
             Self::StorageBox => text_sql!(
                 false,

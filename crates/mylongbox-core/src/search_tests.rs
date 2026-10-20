@@ -232,6 +232,23 @@ fn those_in_every_issue_of_a_series_find_its_books() {
 }
 
 #[test]
+fn pedigrees_find_their_copies() {
+    let db = db();
+    let mut e = entry("Batman", 1940, "1");
+    e.copy.pedigree = "Duke Caldwell Collection".into();
+    let caldwell = add(&db, &e);
+    let mut e = entry("Batman", 1940, "2");
+    e.copy.pedigree = "Mile High".into();
+    let mile_high = add(&db, &e);
+    add(&db, &entry("Batman", 1940, "3"));
+    assert_eq!(found(&db, "caldwell"), [caldwell]);
+    assert_eq!(found(&db, "mile high"), [mile_high]);
+    assert_eq!(found(&db, "mi"), [mile_high]);
+    db.trash_copy(caldwell).unwrap();
+    assert!(found(&db, "caldwell").is_empty());
+}
+
+#[test]
 fn legacy_numbers_are_found_like_issue_numbers() {
     let db = db();
     let mut relaunched = entry("Amazing Spider-Man", 2018, "45");

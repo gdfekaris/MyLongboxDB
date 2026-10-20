@@ -441,6 +441,7 @@ fn described(db: &Database, n: &str) -> crate::SavedBook {
     e.copy.purchase_date = Some(crate::Date::new(2024, 5, 1).unwrap());
     e.copy.purchase_price = Some(Amount::new(Currency::Usd, 4000));
     e.copy.seller = "Local shop".into();
+    e.copy.pedigree = "Mile High".into();
     e.copy.box_position = Some(7);
     e.copy.notes = "Small tear.".into();
     e.storage_box = Some("Box 1".into());
@@ -476,6 +477,10 @@ fn next_issue_carries_the_run_forward() {
     assert_eq!(next.copy.grade, None);
     assert_eq!(next.copy.purchase_price, None);
     assert_eq!(next.copy.seller, "Local shop");
+    assert_eq!(
+        next.copy.pedigree, "Mile High",
+        "a run often comes from one collection"
+    );
     assert_eq!(next.copy.notes, "");
     assert_eq!(next.copy.box_position, Some(8));
     assert_eq!(next.storage_box.as_deref(), Some("Box 1"));
@@ -528,6 +533,7 @@ fn another_copy_joins_the_same_edition() {
     assert_eq!(again.edition.variant, "Cover B");
     assert_eq!(again.copy.grade, None);
     assert_eq!(again.copy.seller, "");
+    assert_eq!(again.copy.pedigree, "");
     assert_eq!(again.copy.box_position, Some(8));
 
     let added = db.add_book(&again).unwrap();

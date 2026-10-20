@@ -672,6 +672,9 @@ pub struct CopyFields {
     pub purchase_price: Option<Amount>,
     pub purchase_date: Option<Date>,
     pub seller: String,
+    /// The named collection it once belonged to, such as Mile High;
+    /// empty when none.
+    pub pedigree: String,
     pub storage_box: Option<BoxId>,
     /// Position within the box; requires a box.
     pub box_position: Option<u32>,

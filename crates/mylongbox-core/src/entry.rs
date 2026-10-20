@@ -297,6 +297,7 @@ impl Database {
                 e.copy = CopyFields {
                     purchase_date: e.copy.purchase_date,
                     seller: e.copy.seller.clone(),
+                    pedigree: e.copy.pedigree.clone(),
                     box_position: next_position,
                     ..blank_copy
                 };

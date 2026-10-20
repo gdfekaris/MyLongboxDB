@@ -143,6 +143,7 @@ pub const FIELDS: &[Field] = &[
         Kind::Text(TextField::CertNumber),
     ),
     field(gettext_noop("Label"), Kind::Text(TextField::LabelType)),
+    field(gettext_noop("Pedigree"), Kind::Text(TextField::Pedigree)),
     field(gettext_noop("Seller"), Kind::Text(TextField::Seller)),
     field(
         gettext_noop("Notes on This Copy"),

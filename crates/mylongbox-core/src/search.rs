@@ -43,10 +43,13 @@ enum Kind {
     /// Never stored in the index either: read from the series, which
     /// are few.
     Imprint = 16,
+    /// Not stored in the index: read from the copies that have one,
+    /// which are few.
+    Pedigree = 17,
 }
 
 impl Kind {
-    const ALL: [Self; 16] = [
+    const ALL: [Self; 17] = [
         Self::Series,
         Self::Title,
         Self::Publisher,
@@ -63,6 +66,7 @@ impl Kind {
         Self::Notes,
         Self::IssueNumber,
         Self::Imprint,
+        Self::Pedigree,
     ];
 
     fn from_code(code: i64) -> Option<Self> {
@@ -80,7 +84,7 @@ impl Kind {
             Self::CreatorAlias | Self::CharacterAlias => 55.0,
             Self::Team | Self::StoryArc => 50.0,
             Self::TeamAlias | Self::StoryArcAlias => 45.0,
-            Self::Publisher | Self::Imprint | Self::Tag => 40.0,
+            Self::Publisher | Self::Imprint | Self::Pedigree | Self::Tag => 40.0,
             Self::StorageBox => 30.0,
             Self::Notes => 10.0,
         }
@@ -108,7 +112,7 @@ impl Kind {
                  WHERE +c.trash_id IS NULL AND t.tag_id IN (SELECT value FROM json_each(?1))"
             }
             Self::StorageBox => found_through!(storage_box),
-            Self::Notes => {
+            Self::Notes | Self::Pedigree => {
                 "SELECT id AS who, id AS copy FROM copy
                  WHERE +trash_id IS NULL AND id IN (SELECT value FROM json_each(?1))"
             }
@@ -477,6 +481,26 @@ impl Database {
                 .entry(Kind::Imprint)
                 .or_default()
                 .insert(series, Kind::Imprint.weight() * quality);
+        }
+        let pedigrees = query_all(
+            &self.conn,
+            "SELECT id, pedigree FROM copy WHERE pedigree <> '' AND trash_id IS NULL",
+            [],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )?;
+        for (copy, pedigree) in pedigrees {
+            let text = fold(&pedigree);
+            if !text.contains(&folded) {
+                continue;
+            }
+            let quality = quality(&text, &folded);
+            if word_start_only && quality < WORD_START {
+                continue;
+            }
+            owners
+                .entry(Kind::Pedigree)
+                .or_default()
+                .insert(copy, Kind::Pedigree.weight() * quality);
         }
         // A word finds an issue when it is the number or a word of it,
         // so "300" finds #300 but not #30 or #3000, "#300" works as
