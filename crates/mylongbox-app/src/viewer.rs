@@ -30,6 +30,14 @@ fn clamp_zoom(zoom: f64, fit: f64) -> f64 {
     zoom.clamp(fit.min(1.0), MAX_ZOOM.max(fit))
 }
 
+/// The zoom to show, from asking for `zoom` with the photo fitted at
+/// `fit`, or `None` to show it fitted. Below the fit is kept too, as a
+/// small photo may be shown at its real size; a zoom that only rounding
+/// keeps from the fit counts as fitted.
+fn kept_zoom(zoom: f64, fit: f64) -> Option<f64> {
+    Some(clamp_zoom(zoom, fit)).filter(|z| (z / fit - 1.0).abs() > 1e-9)
+}
+
 /// The scroll position that keeps the point under `pointer` still when
 /// the zoom changes from `old` to `new`.
 fn anchored(scroll: f64, pointer: f64, old: f64, new: f64) -> f64 {
@@ -121,7 +129,7 @@ impl Viewer {
         };
         let fit = self.fit();
         let old = self.zoom.get().unwrap_or(fit);
-        let zoom = zoom.map(|z| clamp_zoom(z, fit)).filter(|z| *z > fit);
+        let zoom = zoom.and_then(|z| kept_zoom(z, fit));
         self.zoom.set(zoom);
         // Fitted, the photo must not scroll, or it would be given its
         // full size; zoomed, it scrolls.
@@ -462,6 +470,19 @@ mod tests {
         // A small photo may be shown at its real size, below the fit.
         assert_eq!(clamp_zoom(0.1, 2.0), 1.0);
         assert_eq!(clamp_zoom(9.0, 6.0), 6.0);
+    }
+
+    #[test]
+    fn a_zoom_at_the_fit_shows_the_photo_fitted() {
+        // A small photo, fitted at twice its size, can be shown at its
+        // real size.
+        assert_eq!(kept_zoom(1.0, 2.0), Some(1.0));
+        assert_eq!(kept_zoom(0.5, 2.0), Some(1.0));
+        assert_eq!(kept_zoom(3.0, 2.0), Some(3.0));
+        // Zooming out to the fit, even by way of rounding, is fitted.
+        assert_eq!(kept_zoom(2.0, 2.0), None);
+        assert_eq!(kept_zoom(0.1, 0.3), None);
+        assert_eq!(kept_zoom(0.3 * STEP / STEP, 0.3), None);
     }
 
     #[test]
