@@ -108,14 +108,14 @@ impl CollectionStore {
     /// added: `Comics (2)`.
     pub fn create(&self, name: &str) -> Result<CollectionInfo> {
         let name = self.free_name(&clean_name(name)?)?;
-        let path = self.path_for(&name);
+        let path = self.path_for(&name)?;
         drop(Database::open(&path)?);
         self.info(&name)
     }
 
     /// Opens a collection and remembers it for next time.
     pub fn open(&self, name: &str) -> Result<Database> {
-        let path = self.path_for(name);
+        let path = self.path_for(name)?;
         if !path.is_file() {
             return Err(Error::NotFound);
         }
@@ -131,7 +131,7 @@ impl CollectionStore {
         if !safety_copies {
             return self.open(name);
         }
-        let path = self.path_for(name);
+        let path = self.path_for(name)?;
         if !path.is_file() {
             return Err(Error::NotFound);
         }
@@ -154,10 +154,10 @@ impl CollectionStore {
 
     /// The safety copy of collection `name`, if one was made.
     pub fn safety_copy(&self, name: &str) -> Option<SafetyCopy> {
-        let path = self.safety_path(name, EXTENSION);
+        let path = self.safety_path(name, EXTENSION).ok()?;
         let meta = fs::metadata(&path).ok()?;
         Some(SafetyCopy {
-            reason: fs::read_to_string(self.safety_path(name, REASON)).unwrap_or_default(),
+            reason: fs::read_to_string(self.safety_path(name, REASON).ok()?).unwrap_or_default(),
             size_bytes: meta.len(),
             made: meta.modified().ok()?,
             path,
@@ -239,7 +239,7 @@ impl CollectionStore {
     /// Puts `replacement`, such as a compacted copy, in place of the
     /// closed collection `name`.
     pub fn replace_with(&self, name: &str, replacement: &Path) -> Result<()> {
-        let path = self.path_for(name);
+        let path = self.path_for(name)?;
         if !path.is_file() {
             return Err(Error::NotFound);
         }
@@ -269,29 +269,32 @@ impl CollectionStore {
         self.keep_safety_copy(name, staging, reason)
     }
 
-    fn safety_path(&self, name: &str, extension: &str) -> PathBuf {
-        self.dir.join(SAFETY).join(format!("{name}.{extension}"))
+    fn safety_path(&self, name: &str, extension: &str) -> Result<PathBuf> {
+        Ok(self
+            .dir
+            .join(SAFETY)
+            .join(format!("{}.{extension}", file_name(name)?)))
     }
 
     /// Where a safety copy is written before it replaces the last one,
     /// cleared and ready.
     fn safety_partial(&self, name: &str) -> Result<PathBuf> {
         fs::create_dir_all(self.dir.join(SAFETY))?;
-        let partial = self.safety_path(name, IMPORTING);
+        let partial = self.safety_path(name, IMPORTING)?;
         remove_with_side_files(&partial);
         Ok(partial)
     }
 
     fn keep_safety_copy(&self, name: &str, partial: &Path, reason: &str) -> Result<()> {
-        fs::rename(partial, self.safety_path(name, EXTENSION))?;
-        fs::write(self.safety_path(name, REASON), reason)?;
+        fs::rename(partial, self.safety_path(name, EXTENSION)?)?;
+        fs::write(self.safety_path(name, REASON)?, reason)?;
         Ok(())
     }
 
     /// Renames a closed collection. A name another collection has gets a
     /// number added, as when creating one.
     pub fn rename(&self, name: &str, new_name: &str) -> Result<CollectionInfo> {
-        let from = self.path_for(name);
+        let from = self.path_for(name)?;
         if !from.is_file() {
             return Err(Error::NotFound);
         }
@@ -305,7 +308,7 @@ impl CollectionStore {
         };
         // Taking the lock proves no window has it open.
         drop(Database::open(&from)?);
-        let to = self.path_for(&new_name);
+        let to = self.path_for(&new_name)?;
         fs::rename(&from, &to)?;
         for side in SIDE_FILES {
             let old = side_file(&from, side);
@@ -314,9 +317,9 @@ impl CollectionStore {
             }
         }
         for extension in [EXTENSION, REASON] {
-            let old = self.safety_path(name, extension);
+            let old = self.safety_path(name, extension)?;
             if old.exists() {
-                fs::rename(old, self.safety_path(&new_name, extension))?;
+                fs::rename(old, self.safety_path(&new_name, extension)?)?;
             }
         }
         if self.remembered().as_deref() == Some(name) {
@@ -327,7 +330,7 @@ impl CollectionStore {
 
     /// Deletes a closed collection for good.
     pub fn delete(&self, name: &str) -> Result<()> {
-        let path = self.path_for(name);
+        let path = self.path_for(name)?;
         if !path.is_file() {
             return Err(Error::NotFound);
         }
@@ -341,7 +344,7 @@ impl CollectionStore {
         }
         // Deleted means gone, safety copy and all.
         for extension in [EXTENSION, REASON] {
-            let _ = fs::remove_file(self.safety_path(name, extension));
+            let _ = fs::remove_file(self.safety_path(name, extension)?);
         }
         if self.remembered().as_deref() == Some(name) {
             fs::remove_file(self.dir.join(LAST_OPENED))?;
@@ -361,7 +364,7 @@ impl CollectionStore {
         if clean_name(&name).ok()? != name {
             return None;
         }
-        self.path_for(&name).is_file().then_some(name)
+        self.path_for(&name).ok()?.is_file().then_some(name)
     }
 
     /// Copies the collection file at `source` into the store under its
@@ -408,7 +411,7 @@ impl CollectionStore {
             let _ = fs::remove_file(&staging);
             return Err(e);
         }
-        fs::rename(&staging, self.path_for(&name))?;
+        fs::rename(&staging, self.path_for(&name)?)?;
         self.info(&name)
     }
 
@@ -427,12 +430,12 @@ impl CollectionStore {
         self.finish_export(&staging, dest)
     }
 
-    fn path_for(&self, name: &str) -> PathBuf {
-        self.dir.join(format!("{name}.{EXTENSION}"))
+    fn path_for(&self, name: &str) -> Result<PathBuf> {
+        Ok(self.dir.join(format!("{}.{EXTENSION}", file_name(name)?)))
     }
 
     fn info(&self, name: &str) -> Result<CollectionInfo> {
-        let path = self.path_for(name);
+        let path = self.path_for(name)?;
         Ok(CollectionInfo {
             name: name.to_owned(),
             size_bytes: fs::metadata(&path)?.len(),
@@ -473,6 +476,17 @@ fn remove_with_side_files(path: &Path) {
 
 /// Keeps a name safe to use as a file name: letters, digits, spaces, and
 /// a little punctuation, with no leading dot.
+/// `name` if it can only name a file in the store's own folder: one
+/// part of a path, with no `/` to reach elsewhere. Names the app gives
+/// are tidier still, but a collection copied in by hand keeps its own.
+fn file_name(name: &str) -> Result<&str> {
+    if name.is_empty() || name.contains(['/', '\0']) {
+        Err(Error::NotFound)
+    } else {
+        Ok(name)
+    }
+}
+
 fn clean_name(name: &str) -> Result<String> {
     let kept: String = name
         .chars()
@@ -620,7 +634,7 @@ mod tests {
         fs::write(store.dir().join(LAST_OPENED), "../outside").unwrap();
         assert_eq!(store.last_opened(), None);
         fs::write(store.dir().join(LAST_OPENED), "B").unwrap();
-        fs::remove_file(store.path_for("B")).unwrap();
+        fs::remove_file(store.path_for("B").unwrap()).unwrap();
         assert_eq!(store.last_opened(), None);
         assert!(matches!(store.open("B"), Err(Error::NotFound)));
     }
@@ -881,6 +895,27 @@ mod tests {
     }
 
     #[test]
+    fn a_name_never_reaches_outside_the_collections_folder() {
+        let dir = TempDir::new();
+        let store = store(&dir);
+        store.create("Comics").unwrap();
+        let outside = dir.0.join("outside.sqlite");
+        fs::copy(store.path_for("Comics").unwrap(), &outside).unwrap();
+        for name in ["../outside", "sub/name", "", "a\0b"] {
+            assert!(store.open(name).is_err(), "{name:?}");
+            assert!(store.delete(name).is_err(), "{name:?}");
+            assert!(store.rename(name, "Taken").is_err(), "{name:?}");
+            assert!(store.replace_with(name, &outside).is_err(), "{name:?}");
+            assert!(store.safety_copy(name).is_none(), "{name:?}");
+        }
+        assert!(outside.exists(), "nothing outside was touched");
+        assert_eq!(names(&store), ["Comics"]);
+        // A collection copied in by hand keeps a name it could not be given.
+        fs::copy(&outside, store.dir().join("Backup.v2.sqlite")).unwrap();
+        assert!(store.open("Backup.v2").is_ok());
+    }
+
+    #[test]
     fn a_compacted_copy_takes_the_place_of_the_collection() {
         let dir = TempDir::new();
         let store = store(&dir);
@@ -915,7 +950,7 @@ mod tests {
         ));
         assert!(staging.exists());
         drop(db);
-        let size = |name: &str| fs::metadata(store.path_for(name)).unwrap().len();
+        let size = |name: &str| fs::metadata(store.path_for(name).unwrap()).unwrap().len();
         let old = size("Comics");
         store.replace_with("Comics", &staging).unwrap();
         assert!(size("Comics") < old);
