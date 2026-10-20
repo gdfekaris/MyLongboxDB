@@ -1,12 +1,16 @@
 //! Renaming, merging, and deleting the entry behind a shelf, whatever
 //! list it belongs to, for the management menu on a shelf's page.
 
-use crate::browse::Shelf;
-use crate::catalog::{same_series_label, series_label};
+use std::collections::HashSet;
+
+use crate::browse::{Shelf, ShelfList};
+use crate::catalog::{query_all, same_series_label, series_label};
 use crate::db::Database;
 use crate::error::{Error, Result};
 use crate::lookup::LookupId;
-use crate::model::TrashId;
+use crate::model::{
+    BoxId, CharacterId, CreatorId, PublisherId, SeriesId, StoryArcId, TeamId, TrashId,
+};
 
 /// Runs `$body` with `$id` bound to the shelf's typed id, for every shelf
 /// that names an entry of a name list. Series and whole sections are
@@ -97,6 +101,102 @@ impl Database {
             Shelf::Series(id) => self.trash_series(id).map(Some),
             _ => not_an_entry(),
         })
+    }
+
+    /// Adds a name to a list before any book uses it, and returns its
+    /// shelf. Series have more to them; see [`Database::add_series`].
+    pub fn add_to_list(&self, list: ShelfList, name: &str) -> Result<Shelf> {
+        Ok(match list {
+            ShelfList::Publishers => Shelf::Publisher(self.create_lookup(name)?),
+            ShelfList::Creators => Shelf::Creator(self.create_lookup(name)?),
+            ShelfList::Characters => Shelf::Character(self.create_lookup(name)?),
+            ShelfList::Teams => Shelf::Team(self.create_lookup(name)?),
+            ShelfList::StoryArcs => Shelf::StoryArc(self.create_lookup(name)?),
+            ShelfList::StorageBoxes => Shelf::StorageBox(self.create_lookup(name)?),
+            ShelfList::Series => return not_an_entry(),
+        })
+    }
+
+    /// The names in a list that nothing uses, not even items in Trash,
+    /// as the list shows them. A series is unused while it has no issues.
+    pub fn unused_in_list(&self, list: ShelfList) -> Result<Vec<String>> {
+        fn names<I: LookupId>(db: &Database) -> Result<Vec<String>> {
+            Ok(db
+                .unused_lookups::<I>()?
+                .into_iter()
+                .map(|l| l.name)
+                .collect())
+        }
+        match list {
+            ShelfList::Series => Ok(self
+                .unused_series()?
+                .into_iter()
+                .map(|(_, label)| label)
+                .collect()),
+            ShelfList::Publishers => names::<PublisherId>(self),
+            ShelfList::Creators => names::<CreatorId>(self),
+            ShelfList::Characters => names::<CharacterId>(self),
+            ShelfList::Teams => names::<TeamId>(self),
+            ShelfList::StoryArcs => names::<StoryArcId>(self),
+            ShelfList::StorageBoxes => names::<BoxId>(self),
+        }
+    }
+
+    /// Deletes every name [`Database::unused_in_list`] gives, as one
+    /// unit, and returns how many went.
+    pub fn remove_unused(&self, list: ShelfList) -> Result<usize> {
+        fn remove<I: LookupId>(db: &Database) -> Result<usize> {
+            let unused = db.unused_lookups::<I>()?;
+            for entry in &unused {
+                db.delete_lookup(entry.id)?;
+            }
+            Ok(unused.len())
+        }
+        let tx = self.tx()?;
+        let removed = match list {
+            ShelfList::Series => {
+                let unused = self.unused_series()?;
+                for (id, _) in &unused {
+                    self.conn.execute(
+                        "DELETE FROM series WHERE id = ?1
+                         AND NOT EXISTS (SELECT 1 FROM issue WHERE series_id = ?1)",
+                        [id],
+                    )?;
+                }
+                unused.len()
+            }
+            ShelfList::Publishers => remove::<PublisherId>(self)?,
+            ShelfList::Creators => remove::<CreatorId>(self)?,
+            ShelfList::Characters => remove::<CharacterId>(self)?,
+            ShelfList::Teams => remove::<TeamId>(self)?,
+            ShelfList::StoryArcs => remove::<StoryArcId>(self)?,
+            ShelfList::StorageBoxes => remove::<BoxId>(self)?,
+        };
+        tx.commit()?;
+        Ok(removed)
+    }
+
+    /// The series outside Trash with no issues, not even in Trash, with
+    /// their labels.
+    fn unused_series(&self) -> Result<Vec<(SeriesId, String)>> {
+        let empty: HashSet<SeriesId> = query_all(
+            &self.conn,
+            "SELECT id FROM series s
+             WHERE trash_id IS NULL AND NOT EXISTS (SELECT 1 FROM issue WHERE series_id = s.id)",
+            [],
+            |row| row.get(0),
+        )?
+        .into_iter()
+        .collect();
+        Ok(self
+            .list_series()?
+            .into_iter()
+            .filter(|s| empty.contains(&s.id))
+            .map(|s| {
+                let label = series_label(&s.fields.name, s.fields.start_year, s.fields.volume);
+                (s.id, label)
+            })
+            .collect())
     }
 
     /// The alternate names of the entry behind a shelf; empty for lists

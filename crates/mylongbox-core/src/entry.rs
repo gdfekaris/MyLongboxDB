@@ -554,6 +554,29 @@ impl Database {
         tx.commit()
     }
 
+    /// Adds a series as the New Series dialog has it, with its publisher
+    /// and the characters and teams in every issue given by name, as in
+    /// [`Database::edit_series`].
+    pub fn add_series(
+        &self,
+        fields: &SeriesFields,
+        publisher: &str,
+        characters: &[String],
+        teams: &[String],
+    ) -> Result<SeriesId> {
+        let tx = self.tx()?;
+        let mut f = fields.clone();
+        f.publisher = match publisher.trim() {
+            "" => None,
+            name => Some(self.name::<PublisherId>(name)?),
+        };
+        let id = self.create_series(&f)?;
+        self.set_series_characters(id, &self.names::<CharacterId>(characters)?)?;
+        self.set_series_teams(id, &self.names::<TeamId>(teams)?)?;
+        tx.commit()?;
+        Ok(id)
+    }
+
     /// The entry with this name or alternate name, added if there is none.
     pub(crate) fn name<I: LookupId>(&self, name: &str) -> Result<I> {
         match self.find_lookup::<I>(name)? {

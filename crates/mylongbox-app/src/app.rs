@@ -7,7 +7,7 @@ use gtk::{gio, glib};
 use mylongbox_core::{
     Amount, BulkChange, Category, CollectionInfo, CollectionStore, CopyId, CopyRow, CoverPhoto,
     Currency, Database, Date, EditionId, FilterSet, ImportSource, IssueId, Prefill, SavedShelf,
-    SavedShelfId, SeriesId, Shelf, ShelfEntry, ShelfList, Side, TrashId, ValueEntry,
+    SavedShelfId, SeriesFields, SeriesId, Shelf, ShelfEntry, ShelfList, Side, TrashId, ValueEntry,
 };
 use mylongbox_media::Edit;
 use relm4::typed_view::column::TypedColumnView;
@@ -407,6 +407,15 @@ pub enum AppMsg {
     DoRename(String),
     DoMerge(String),
     DoDeleteEntry,
+    /// Ask for a name to add to the list of names shown.
+    NewName,
+    DoNewName(String),
+    /// Ask for the details of a new series of this kind.
+    NewSeries(Category),
+    AddSeries(Box<series_dialog::SeriesEdit>),
+    /// Offer to delete the names in the list shown that nothing uses.
+    ConfirmRemoveUnused,
+    DoRemoveUnused,
     Selecting(bool),
     SelectionChanged,
     /// Ask what to change on the selected copies.
@@ -597,6 +606,23 @@ impl Component for App {
         add_action(&root, "delete-entry", &sender, || {
             AppMsg::Manage(Manage::Delete, None)
         });
+        add_action(&root, "new-name", &sender, || AppMsg::NewName);
+        add_action(&root, "remove-unused", &sender, || {
+            AppMsg::ConfirmRemoveUnused
+        });
+        {
+            let new = gio::SimpleAction::new("new-series", Some(glib::VariantTy::STRING));
+            let s = sender.clone();
+            new.connect_activate(move |_, target| {
+                if let Some(category) = target
+                    .and_then(|t| t.get::<String>())
+                    .and_then(|t| Category::from_code(&t))
+                {
+                    s.input(AppMsg::NewSeries(category));
+                }
+            });
+            root.add_action(&new);
+        }
         add_action(&root, "trash-selected", &sender, || AppMsg::TrashSelected);
         relm4::main_application().set_accels_for_action("win.trash-selected", &["Delete"]);
         table.view.add_css_class("data-table");
@@ -1481,10 +1507,11 @@ impl Component for App {
                         let s = sender.clone();
                         series_dialog::ask(
                             root,
-                            &current,
+                            &current.fields,
                             &publisher,
                             (&characters, &teams),
                             db,
+                            series_dialog::Purpose::Edit,
                             move |edit| {
                                 s.input(AppMsg::SaveSeries(series, Box::new(edit), copy));
                             },
@@ -1634,6 +1661,142 @@ impl Component for App {
                     confirm(root, &gettext("Delete?"), &body, &action, &sender, || {
                         AppMsg::DoDeleteEntry
                     });
+                }
+            }
+            AppMsg::NewName => {
+                let Content::Names(list, _, _) = self.section.content else {
+                    return;
+                };
+                let s = sender.clone();
+                prompt::ask_text(
+                    root,
+                    prompt::Ask {
+                        heading: &new_name_heading(list),
+                        body: &gettext("It is listed before any book uses it."),
+                        field: &gettext("Name"),
+                        initial: "",
+                        action: &gettext("_Add"),
+                        suggest: None,
+                    },
+                    move |name| s.input(AppMsg::DoNewName(name)),
+                );
+            }
+            AppMsg::DoNewName(name) => {
+                let Content::Names(list, _, _) = self.section.content else {
+                    return;
+                };
+                match self.with_db(|db| db.add_to_list(list, &name)) {
+                    Ok(_) => {
+                        self.after_manage(None, root);
+                        root.toast(&gettext_f(
+                            "Added \u{201c}{name}\u{201d}",
+                            &[("name", &name)],
+                        ));
+                    }
+                    Err(why) => {
+                        root.toast(&gettext_f("Could not add: {reason}", &[("reason", &why)]))
+                    }
+                }
+            }
+            AppMsg::NewSeries(category) => {
+                let Some((_, db)) = &self.open else {
+                    return;
+                };
+                let s = sender.clone();
+                series_dialog::ask(
+                    root,
+                    &SeriesFields::new("", category),
+                    "",
+                    (&[], &[]),
+                    db,
+                    series_dialog::Purpose::Add,
+                    move |edit| s.input(AppMsg::AddSeries(Box::new(edit))),
+                );
+            }
+            AppMsg::AddSeries(edit) => {
+                match self.with_db(|db| {
+                    db.add_series(&edit.fields, &edit.publisher, &edit.characters, &edit.teams)
+                }) {
+                    Ok(_) => {
+                        self.after_manage(None, root);
+                        root.toast(&gettext_f(
+                            "Added \u{201c}{name}\u{201d}",
+                            &[("name", &edit.fields.name)],
+                        ));
+                    }
+                    Err(why) => {
+                        root.toast(&gettext_f("Could not add: {reason}", &[("reason", &why)]))
+                    }
+                }
+            }
+            AppMsg::ConfirmRemoveUnused => {
+                let Content::Names(list, _, _) = self.section.content else {
+                    return;
+                };
+                let unused = match self.with_db(|db| db.unused_in_list(list)) {
+                    Ok(unused) => unused,
+                    Err(why) => {
+                        root.toast(&why.to_string());
+                        return;
+                    }
+                };
+                if unused.is_empty() {
+                    root.toast(&gettext("Every name here is in use"));
+                    return;
+                }
+                const SHOWN: usize = 12;
+                let mut names = unused
+                    .iter()
+                    .take(SHOWN)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if unused.len() > SHOWN {
+                    names = ngettext_f(
+                        "{names}, and {count} more",
+                        "{names}, and {count} more",
+                        unused.len() - SHOWN,
+                        &[
+                            ("names", &names),
+                            ("count", &(unused.len() - SHOWN).to_string()),
+                        ],
+                    );
+                }
+                let count = unused.len().to_string();
+                let heading = ngettext_f(
+                    "Remove {count} Unused Name?",
+                    "Remove {count} Unused Names?",
+                    unused.len(),
+                    &[("count", &count)],
+                );
+                let body = ngettext_f(
+                    "No book uses it, not even one in Trash: {names}.",
+                    "No book uses these, not even one in Trash: {names}.",
+                    unused.len(),
+                    &[("names", &names)],
+                );
+                confirm(root, &heading, &body, &gettext("_Remove"), &sender, || {
+                    AppMsg::DoRemoveUnused
+                });
+            }
+            AppMsg::DoRemoveUnused => {
+                let Content::Names(list, _, _) = self.section.content else {
+                    return;
+                };
+                match self.with_db(|db| db.remove_unused(list)) {
+                    Ok(removed) => {
+                        self.after_manage(None, root);
+                        root.toast(&ngettext_f(
+                            "Removed {count} name",
+                            "Removed {count} names",
+                            removed,
+                            &[("count", &removed.to_string())],
+                        ));
+                    }
+                    Err(why) => root.toast(&gettext_f(
+                        "Could not remove: {reason}",
+                        &[("reason", &why)],
+                    )),
                 }
             }
             AppMsg::DoDeleteEntry => {
@@ -3141,6 +3304,7 @@ impl App {
             };
             root.set_location(collection, &title, &found);
             root.set_back_visible(false);
+            root.set_list_menu(None);
             return;
         }
         match (&self.shelf, self.saved_name()) {
@@ -3151,6 +3315,10 @@ impl App {
             (None, None) => root.set_location(collection, &gettext(self.section.name), collection),
         }
         root.set_back_visible(self.shelf.is_some());
+        match (&self.shelf, self.section.content) {
+            (None, Content::Names(list, _, _)) => root.set_list_menu(Some(&list_menu(list).into())),
+            _ => root.set_list_menu(None),
+        }
         // Only some lists keep alternate names.
         if let Some(action) = root.lookup_action("entry-aliases")
             && let Ok(action) = action.downcast::<gio::SimpleAction>()
@@ -3366,6 +3534,58 @@ impl App {
             self.query.trim(),
             self.filters_shown,
         )
+    }
+}
+
+/// The menu of a list of names: adding to it, and removing what no book
+/// uses.
+fn list_menu(list: ShelfList) -> gio::Menu {
+    let menu = gio::Menu::new();
+    let adding = gio::Menu::new();
+    if list == ShelfList::Series {
+        for (label, kind) in [
+            (gettext("New _Comic Series…"), Category::Comic),
+            (gettext("New _Magazine…"), Category::Magazine),
+            (
+                gettext("New Co_llected Edition Series…"),
+                Category::CollectedEdition,
+            ),
+        ] {
+            let item = gio::MenuItem::new(Some(&label), None);
+            item.set_action_and_target_value(
+                Some("win.new-series"),
+                Some(&kind.code().to_variant()),
+            );
+            adding.append_item(&item);
+        }
+    } else {
+        let label = match list {
+            ShelfList::Publishers => gettext("_New Publisher…"),
+            ShelfList::Creators => gettext("_New Creator…"),
+            ShelfList::Characters => gettext("_New Character…"),
+            ShelfList::Teams => gettext("_New Team…"),
+            ShelfList::StoryArcs => gettext("_New Story Arc…"),
+            _ => gettext("_New Storage Location…"),
+        };
+        adding.append(Some(&label), Some("win.new-name"));
+    }
+    menu.append_section(None, &adding);
+    let removing = gio::Menu::new();
+    removing.append(Some(&gettext("_Remove Unused…")), Some("win.remove-unused"));
+    menu.append_section(None, &removing);
+    menu
+}
+
+/// The heading of the dialog adding to a list of names.
+fn new_name_heading(list: ShelfList) -> String {
+    match list {
+        ShelfList::Series => gettext("New Series"),
+        ShelfList::Publishers => gettext("New Publisher"),
+        ShelfList::Creators => gettext("New Creator"),
+        ShelfList::Characters => gettext("New Character"),
+        ShelfList::Teams => gettext("New Team"),
+        ShelfList::StoryArcs => gettext("New Story Arc"),
+        ShelfList::StorageBoxes => gettext("New Storage Location"),
     }
 }
 

@@ -8,7 +8,7 @@ use std::rc::{Rc, Weak};
 use adw::prelude::*;
 use gtk::gio;
 use mylongbox_core::{
-    Category, CharacterId, Database, LookupId, PublisherId, Series, SeriesFields, TeamId,
+    Category, CharacterId, Database, LookupId, PublisherId, SeriesFields, TeamId,
 };
 
 use crate::autocomplete;
@@ -267,20 +267,28 @@ impl Fields {
     }
 }
 
-/// Opens the dialog on `series`, whose publisher is called `publisher`
-/// and whose every issue has `characters` and `teams`; `save` gets what
-/// the dialog then holds.
+/// Whether the dialog changes a series or adds one.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Purpose {
+    Edit,
+    Add,
+}
+
+/// Opens the dialog on a series described by `fields`, whose publisher
+/// is called `publisher` and whose every issue has `characters` and
+/// `teams`; `save` gets what the dialog then holds.
 pub fn ask(
     parent: &impl IsA<gtk::Widget>,
-    series: &Series,
+    fields: &SeriesFields,
     publisher: &str,
     (characters, teams): (&[String], &[String]),
     db: &Rc<Database>,
+    purpose: Purpose,
     save: impl Fn(SeriesEdit) + 'static,
 ) {
     let db: Weak<Database> = Rc::downgrade(db);
     let db_weak = db.clone();
-    let f = &series.fields;
+    let f = fields;
     let row = |title: &str, text: String| {
         let row = adw::EntryRow::builder().title(title).build();
         row.set_text(&text);
@@ -404,16 +412,30 @@ pub fn ask(
         color,
         notes,
     });
+    let (heading, body, save_label) = match purpose {
+        Purpose::Edit => (
+            gettext("Edit Series"),
+            gettext("Changes show on every book in the series."),
+            gettext("_Save"),
+        ),
+        Purpose::Add => (
+            gettext("New Series"),
+            gettext("Books can be added to it later."),
+            gettext("_Add"),
+        ),
+    };
     let dialog = adw::AlertDialog::builder()
-        .heading(gettext("Edit Series"))
-        .body(gettext("Changes show on every book in the series."))
+        .heading(heading)
+        .body(body)
         .extra_child(&content)
         .default_response("save")
         .close_response("cancel")
         .build();
-    let (cancel_label, save_label) = (gettext("_Cancel"), gettext("_Save"));
+    let cancel_label = gettext("_Cancel");
     dialog.add_responses(&[("cancel", &cancel_label), ("save", &save_label)]);
     dialog.set_response_appearance("save", adw::ResponseAppearance::Suggested);
+    // A new series has no name yet.
+    dialog.set_response_enabled("save", purpose == Purpose::Edit);
     {
         let weak = dialog.downgrade();
         let f = fields.clone();

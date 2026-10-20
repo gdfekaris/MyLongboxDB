@@ -1,6 +1,6 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::glib;
+use gtk::{gio, glib};
 
 use crate::i18n::{gettext, gettext_f, ngettext_f};
 
@@ -48,6 +48,8 @@ mod imp {
         pub results_label: TemplateChild<gtk::Label>,
         #[template_child]
         pub entry_menu_button: TemplateChild<gtk::MenuButton>,
+        #[template_child]
+        pub list_menu_button: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub selection_bar: TemplateChild<gtk::ActionBar>,
         #[template_child]
@@ -266,6 +268,14 @@ impl MainWindow {
         // A shelf names one entry, which its menu can rename or merge.
         imp.entry_menu_button.set_visible(visible);
         imp.content_header.set_show_back_button(!visible);
+    }
+
+    /// Offers `menu` for the list of names shown, or hides it when no
+    /// list is.
+    pub fn set_list_menu(&self, menu: Option<&gio::MenuModel>) {
+        let button = &self.imp().list_menu_button;
+        button.set_menu_model(menu);
+        button.set_visible(menu.is_some());
     }
 
     /// Puts the views of books and names in their places.

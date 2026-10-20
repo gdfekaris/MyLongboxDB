@@ -149,6 +149,13 @@ template $MainWindow: Adw.ApplicationWindow {
                     }
 
                     [end]
+                    MenuButton list_menu_button {
+                      icon-name: "view-more-symbolic";
+                      tooltip-text: _("Manage This List");
+                      visible: false;
+                    }
+
+                    [end]
                     MenuButton sort_button {
                       icon-name: "view-sort-descending-symbolic";
                       tooltip-text: _("Sort");

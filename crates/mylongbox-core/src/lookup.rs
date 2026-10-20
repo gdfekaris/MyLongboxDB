@@ -428,6 +428,21 @@ impl Database {
         Ok(())
     }
 
+    /// The entries that nothing links to, not even items in Trash, by
+    /// name.
+    pub fn unused_lookups<I: LookupId>(&self) -> Result<Vec<Lookup<I>>> {
+        let mut unused = Vec::new();
+        for entry in self.list_lookups::<I>()? {
+            let uses: i64 = self
+                .conn
+                .query_row(I::SQL.usage, [entry.id.raw()], |row| row.get(0))?;
+            if uses == 0 {
+                unused.push(entry);
+            }
+        }
+        Ok(unused)
+    }
+
     /// Deletes an entry that nothing links to.
     pub fn delete_lookup<I: LookupId>(&self, id: I) -> Result<()> {
         let tx = self.tx()?;

@@ -131,3 +131,99 @@ fn alternate_names_come_and_go() {
     assert!(!Database::shelf_has_aliases(shelf_box));
     assert!(Database::shelf_has_aliases(jack));
 }
+
+#[test]
+fn names_are_added_to_a_list_before_any_book_uses_them() {
+    use crate::ShelfList;
+    let db = db();
+    let shelf = db
+        .add_to_list(ShelfList::Characters, " Captain Vega ")
+        .unwrap();
+    let listed = db.shelf_list(ShelfList::Characters).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(
+        (listed[0].shelf, listed[0].name.as_str()),
+        (shelf, "Captain Vega")
+    );
+    assert_eq!(listed[0].copies, 0);
+    assert!(matches!(
+        db.add_to_list(ShelfList::Characters, "captain vega"),
+        Err(Error::NameTaken { .. })
+    ));
+    assert!(db.add_to_list(ShelfList::Characters, "  ").is_err());
+    assert!(db.add_to_list(ShelfList::Series, "X-Men").is_err());
+    db.add_to_list(ShelfList::StorageBoxes, "Shelf 2").unwrap();
+    assert_eq!(db.shelf_list(ShelfList::StorageBoxes).unwrap().len(), 1);
+}
+
+#[test]
+fn a_series_is_added_with_its_publisher_and_cast() {
+    use crate::ShelfList;
+    let db = db();
+    let mut fields = SeriesFields::new("Detective Comics", Category::Comic);
+    fields.start_year = Some(1937);
+    let id = db
+        .add_series(&fields, "DC", &["Batman".into()], &["Bat-Family".into()])
+        .unwrap();
+    let read = db.series(id).unwrap().fields;
+    assert_eq!(read.start_year, Some(1937));
+    assert_eq!(db.lookup(read.publisher.unwrap()).unwrap().name, "DC");
+    assert_eq!(db.series_characters(id).unwrap()[0].name, "Batman");
+    assert_eq!(db.series_teams(id).unwrap()[0].name, "Bat-Family");
+    let listed = db.shelf_list(ShelfList::Series).unwrap();
+    assert_eq!(listed[0].name, "Detective Comics (1937 series)");
+    assert_eq!(listed[0].copies, 0);
+}
+
+#[test]
+fn only_names_nothing_uses_are_removed() {
+    use crate::ShelfList;
+    let db = db();
+    let kept = add(&db, "X-Men", 1963, "1", "Stan Lee");
+    let trashed = add(&db, "Tales of Suspense", 1959, "39", "Larry Lieber");
+    db.trash_issue(trashed.issue).unwrap();
+    for name in ["Unused One", "Unused Two"] {
+        db.add_to_list(ShelfList::Creators, name).unwrap();
+    }
+    // Used only by a series' cast.
+    let wolverine = db.create_lookup::<CharacterId>("Wolverine").unwrap();
+    db.set_series_characters(db.issue(kept.issue).unwrap().series, &[wolverine])
+        .unwrap();
+    db.add_to_list(ShelfList::Characters, "Nobody").unwrap();
+    let empty = db
+        .create_series(&SeriesFields::new("Empty Run", Category::Comic))
+        .unwrap();
+
+    assert_eq!(
+        db.unused_in_list(ShelfList::Creators).unwrap(),
+        ["Unused One", "Unused Two"],
+        "one credited only on a book in Trash is still used"
+    );
+    assert_eq!(
+        db.unused_in_list(ShelfList::Characters).unwrap(),
+        ["Nobody"]
+    );
+    assert_eq!(
+        db.unused_in_list(ShelfList::Series).unwrap(),
+        ["Empty Run"],
+        "a series whose only issue is in Trash is still used"
+    );
+    assert_eq!(db.remove_unused(ShelfList::Creators).unwrap(), 2);
+    assert_eq!(db.remove_unused(ShelfList::Characters).unwrap(), 1);
+    assert_eq!(db.remove_unused(ShelfList::Series).unwrap(), 1);
+    assert!(db.series(empty).is_err());
+    assert!(
+        db.find_lookup::<CreatorId>("Larry Lieber")
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        db.find_lookup::<CharacterId>("Wolverine")
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(db.remove_unused(ShelfList::Creators).unwrap(), 0);
+    // Trash still restores the book with its creator.
+    let group = db.trash_groups().unwrap()[0].id;
+    db.restore(group).unwrap();
+}
