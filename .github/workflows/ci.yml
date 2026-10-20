@@ -39,6 +39,10 @@ jobs:
       # audits are imported, or be listed as accepted as it was.
       - run: cargo vet --locked
       - name: Test crates that need no GTK
+        # The runner's kernel must be able to check that TCP is refused,
+        # or the sandbox test fails instead of skipping that part.
+        env:
+          MLBX_REQUIRE_LANDLOCK_NET: '1'
         run: cargo test --locked -p mylongbox-core -p mylongbox-media -p mylongbox-sandbox
 
   sdk:

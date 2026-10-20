@@ -12,8 +12,29 @@ fn denied<T: std::fmt::Debug>(result: std::io::Result<T>) -> bool {
     matches!(&result, Err(e) if e.kind() == ErrorKind::PermissionDenied)
 }
 
+/// The Landlock ABI the kernel offers, or 0 where it has none.
+fn kernel_abi() -> i64 {
+    // SAFETY: with no attributes and the version flag, the call only
+    // returns the ABI version; it reads and writes no memory.
+    let abi = unsafe {
+        libc::syscall(
+            libc::SYS_landlock_create_ruleset,
+            std::ptr::null::<libc::c_void>(),
+            0usize,
+            1u32,
+        )
+    };
+    abi.max(0)
+}
+
 #[test]
 fn files_change_only_in_the_allowed_folders() {
+    // CI sets this, so that a runner kernel too old to check everything
+    // below fails the run rather than skipping part of it unseen.
+    let abi = kernel_abi();
+    if std::env::var_os("MLBX_REQUIRE_LANDLOCK_NET").is_some() {
+        assert!(abi >= 4, "Landlock ABI {abi} cannot check TCP; 4 is needed");
+    }
     // In the build folder, cleared at the start of each run, since once
     // the limits apply nothing outside the allowed folder can be removed.
     let base = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("landlock");
@@ -74,7 +95,7 @@ fn files_change_only_in_the_allowed_folders() {
     assert!(denied(thread.join().unwrap()));
 
     // TCP is refused where the kernel checks it (Landlock ABI 4 and up).
-    if enforced == Enforced::Fully {
+    if abi >= 4 {
         assert!(denied(TcpListener::bind("127.0.0.1:0")));
     }
 }
