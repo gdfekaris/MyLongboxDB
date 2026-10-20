@@ -489,8 +489,10 @@ collection.csv
       interior_page, inside_back_cover, back_cover
   Yes or no columns are \"yes\", \"no\", or empty when not recorded.
 
-  Collects, for collected editions, lists the issues the book reprints,
-  for example \"Amazing Spider-Man (1963) 1-10; Annual 1\".
+  Collects, for collected editions, lists the issues the book reprints.
+  Commas separate the issues of one series and semicolons separate
+  series, for example:
+    Amazing Spider-Man (1963) 1-10, Annual 1; Fantastic Four (1961) 48-50
 
 images/
   The photos, as JPEG files named after the copy:

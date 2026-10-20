@@ -214,7 +214,7 @@ fn collected_editions_list_what_they_collect() {
         new_series("Masterworks", 2003, None),
         Some(IssueNumber::new("1").unwrap()),
     );
-    e.collects = "Amazing Spider-Man (1963) 1-10; Annual 1".into();
+    e.collects = "Amazing Spider-Man (1963) 1-10, Annual 1".into();
     e.edition.binding = Some(Binding::Hardcover);
     e.edition.has_dust_jacket = Some(true);
     e.edition.has_slipcase = Some(false);
@@ -227,7 +227,7 @@ fn collected_editions_list_what_they_collect() {
     assert_eq!(
         cell(row, "Collects"),
         // The text the add form shows and reads back.
-        "Amazing Spider-Man (1963) 1\u{2013}10; Annual 1"
+        "Amazing Spider-Man (1963) 1\u{2013}10, Annual 1"
     );
     assert_eq!(cell(row, "Binding"), "hardcover");
     assert_eq!(cell(row, "Dust Jacket"), "yes");
@@ -441,4 +441,33 @@ fn credit_columns_are_named_in_the_header() {
     for name in crate::export::ROLE_COLUMN_NAMES {
         assert!(COLUMNS.contains(&name), "{name}");
     }
+}
+
+#[test]
+fn the_readme_example_of_collects_reads_as_it_says() {
+    let example = "Amazing Spider-Man (1963) 1-10, Annual 1; Fantastic Four (1961) 48-50";
+    assert!(crate::export::README.contains(example));
+    let entries = crate::parse_collects(example).unwrap();
+    let read: Vec<(&str, Option<u16>, &str)> = entries
+        .iter()
+        .map(|e| {
+            (
+                e.series.name.as_str(),
+                e.series.start_year,
+                e.number.as_str(),
+            )
+        })
+        .collect();
+    let mut expected: Vec<(&str, Option<u16>, String)> = (1..=10)
+        .map(|n| ("Amazing Spider-Man", Some(1963), n.to_string()))
+        .collect();
+    expected.push(("Amazing Spider-Man", Some(1963), "Annual 1".into()));
+    for n in 48..=50 {
+        expected.push(("Fantastic Four", Some(1961), n.to_string()));
+    }
+    let expected: Vec<(&str, Option<u16>, &str)> = expected
+        .iter()
+        .map(|(s, y, n)| (*s, *y, n.as_str()))
+        .collect();
+    assert_eq!(read, expected);
 }
