@@ -514,6 +514,22 @@ fn yes_no(text: &str) -> Option<bool> {
     }
 }
 
+/// A Canadian price in cents, from `0.75` or with a mark before it as
+/// stores and spreadsheets write one: `CA$0.75`, `C$0.75`, `CAD 0.75`,
+/// or `$0.75`.
+fn canadian_cents(text: &str) -> Option<i64> {
+    let text = text.trim();
+    let amount = ["CA$", "C$", "CAD", "$"]
+        .iter()
+        .find_map(|mark| {
+            text.get(..mark.len())
+                .filter(|start| start.eq_ignore_ascii_case(mark))
+                .map(|_| &text[mark.len()..])
+        })
+        .unwrap_or(text);
+    crate::money::parse_cents(amount.trim()).ok()
+}
+
 fn number<T: std::str::FromStr>(text: &str) -> Option<T> {
     text.trim().parse().ok()
 }
@@ -679,9 +695,8 @@ fn plan(cells: &Cells<'_>, today: Date) -> std::result::Result<Planned, String> 
     entry.edition.cover_price = cells.read("Cover Price", |t| {
         money(t, cells.get("Cover Price Currency"))
     })?;
-    entry.edition.canadian_cover_price_cents = cells.read("Canadian Cover Price", |t| {
-        crate::money::parse_cents(t.trim_start_matches(['C', 'A', '$'])).ok()
-    })?;
+    entry.edition.canadian_cover_price_cents =
+        cells.read("Canadian Cover Price", canadian_cents)?;
     entry.edition.barcode = Some(cells.get("Barcode").to_owned()).filter(|b| !b.is_empty());
     entry.edition.isbn = cells.read("ISBN", Isbn::parse)?;
     entry.edition.binding = cells.read("Binding", |t| code(t, Binding::from_code))?;
@@ -767,7 +782,12 @@ fn signature(item: &str) -> std::result::Result<(String, SignatureFields), Strin
         Some(part(3).parse().map_err(|_| problem())?)
     };
     fields.place = part(4).to_owned();
-    fields.sketch = !part(5).is_empty() && part(5) != "no";
+    // Written as "sketch" or left empty; other files may say yes or no.
+    fields.sketch = match part(5) {
+        "" => false,
+        t if t.eq_ignore_ascii_case("sketch") => true,
+        t => yes_no(t).ok_or_else(problem)?,
+    };
     fields.placement = if part(6).is_empty() {
         None
     } else {

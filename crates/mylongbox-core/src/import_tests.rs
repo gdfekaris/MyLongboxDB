@@ -328,6 +328,56 @@ fn signatures_are_read_with_or_without_their_placement() {
 }
 
 #[test]
+fn a_sketch_is_read_as_yes_or_no_in_any_case() {
+    let db = Database::open_in_memory().unwrap();
+    let text = "Series,Issue Number,Signatures\n\
+                Thor,1,Stan Lee | | | | | sketch\n\
+                Thor,2,Stan Lee | | | | | Yes\n\
+                Thor,3,Stan Lee | | | | | No\n\
+                Thor,4,Stan Lee | | | | | false\n\
+                Thor,5,Stan Lee | | | | | \n\
+                Thor,6,Stan Lee | | | | | maybe\n";
+    let report = import(&db, text);
+    assert_eq!(outcomes(&report)[..5], [&Outcome::Added; 5]);
+    assert!(
+        matches!(&report.rows[5].outcome, Outcome::Problem(_)),
+        "{:?}",
+        report.rows[5].outcome
+    );
+    let sketched: Vec<bool> = db
+        .browse(crate::Shelf::Everything)
+        .unwrap()
+        .iter()
+        .map(|row| db.signatures(row.copy).unwrap()[0].fields.sketch)
+        .collect();
+    assert_eq!(sketched, [true, true, false, false, false]);
+}
+
+#[test]
+fn a_canadian_price_may_carry_any_usual_mark() {
+    let db = Database::open_in_memory().unwrap();
+    let text = "Series,Issue Number,Canadian Cover Price\n\
+                Thor,1,CA$0.75\n\
+                Thor,2,C$0.75\n\
+                Thor,3,CAD 0.75\n\
+                Thor,4,cad0.75\n\
+                Thor,5,$0.75\n\
+                Thor,6,0.75\n\
+                Thor,7,CADX\n";
+    let report = import(&db, text);
+    assert_eq!(outcomes(&report)[..6], [&Outcome::Added; 6]);
+    assert!(
+        matches!(&report.rows[6].outcome, Outcome::Problem(_)),
+        "{:?}",
+        report.rows[6].outcome
+    );
+    for row in db.browse(crate::Shelf::Everything).unwrap() {
+        let entry = db.book_entry(row.copy).unwrap();
+        assert_eq!(entry.edition.canadian_cover_price_cents, Some(75));
+    }
+}
+
+#[test]
 fn each_problem_names_its_column() {
     let db = Database::open_in_memory().unwrap();
     let text = "Series,Issue Number,Grade,Purchase Date,Category,Signatures\n\
