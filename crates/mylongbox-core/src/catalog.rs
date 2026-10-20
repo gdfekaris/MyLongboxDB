@@ -269,10 +269,11 @@ impl Database {
     // Editions -------------------------------------------------------------
 
     pub fn create_edition(&self, issue: IssueId, fields: &EditionFields) -> Result<EditionId> {
+        let tx = self.tx()?;
         let parent = self.issue(issue)?;
         live(parent.trash)?;
         let f = clean_edition(fields, self.series(parent.series)?.fields.category)?;
-        self.conn.execute(
+        tx.execute(
             "INSERT INTO edition (uuid, issue_id, variant, printing, distribution,
                  cover_price_units, cover_price_currency, barcode, isbn, binding,
                  has_dust_jacket, has_slipcase, canadian_cover_price_cents)
@@ -293,7 +294,9 @@ impl Database {
                 f.canadian_cover_price_cents,
             ],
         )?;
-        Ok(EditionId(self.conn.last_insert_rowid()))
+        let id = EditionId(tx.last_insert_rowid());
+        tx.commit()?;
+        Ok(id)
     }
 
     /// An edition, whether live or in Trash.
@@ -307,10 +310,11 @@ impl Database {
     }
 
     pub fn update_edition(&self, id: EditionId, fields: &EditionFields) -> Result<()> {
+        let tx = self.tx()?;
         let current = self.edition(id)?;
         live(current.trash)?;
         let f = clean_edition(fields, self.category_of_issue(current.issue)?)?;
-        self.conn.execute(
+        tx.execute(
             "UPDATE edition SET variant = ?2, printing = ?3, distribution = ?4,
                  cover_price_units = ?5, cover_price_currency = ?6, barcode = ?7, isbn = ?8,
                  binding = ?9, has_dust_jacket = ?10, has_slipcase = ?11,
@@ -331,6 +335,7 @@ impl Database {
                 f.canadian_cover_price_cents,
             ],
         )?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -351,10 +356,11 @@ impl Database {
     // Copies ---------------------------------------------------------------
 
     pub fn create_copy(&self, edition: EditionId, fields: &CopyFields) -> Result<CopyId> {
+        let tx = self.tx()?;
         let parent = self.edition(edition)?;
         live(parent.trash)?;
         let f = clean_copy(fields, self.category_of_issue(parent.issue)?)?;
-        self.conn.execute(
+        tx.execute(
             "INSERT INTO copy (uuid, edition_id, grade, grade_type, cert_number, label_type,
                  book_condition, dust_jacket_condition, purchase_price_units,
                  purchase_price_currency, purchase_date, seller, box_id, box_position, notes,
@@ -379,7 +385,9 @@ impl Database {
                 f.page_quality,
             ],
         )?;
-        Ok(CopyId(self.conn.last_insert_rowid()))
+        let id = CopyId(tx.last_insert_rowid());
+        tx.commit()?;
+        Ok(id)
     }
 
     /// A copy, whether live or in Trash.
@@ -393,11 +401,12 @@ impl Database {
     }
 
     pub fn update_copy(&self, id: CopyId, fields: &CopyFields) -> Result<()> {
+        let tx = self.tx()?;
         let current = self.copy(id)?;
         live(current.trash)?;
         let issue = self.edition(current.edition)?.issue;
         let f = clean_copy(fields, self.category_of_issue(issue)?)?;
-        self.conn.execute(
+        tx.execute(
             "UPDATE copy SET grade = ?2, grade_type = ?3, cert_number = ?4, label_type = ?5,
                  book_condition = ?6, dust_jacket_condition = ?7,
                  purchase_price_units = ?8, purchase_price_currency = ?9, purchase_date = ?10,
@@ -422,6 +431,7 @@ impl Database {
                 f.page_quality,
             ],
         )?;
+        tx.commit()?;
         Ok(())
     }
 
