@@ -155,9 +155,8 @@ its authors:
   `cargo test -p mylongbox-sandbox`,
   `sdk cargo test -p mylongbox-media --features heic -- --include-ignored`,
   and the `libheif` module in the Flatpak manifest. That test command
-  uses the SDK's own libheif; CI's "Test photo reading with the app's
-  own libheif" step runs the same tests inside the built app, against
-  the copy it ships.
+  uses the SDK's own libheif; the manifest's `test-commands` run the
+  same tests in every Flatpak build, against the copy the app ships.
 - **Imported spreadsheets and archives are treated as untrusted.** A
   CSV file over 100 MB is refused without being read whole. A full
   export is never unpacked to disk: only the files its CSV names are
