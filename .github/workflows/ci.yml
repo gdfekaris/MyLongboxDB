@@ -69,15 +69,25 @@ jobs:
       - name: Define the SDK shell
         run: |
           cat > "$RUNNER_TEMP/sdk.sh" <<'SH'
-          sdk() {
-              FLATPAK_ENABLE_SDK_EXT=rust-stable flatpak run --share=network \
+          # The first argument shares the network or not; only fetching
+          # the locked crates has it, so builds and tests run without.
+          sdk_with() {
+              net=$1
+              shift
+              FLATPAK_ENABLE_SDK_EXT=rust-stable flatpak run $net \
                   --filesystem="$GITHUB_WORKSPACE" --cwd="$GITHUB_WORKSPACE" \
                   --env=PATH=/usr/lib/sdk/rust-stable/bin:/usr/bin:/bin \
                   --env=CARGO_HOME="$GITHUB_WORKSPACE/.cargo-ci" \
                   --command=sh org.gnome.Sdk//51 -c "$*"
           }
+          sdk() {
+              sdk_with "--unshare=network --env=CARGO_NET_OFFLINE=true" "$@"
+          }
           SH
           echo "BASH_ENV=$RUNNER_TEMP/sdk.sh" >> "$GITHUB_ENV"
+      - name: Fetch the locked crates
+        shell: bash
+        run: sdk_with --share=network cargo fetch --locked
       - name: Check the SDK toolchain matches rust-toolchain.toml
         shell: bash
         run: |
