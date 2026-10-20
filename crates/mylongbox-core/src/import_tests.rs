@@ -457,7 +457,8 @@ fn likely_duplicates_are_flagged_and_can_be_left_out() {
     let mut source = ImportSource::from_csv(text.as_bytes()).unwrap();
     let mut settings = settings(&source);
     let check = db.check_import(&source, &settings).unwrap();
-    let note = "you already own a copy of this issue, variant, and printing".to_owned();
+    let note =
+        "you already own a copy of this issue, variant, printing, and distribution".to_owned();
     assert_eq!(
         outcomes(&check),
         [
@@ -807,4 +808,30 @@ fn a_run_dropped_unfinished_is_undone_and_later_edits_stay() {
     assert!(db.browse(crate::Shelf::Everything).unwrap().is_empty());
     db.create_lookup::<CreatorId>("Jack Kirby").unwrap();
     assert!(db.conn.is_autocommit());
+}
+
+#[test]
+fn a_copy_of_another_distribution_is_not_a_likely_duplicate() {
+    let db = Database::open_in_memory().unwrap();
+    let text = "Series,Start Year,Issue Number,Distribution\n\
+                Thor,1966,337,direct\n";
+    assert_eq!(import(&db, text).added(), 1);
+    // The newsstand copy goes to an edition of its own, so it is not
+    // flagged; another direct copy joins the one owned, so it is.
+    let text = "Series,Start Year,Issue Number,Distribution\n\
+                Thor,1966,337,newsstand\n\
+                Thor,1966,337,direct\n";
+    let source = ImportSource::from_csv(text.as_bytes()).unwrap();
+    let check = db.check_import(&source, &settings(&source)).unwrap();
+    assert_eq!(
+        outcomes(&check),
+        [
+            &Outcome::Added,
+            &Outcome::LikelyDuplicate {
+                note: "you already own a copy of this issue, variant, printing, and distribution"
+                    .into(),
+                added: true
+            },
+        ]
+    );
 }

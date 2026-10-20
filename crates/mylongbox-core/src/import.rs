@@ -358,8 +358,8 @@ pub enum Outcome {
     Added,
     /// The copy itself is already in the collection, by its id.
     AlreadyOwned,
-    /// A copy of the same issue, variant, and printing was already
-    /// owned; the text says how many. Added unless the settings say to
+    /// A copy of the same issue, variant, printing, and distribution was
+    /// already owned; the text says how many. Added unless the settings say to
     /// leave these out.
     LikelyDuplicate {
         note: String,
@@ -1138,7 +1138,8 @@ impl Database {
     }
 
     /// How many copies owned before the import share the planned book's
-    /// issue, variant, and printing.
+    /// issue, variant, printing, and distribution: the edition it would
+    /// be added to.
     fn owned_before(&self, entry: &BookEntry, before: &Before) -> Result<i64> {
         let series: Option<SeriesId> = match &entry.series {
             SeriesChoice::Existing(id) => Some(*id),
@@ -1168,12 +1169,13 @@ impl Database {
         Ok(self.conn.query_row(
             "SELECT count(*) FROM copy JOIN edition ON edition.id = copy.edition_id
              WHERE edition.issue_id = ?1 AND edition.variant = ?2 COLLATE NOCASE
-                 AND edition.printing IS ?3 AND edition.trash_id IS NULL
-                 AND copy.trash_id IS NULL AND copy.id <= ?4",
+                 AND edition.printing IS ?3 AND edition.distribution IS ?4
+                 AND edition.trash_id IS NULL AND copy.trash_id IS NULL AND copy.id <= ?5",
             params![
                 issue,
                 entry.edition.variant.trim(),
                 entry.edition.printing,
+                entry.edition.distribution,
                 before.copy
             ],
             |r| r.get(0),
@@ -1208,9 +1210,9 @@ impl Database {
         let owned = self.owned_before(&entry, before)?;
         let duplicate = (owned > 0).then(|| {
             if owned == 1 {
-                "you already own a copy of this issue, variant, and printing".to_owned()
+                "you already own a copy of this issue, variant, printing, and distribution".to_owned()
             } else {
-                format!("you already own {owned} copies of this issue, variant, and printing")
+                format!("you already own {owned} copies of this issue, variant, printing, and distribution")
             }
         });
         if let Some(note) = &duplicate

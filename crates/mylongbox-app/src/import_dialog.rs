@@ -634,7 +634,7 @@ pub fn open(
     let skip = adw::SwitchRow::builder()
         .title(gettext("Leave Out Likely Duplicates"))
         .subtitle(gettext(
-            "Books whose issue, variant, and printing you already own",
+            "Books whose issue, variant, printing, and distribution you already own",
         ))
         .build();
     file.add(&separator);
@@ -880,7 +880,7 @@ mod tests {
 
     #[test]
     fn the_report_says_what_happens_to_each_row() {
-        let note = "you already own a copy of this issue, variant, and printing";
+        let note = "you already own a copy of this issue, variant, printing, and distribution";
         let r = report(
             vec![
                 ImportOutcome::Added,
