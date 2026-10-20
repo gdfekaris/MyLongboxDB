@@ -377,6 +377,7 @@ impl Form {
                 true,
             ),
             gettext_noop("Add Credit"),
+            gettext_noop("Creator"),
             Extra::Role(roles(category)),
             completion::<CreatorId>(&db),
             &dirty,
@@ -392,6 +393,7 @@ impl Form {
         let characters = NameList::new(
             &contents,
             gettext_noop("Add Character"),
+            gettext_noop("Character"),
             Extra::First,
             completion::<CharacterId>(&db),
             &dirty,
@@ -399,6 +401,7 @@ impl Form {
         let teams = NameList::new(
             &contents,
             gettext_noop("Add Team"),
+            gettext_noop("Team"),
             Extra::First,
             completion::<TeamId>(&db),
             &dirty,
@@ -406,6 +409,7 @@ impl Form {
         let arcs = NameList::new(
             &contents,
             gettext_noop("Add Story Arc"),
+            gettext_noop("Story Arc"),
             Extra::Part,
             completion::<StoryArcId>(&db),
             &dirty,
@@ -451,6 +455,7 @@ impl Form {
         let cover_artists = NameList::new(
             &edition,
             gettext_noop("Add Cover Artist"),
+            gettext_noop("Cover Artist"),
             Extra::None,
             completion::<CreatorId>(&db),
             &dirty,
@@ -492,6 +497,7 @@ impl Form {
         let tags = NameList::new(
             &copy,
             gettext_noop("Add Tag"),
+            gettext_noop("Tag"),
             Extra::None,
             completion::<TagId>(&db),
             &dirty,
@@ -1749,9 +1755,12 @@ struct NameList {
 }
 
 impl NameList {
+    /// A list under `list`, added to with a button labelled `add_label`,
+    /// whose rows show `placeholder` while empty.
     fn new(
         list: &gtk::ListBox,
         add_label: &'static str,
+        placeholder: &'static str,
         extra: Extra,
         suggest: Suggest,
         dirty: &Dirty,
@@ -1761,24 +1770,6 @@ impl NameList {
             .start_icon_name("list-add-symbolic")
             .build();
         list.append(&add_button);
-        let placeholder = match extra {
-            Extra::Role(_) => gettext_noop("Creator"),
-            Extra::First => {
-                if add_label.contains("Team") {
-                    gettext_noop("Team")
-                } else {
-                    gettext_noop("Character")
-                }
-            }
-            Extra::Part => gettext_noop("Story Arc"),
-            Extra::None => {
-                if add_label.contains("Tag") {
-                    gettext_noop("Tag")
-                } else {
-                    gettext_noop("Cover Artist")
-                }
-            }
-        };
         let names = Self {
             list: list.clone(),
             add_button: add_button.clone(),
