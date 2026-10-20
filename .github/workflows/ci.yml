@@ -153,6 +153,8 @@ jobs:
         # whose libheif is found first, and gains the SDK to build with.
         run: |
           flatpak install -y --noninteractive --user flathub org.freedesktop.Sdk.Extension.rust-stable//26.08
+          # As in the SDK job, so Cargo can write inside the checkout.
+          chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
           in_app() {
               FLATPAK_ENABLE_SDK_EXT=rust-stable flatpak run --devel "$1" \
                   --filesystem="$GITHUB_WORKSPACE" --cwd="$GITHUB_WORKSPACE" \
