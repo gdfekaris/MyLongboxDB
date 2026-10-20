@@ -257,6 +257,23 @@ fn csv_error(e: csv::Error) -> Error {
     Error::Io(std::io::Error::other(e))
 }
 
+/// What a cell may start with that a spreadsheet would take for a
+/// formula, and the mark that guards against it.
+pub(crate) const FORMULA_STARTS: [char; 7] = ['=', '+', '-', '@', '\t', '\r', '\''];
+
+/// A cell a spreadsheet would read as a formula written after a `'`,
+/// which spreadsheets show as text and import takes off again. A name or
+/// note from a collection file made elsewhere could otherwise run a
+/// formula in the spreadsheet the export is opened in. A cell already
+/// starting with `'` gets one too, so it comes back as it was.
+fn guarded(cell: String) -> String {
+    if cell.starts_with(FORMULA_STARTS) {
+        format!("'{cell}")
+    } else {
+        cell
+    }
+}
+
 impl Database {
     /// Writes the copies (or every live copy, in natural order) as CSV
     /// to `out`, returning how many rows were written. With
@@ -282,9 +299,8 @@ impl Database {
             .from_writer(out);
         writer.write_record(COLUMNS).map_err(csv_error)?;
         for id in &ids {
-            writer
-                .write_record(self.csv_row(*id, photo_paths)?)
-                .map_err(csv_error)?;
+            let row = self.csv_row(*id, photo_paths)?.into_iter().map(guarded);
+            writer.write_record(row).map_err(csv_error)?;
         }
         writer.flush()?;
         tx.commit()?;
@@ -456,6 +472,11 @@ collection.csv
     Value History:  date | amount | currency | source
   A backslash before ; or | or \\ means that character is part of a
   name rather than a separator.
+
+  A cell that starts with = + - @ or ' has a ' added in front, so a
+  spreadsheet shows it as text rather than running it as a formula;
+  \"-1\" is written \"'-1\". MyLongboxDB takes the added ' off again on
+  import.
 
   Story arcs give their part as \"Name (part 3)\". Characters and teams
   that make their first appearance are also listed in the First

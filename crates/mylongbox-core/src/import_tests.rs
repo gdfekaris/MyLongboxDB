@@ -735,3 +735,57 @@ fn files_are_opened_by_what_they_hold() {
     ));
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn cells_a_spreadsheet_would_run_are_guarded_and_come_back_as_they_were() {
+    let db = Database::open_in_memory().unwrap();
+    let mut e = BookEntry::new(
+        Category::Comic,
+        SeriesChoice::New {
+            name: "=HYPERLINK(\"http://example.com\")".into(),
+            start_year: None,
+            volume: None,
+            publisher: None,
+            imprint: String::new(),
+            magazine_format: None,
+            black_and_white: None,
+        },
+        Some(IssueNumber::new("-1").unwrap()),
+    );
+    e.issue.title = "'Til Death".into();
+    e.copy.notes = "@SUM(A1)".into();
+    e.edition.variant = "+1 Variant".into();
+    db.add_book(&e).unwrap();
+    let text = csv_of(&db);
+    for guarded in [
+        "'=HYPERLINK",
+        ",'-1,",
+        "''Til Death",
+        "'@SUM(A1)",
+        "'+1 Variant",
+    ] {
+        assert!(text.contains(guarded), "{guarded} in {text}");
+    }
+
+    let fresh = Database::open_in_memory().unwrap();
+    assert_eq!(import(&fresh, &text).added(), 1);
+    assert_eq!(csv_of(&fresh), text, "exact on the way back");
+    let row = &fresh.browse(crate::Shelf::Everything).unwrap()[0];
+    let back = fresh.book_entry(row.copy).unwrap();
+    assert_eq!(back.issue.number.unwrap().as_str(), "-1");
+    assert_eq!(back.issue.title, "'Til Death");
+    assert_eq!(back.copy.notes, "@SUM(A1)");
+    assert_eq!(back.edition.variant, "+1 Variant");
+
+    // A file from elsewhere keeps a ' that guards nothing.
+    let other = Database::open_in_memory().unwrap();
+    import(
+        &other,
+        "Series,Issue Number,Story Title\nZot!,1,'Til Death\n",
+    );
+    let row = &other.browse(crate::Shelf::Everything).unwrap()[0];
+    assert_eq!(
+        other.book_entry(row.copy).unwrap().issue.title,
+        "'Til Death"
+    );
+}

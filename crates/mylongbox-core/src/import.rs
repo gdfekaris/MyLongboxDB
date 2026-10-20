@@ -416,6 +416,16 @@ struct Planned {
     photos: Vec<(Side, String)>,
 }
 
+/// A cell as it was before export guarded it against being read as a
+/// formula. Only a `'` before what export guards is taken off, so text
+/// from elsewhere that starts with one, such as `'Til Death`, is kept.
+fn unguarded(cell: &str) -> &str {
+    match cell.strip_prefix('\'') {
+        Some(rest) if rest.starts_with(crate::export::FORMULA_STARTS) => rest.trim(),
+        _ => cell,
+    }
+}
+
 /// A row's cells by the field each fills.
 struct Cells<'a> {
     by_field: HashMap<&'static str, &'a str>,
@@ -424,7 +434,7 @@ struct Cells<'a> {
 
 impl Cells<'_> {
     fn get(&self, field: &str) -> &str {
-        self.by_field.get(field).map_or("", |c| c.trim())
+        self.by_field.get(field).map_or("", |c| unguarded(c.trim()))
     }
 
     fn list(&self, field: &str) -> Vec<String> {
