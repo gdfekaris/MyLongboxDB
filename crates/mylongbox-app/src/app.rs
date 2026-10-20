@@ -1331,6 +1331,11 @@ impl Component for App {
             }
             AppMsg::ShowPreferences(show_rates) => self.show_preferences(show_rates, root, &sender),
             AppMsg::SettingsChanged(settings) => {
+                // Only these change what is shown. Photo settings change
+                // at every step of their buttons, so redrawing for them
+                // would rebuild the book list each time for nothing.
+                let shown = (self.settings.currency, self.settings.grade_names)
+                    != (settings.currency, settings.grade_names);
                 self.settings = settings;
                 if let Err(why) = settings.save(&settings::path()) {
                     root.toast(&gettext_f(
@@ -1338,8 +1343,10 @@ impl Component for App {
                         &[("reason", &why.to_string())],
                     ));
                 }
-                self.refresh_display(root);
-                self.back_to_section(root);
+                if shown {
+                    self.refresh_display(root);
+                    self.back_to_section(root);
+                }
             }
             AppMsg::RatesChanged => {
                 self.refresh_display(root);

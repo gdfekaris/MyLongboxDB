@@ -5,10 +5,14 @@ use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 
 use adw::prelude::*;
+use gtk::glib;
 use mylongbox_core::{FilterSet, OwnedAs, SeriesId};
 
 use crate::filter_fields::{FIELDS, Inputs, Kind, Shape, build, unbuild};
 use crate::i18n::{gettext, gettext_noop};
+
+/// How long typing must pause before the books are filtered again.
+const TYPING_PAUSE: std::time::Duration = std::time::Duration::from_millis(250);
 
 const OWNED_AS: [(&str, OwnedAs); 3] = [
     (gettext_noop("Owned as Single Issues"), OwnedAs::SingleIssue),
@@ -392,11 +396,21 @@ fn rebuild_values(row: &Rc<Row>, changed: &Rc<dyn Fn()>) {
             .valign(gtk::Align::Center)
             .build();
         let (changed, weak) = (changed.clone(), Rc::downgrade(row));
+        // Each change bumps this; the books are filtered again only if
+        // nothing newer was typed during the pause.
+        let latest = Rc::new(Cell::new(0u64));
         entry.connect_changed(move |_| {
             if let Some(row) = weak.upgrade() {
                 mark_unreadable(&row);
             }
-            changed();
+            let ticket = latest.get() + 1;
+            latest.set(ticket);
+            let (changed, latest) = (changed.clone(), latest.clone());
+            glib::timeout_add_local_once(TYPING_PAUSE, move || {
+                if latest.get() == ticket {
+                    changed();
+                }
+            });
         });
         row.values.append(&entry);
         row.entries.borrow_mut().push(entry);

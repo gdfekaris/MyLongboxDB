@@ -6,7 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk::cairo;
+use gtk::{cairo, glib};
 use mylongbox_media::{Crop, Edit, MAX_STRAIGHTEN, RgbImage, apply_edit};
 
 use crate::covers;
@@ -147,6 +147,8 @@ struct Editor {
     area: gtk::DrawingArea,
     straighten: gtk::Scale,
     drag: Cell<Option<(Grip, Crop)>>,
+    /// Whether a redraw is already waiting to run.
+    redraw_waiting: Cell<bool>,
 }
 
 impl Editor {
@@ -176,6 +178,24 @@ impl Editor {
         f(&mut edit);
         self.edit.set(edit);
         self.refresh();
+    }
+
+    /// Like [`Self::change`], for the straighten slider: a redraw takes
+    /// tens of milliseconds and a drag sends values faster than that, so
+    /// the values that arrive meanwhile are drawn once, together.
+    fn change_soon(self: &Rc<Self>, f: impl FnOnce(&mut Edit)) {
+        let mut edit = self.edit.get();
+        f(&mut edit);
+        self.edit.set(edit);
+        if !self.redraw_waiting.replace(true) {
+            let weak = Rc::downgrade(self);
+            glib::idle_add_local_once(move || {
+                if let Some(e) = weak.upgrade() {
+                    e.redraw_waiting.set(false);
+                    e.refresh();
+                }
+            });
+        }
     }
 
     fn draw(&self, cr: &cairo::Context) {
@@ -264,6 +284,7 @@ pub fn open(
         area: area.clone(),
         straighten: straighten.clone(),
         drag: Cell::new(None),
+        redraw_waiting: Cell::new(false),
     });
     editor.refresh();
 
@@ -327,7 +348,7 @@ pub fn open(
             if let Some(e) = weak.upgrade() {
                 // The slider's range matches the limit, so this is safe
                 // to narrow.
-                e.change(|edit| edit.set_straighten(scale.value() as f32));
+                e.change_soon(|edit| edit.set_straighten(scale.value() as f32));
             }
         });
     }
