@@ -242,9 +242,10 @@ pub const FIELDS: &[Field] = &[
 pub enum Shape {
     /// Nothing more, as for "has none".
     Nothing,
-    /// Text boxes, with these placeholders.
+    /// Text boxes, with these placeholders, in English to look up.
     Entries(Vec<&'static str>),
-    /// Text boxes and a menu of these options.
+    /// Text boxes and a menu of these options. Options, here and below,
+    /// are already in the reader's language.
     EntriesAndMenu(Vec<&'static str>, Vec<&'static str>),
     /// A menu of these options alone.
     Menu(Vec<&'static str>),
@@ -344,7 +345,10 @@ impl Kind {
                 } else {
                     vec![gettext_noop("Amount")]
                 },
-                CURRENCIES.iter().map(|(name, _)| *name).collect(),
+                CURRENCIES
+                    .iter()
+                    .map(|(name, _)| format::label(name))
+                    .collect(),
             ),
             // Before, after, between, in year.
             Self::Date(_) => match condition {
@@ -355,7 +359,10 @@ impl Kind {
                 _ => entries(&[gettext_noop("YYYY-MM-DD, YYYY-MM, or YYYY")]),
             },
             Self::Choice(kind) => Shape::Checks(kind.labels()),
-            Self::Flag(_) => Shape::Menu(vec![gettext_noop("Yes"), gettext_noop("No")]),
+            Self::Flag(_) => Shape::Menu(vec![
+                format::label(gettext_noop("Yes")),
+                format::label(gettext_noop("No")),
+            ]),
             Self::Has(_) => Shape::Nothing,
             Self::Collects => entries(&[
                 gettext_noop("Series"),
@@ -370,9 +377,9 @@ impl ChoiceKind {
     pub fn labels(self) -> Vec<&'static str> {
         match self {
             Self::Category => vec![
-                gettext_noop("Comic"),
-                gettext_noop("Magazine"),
-                gettext_noop("Collected Edition"),
+                format::label(gettext_noop("Comic")),
+                format::label(gettext_noop("Magazine")),
+                format::label(gettext_noop("Collected Edition")),
             ],
             Self::MagazineFormat => MagazineFormat::ALL
                 .iter()
@@ -385,7 +392,7 @@ impl ChoiceKind {
             Self::Binding => Binding::ALL.iter().map(|b| format::binding(*b)).collect(),
             // Translators: an ungraded book, as opposed to one graded by
             // CGC, CBCS, or PGX.
-            Self::GradeType => vec![gettext_noop("Raw"), "CGC", "CBCS", "PGX"],
+            Self::GradeType => vec![format::label(gettext_noop("Raw")), "CGC", "CBCS", "PGX"],
             Self::PageQuality => PageQuality::ALL
                 .iter()
                 .map(|q| format::page_quality(*q))

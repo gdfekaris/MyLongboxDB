@@ -23,7 +23,7 @@ thread_local! {
 /// A fixed label, such as a condition's name, in the reader's language.
 /// Each is looked up once and kept for the life of the app, so callers
 /// can hold it like the English text; there are only a few dozen.
-fn label(msgid: &'static str) -> &'static str {
+pub fn label(msgid: &'static str) -> &'static str {
     LABELS.with(|labels| {
         *labels
             .borrow_mut()

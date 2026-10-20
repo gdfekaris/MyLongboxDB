@@ -28,7 +28,13 @@ fn translated(labels: &[&str]) -> Vec<String> {
 fn menu(labels: &[&str], searchable: bool) -> gtk::DropDown {
     let shown = translated(labels);
     let shown: Vec<&str> = shown.iter().map(String::as_str).collect();
-    let dropdown = gtk::DropDown::from_strings(&shown);
+    shown_menu(&shown, searchable)
+}
+
+/// A menu, searchable if asked, of text already in the reader's
+/// language.
+fn shown_menu(shown: &[&str], searchable: bool) -> gtk::DropDown {
+    let dropdown = gtk::DropDown::from_strings(shown);
     if searchable {
         dropdown.set_enable_search(true);
         dropdown.set_expression(Some(gtk::PropertyExpression::new(
@@ -396,7 +402,7 @@ fn rebuild_values(row: &Rc<Row>, changed: &Rc<dyn Fn()>) {
         row.entries.borrow_mut().push(entry);
     };
     let dropdown = |options: &[&str]| {
-        let dropdown = menu(options, false);
+        let dropdown = shown_menu(options, false);
         let changed = changed.clone();
         dropdown.connect_selected_notify(move |_| changed());
         row.values.append(&dropdown);
@@ -421,7 +427,7 @@ fn rebuild_values(row: &Rc<Row>, changed: &Rc<dyn Fn()>) {
                 .valign(gtk::Align::Center)
                 .build();
             for option in options {
-                let check = gtk::CheckButton::with_label(&gettext(option));
+                let check = gtk::CheckButton::with_label(option);
                 let (changed, weak, button) = (changed.clone(), Rc::downgrade(row), button.clone());
                 check.connect_toggled(move |_| {
                     if let Some(row) = weak.upgrade() {
