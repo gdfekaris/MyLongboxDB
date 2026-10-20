@@ -300,7 +300,6 @@ pub fn book_table() -> TypedColumnView<Book, gtk::MultiSelection> {
     table
 }
 
-/// One entry of a name list, such as a series or a creator.
 /// An entry of a name list, and its position in the list.
 pub struct Name(pub ShelfEntry, pub u32);
 

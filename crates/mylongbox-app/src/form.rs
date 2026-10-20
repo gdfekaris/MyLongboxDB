@@ -1070,7 +1070,6 @@ fn capitalized(text: &str) -> String {
     }
 }
 
-/// `Amazing Spider-Man (1963)` → name and year.
 /// A series as a contents list names it: `Amazing Spider-Man (1963)`,
 /// the year alone in brackets, which is how the list is read back.
 fn contents_series(name: &str, start_year: Option<u16>) -> String {

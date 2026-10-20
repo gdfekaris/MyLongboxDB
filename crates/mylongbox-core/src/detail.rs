@@ -37,7 +37,7 @@ pub struct EditionDetail {
 pub struct IssueDetail {
     pub issue: Issue,
     pub series: Series,
-    /// e.g. `Amazing Spider-Man (1963) #121`.
+    /// e.g. `Amazing Spider-Man (1963 series) #121`.
     pub label: String,
     pub publisher: Option<String>,
     pub credits: Vec<Credit>,

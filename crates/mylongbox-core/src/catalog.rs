@@ -674,7 +674,7 @@ impl Database {
         Ok(self.series(self.issue(issue)?.series)?.fields.category)
     }
 
-    /// e.g. `X-Men (1963) #1, standard edition`, so Trash tells an
+    /// e.g. `X-Men (1963 series) #1, standard edition`, so Trash tells an
     /// edition apart from its issue.
     fn edition_label(&self, edition: &Edition) -> Result<String> {
         let label = self.issue_and_variant(edition)?;
@@ -685,7 +685,7 @@ impl Database {
         })
     }
 
-    /// e.g. `X-Men (1963) #1 (Cover B)`, or just the issue for the
+    /// e.g. `X-Men (1963 series) #1 (Cover B)`, or just the issue for the
     /// standard cover.
     fn issue_and_variant(&self, edition: &Edition) -> Result<String> {
         let issue = self.issue(edition.issue)?;

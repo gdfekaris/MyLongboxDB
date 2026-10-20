@@ -503,7 +503,6 @@ fn appearances(d: &IssueDetail) -> Option<adw::PreferencesGroup> {
     Some(group)
 }
 
-/// An edition's own facts, then one expandable row per copy.
 /// The edition's name and facts, with its cover art and codes. Trashing
 /// an edition trashes its copies, so that is offered only where it
 /// touches no copy but `current`, if any.

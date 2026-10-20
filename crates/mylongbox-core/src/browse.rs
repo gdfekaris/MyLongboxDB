@@ -75,7 +75,7 @@ pub struct CopyRow {
     pub copy: CopyId,
     pub issue: IssueId,
     pub category: Category,
-    /// The series name with its start year, e.g. `Amazing Spider-Man (1963)`.
+    /// The series' label, e.g. `Amazing Spider-Man (1963 series)`.
     pub series: String,
     pub number: Option<String>,
     pub title: String,
@@ -139,8 +139,8 @@ impl CopyRow {
         needs
     }
 
-    /// e.g. `Amazing Spider-Man (1963) #121`, or the book's own title for a
-    /// standalone collected edition.
+    /// e.g. `Amazing Spider-Man (1963 series) #121`, or the book's own
+    /// title for a standalone collected edition.
     pub fn label(&self) -> String {
         match (&self.number, self.title.as_str()) {
             (Some(number), _) => format!("{} #{number}", self.series),

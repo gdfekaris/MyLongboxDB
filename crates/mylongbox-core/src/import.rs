@@ -374,7 +374,7 @@ pub enum Outcome {
 pub struct RowReport {
     /// The row's line in the file, counting the header as line 1.
     pub line: usize,
-    /// e.g. `Amazing Spider-Man (1963) #121`.
+    /// e.g. `Amazing Spider-Man (1963 series) #121`.
     pub label: String,
     pub outcome: Outcome,
 }

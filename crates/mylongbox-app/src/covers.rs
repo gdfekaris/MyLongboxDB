@@ -26,7 +26,8 @@ const CACHED: usize = 240;
 struct Cache {
     db: Weak<Database>,
     thumbnails: HashMap<CopyId, Option<gdk::Texture>>,
-    /// Oldest first, so the longest unused is dropped first.
+    /// In the order they were read, so the first read is the first
+    /// dropped, used since or not.
     order: VecDeque<CopyId>,
 }
 
