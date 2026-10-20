@@ -152,7 +152,7 @@ jobs:
         # plugin loading off. Run with --devel, the app keeps its /app,
         # whose libheif is found first, and gains the SDK to build with.
         run: |
-          flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.rust-stable//26.08
+          flatpak install -y --noninteractive --user flathub org.freedesktop.Sdk.Extension.rust-stable//26.08
           in_app() {
               FLATPAK_ENABLE_SDK_EXT=rust-stable flatpak run --devel "$1" \
                   --filesystem="$GITHUB_WORKSPACE" --cwd="$GITHUB_WORKSPACE" \
