@@ -234,14 +234,22 @@ fn find_series(
         Some(year) => format!("{} ({year})", series.name),
         None => series.name.clone(),
     };
-    let found = match matches.as_slice() {
-        [] => None,
-        [(_, Category::CollectedEdition)] => {
+    // A line of collected editions reprints issues rather than holding
+    // them, so one sharing the name, as a line of a series' trade
+    // paperbacks may, is no reason to call the name ambiguous.
+    let sources: Vec<SeriesId> = matches
+        .iter()
+        .filter(|(_, category)| *category != Category::CollectedEdition)
+        .map(|(id, _)| *id)
+        .collect();
+    let found = match sources.as_slice() {
+        [] if matches.is_empty() => None,
+        [] => {
             return Err(Error::Invalid(format!(
                 "{label} is a line of collected editions; list the single issues it reprints"
             )));
         }
-        [(id, _)] => Some(*id),
+        [id] => Some(*id),
         [..] if series.start_year.is_none() => {
             return Err(Error::Invalid(format!(
                 "more than one series is named {label}; add its start year, like {label} (1963)"

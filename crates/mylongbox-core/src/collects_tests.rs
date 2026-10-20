@@ -159,6 +159,21 @@ fn a_year_picks_between_series_with_the_same_name() {
 }
 
 #[test]
+fn a_book_line_sharing_a_name_is_not_taken_for_the_series() {
+    let db = db();
+    let saga = series(&db, "Saga", 2012, Category::Comic);
+    // The trade paperbacks are kept as a line of the same name.
+    let vol = volume(&db, "Saga");
+    db.set_collects(vol, "Saga 1-6").unwrap();
+    let found: Vec<_> = db.collects(vol).unwrap().iter().map(|c| c.series).collect();
+    assert_eq!(found, [saga; 6]);
+    // Two series that issues can come from still need telling apart.
+    series(&db, "Saga", 2030, Category::Magazine);
+    let why = invalid(db.set_collects(vol, "Saga 1"));
+    assert!(why.contains("add its start year"), "{why}");
+}
+
+#[test]
 fn trashed_issues_are_not_reused() {
     let db = db();
     let asm = series(&db, "Amazing Spider-Man", 1963, Category::Comic);
