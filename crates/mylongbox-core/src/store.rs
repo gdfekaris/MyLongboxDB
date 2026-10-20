@@ -218,7 +218,12 @@ impl CollectionStore {
     pub fn compact_copy(&self, staging: &Path) -> Result<(PathBuf, u64, u64)> {
         let compacted = self.staging("compacted")?;
         let result = (|| {
-            let (before, after) = Database::open(staging)?.compact_into(&compacted)?;
+            let (before, _) = Database::open(staging)?.compact_into(&compacted)?;
+            // Alternate names reach their search entries by rowid, which
+            // compacting may renumber, so the index is made afresh to
+            // match the compacted tables.
+            Database::open(&compacted)?.rebuild_search_index()?;
+            let after = fs::metadata(&compacted)?.len();
             if !check_file(&compacted)?.is_empty() {
                 return Err(Error::Damaged);
             }
@@ -887,6 +892,15 @@ mod tests {
         let hulk = db.create_series(&fields).unwrap();
         fields.notes.clear();
         db.update_series(hulk, &fields).unwrap();
+        // An index that no longer matches the tables, as one keyed to
+        // rowids that compacting renumbered would be, is made afresh.
+        db.conn
+            .execute(
+                "INSERT INTO search_text (search_text) VALUES ('delete-all')",
+                [],
+            )
+            .unwrap();
+        assert!(db.quick_search("thor").unwrap().rows.is_empty());
 
         let staging = store.staging("compact").unwrap();
         copy_in_steps(&db, &staging);
@@ -909,6 +923,7 @@ mod tests {
         let db = store.open("Comics").unwrap();
         assert_eq!(books(&db), 1);
         assert_eq!(db.series(hulk).unwrap().fields.name, "Hulk");
+        assert_eq!(db.quick_search("thor").unwrap().rows.len(), 1);
         assert_eq!(names(&store), ["Comics"]);
         assert!(store.replace_with("Nope", &staging).is_err());
     }

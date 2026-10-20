@@ -841,6 +841,51 @@ mod tests {
     }
 
     #[test]
+    fn compacting_keeps_alternate_names_searchable_and_removable() {
+        // Alternate names find their search entries by rowid, which
+        // VACUUM may renumber in a table without an INTEGER PRIMARY KEY;
+        // gaps left by removed names are where that would show.
+        let db = Database::open_in_memory().unwrap();
+        let kirby = db.create_lookup::<crate::CreatorId>("Jack Kirby").unwrap();
+        for alias in ["Alpha", "Bravo", "Charlie", "Delta"] {
+            db.add_alias(kirby, alias).unwrap();
+        }
+        for alias in ["Alpha", "Charlie"] {
+            db.remove_alias(kirby, alias).unwrap();
+        }
+        let dest = std::env::temp_dir().join(format!(
+            "mylongbox-compact-alias-{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&dest);
+        db.compact_into(&dest).unwrap();
+        let copy = Database::open(&dest).unwrap();
+        copy.remove_alias(kirby, "Delta").unwrap();
+        let entries = |kind: i64| -> Vec<String> {
+            let mut stmt = copy
+                .conn
+                .prepare("SELECT text FROM search_source WHERE kind = ?1 ORDER BY text")
+                .unwrap();
+            stmt.query_map([kind], |row| row.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        assert_eq!(entries(5), ["Bravo"]);
+        let found: i64 = copy
+            .conn
+            .query_row(
+                "SELECT count(*) FROM search_text WHERE search_text MATCH '\"Delta\"'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(found, 0, "the removed name is gone from the index");
+        drop(copy);
+        std::fs::remove_file(&dest).unwrap();
+    }
+
+    #[test]
     fn temporary_data_stays_in_memory() {
         let db = Database::open_in_memory().unwrap();
         let store: i64 = db
