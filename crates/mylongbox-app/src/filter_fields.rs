@@ -91,6 +91,10 @@ pub const FIELDS: &[Field] = &[
         Kind::Date(DateField::ReleaseDate),
     ),
     field(
+        gettext_noop("Edition Published"),
+        Kind::Date(DateField::Published),
+    ),
+    field(
         gettext_noop("Current Value"),
         Kind::Money(MoneyField::CurrentValue),
     ),

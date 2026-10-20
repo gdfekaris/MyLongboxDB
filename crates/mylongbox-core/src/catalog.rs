@@ -44,7 +44,7 @@ macro_rules! select_edition {
         concat!(
             "SELECT id, uuid, issue_id, trash_id, variant, printing,
     distribution, cover_price_units, cover_price_currency, barcode, isbn, binding,
-    has_dust_jacket, has_slipcase, canadian_cover_price_cents FROM edition",
+    has_dust_jacket, has_slipcase, canadian_cover_price_cents, published FROM edition",
             " ",
             $rest
         )
@@ -294,8 +294,8 @@ impl Database {
         tx.execute(
             "INSERT INTO edition (uuid, issue_id, variant, printing, distribution,
                  cover_price_units, cover_price_currency, barcode, isbn, binding,
-                 has_dust_jacket, has_slipcase, canadian_cover_price_cents)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                 has_dust_jacket, has_slipcase, canadian_cover_price_cents, published)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 RowUuid::new_random(),
                 issue,
@@ -310,6 +310,7 @@ impl Database {
                 f.has_dust_jacket,
                 f.has_slipcase,
                 f.canadian_cover_price_cents,
+                f.published,
             ],
         )?;
         let id = EditionId(tx.last_insert_rowid());
@@ -336,7 +337,7 @@ impl Database {
             "UPDATE edition SET variant = ?2, printing = ?3, distribution = ?4,
                  cover_price_units = ?5, cover_price_currency = ?6, barcode = ?7, isbn = ?8,
                  binding = ?9, has_dust_jacket = ?10, has_slipcase = ?11,
-                 canadian_cover_price_cents = ?12
+                 canadian_cover_price_cents = ?12, published = ?13
              WHERE id = ?1",
             params![
                 id,
@@ -351,6 +352,7 @@ impl Database {
                 f.has_dust_jacket,
                 f.has_slipcase,
                 f.canadian_cover_price_cents,
+                f.published,
             ],
         )?;
         tx.commit()?;
@@ -1106,6 +1108,7 @@ fn edition_from_row(row: &Row<'_>) -> rusqlite::Result<Edition> {
             has_dust_jacket: row.get(12)?,
             has_slipcase: row.get(13)?,
             canadian_cover_price_cents: row.get(14)?,
+            published: row.get(15)?,
         },
     })
 }

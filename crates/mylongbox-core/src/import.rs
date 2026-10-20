@@ -704,6 +704,7 @@ fn plan(cells: &Cells<'_>, today: Date) -> std::result::Result<Planned, String> 
     entry.edition.printing = cells.read("Printing", number)?;
     entry.edition.distribution =
         cells.read("Distribution", |t| code(t, Distribution::from_code))?;
+    entry.edition.published = cells.read("Published", |t| t.parse().ok())?;
     entry.edition.cover_price = cells.read("Cover Price", |t| {
         money(t, cells.get("Cover Price Currency"))
     })?;

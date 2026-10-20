@@ -60,6 +60,7 @@ pub const COLUMNS: &[&str] = &[
     "Variant",
     "Printing",
     "Distribution",
+    "Published",
     "Cover Price",
     "Cover Price Currency",
     "Canadian Cover Price",
@@ -418,6 +419,7 @@ impl Database {
             e.variant.clone(),
             text(e.printing),
             text(e.distribution.map(|d| d.code())),
+            text(e.published),
             cover_price,
             cover_currency,
             text(e.canadian_cover_price_cents.map(crate::money::cents_string)),
@@ -503,7 +505,9 @@ collection.csv
   Each amount is exactly as it was entered.
 
   Dates are YYYY-MM-DD. A cover date is YYYY-MM, or YYYY when only the
-  year is known. Date Added is a UTC time.
+  year is known, and Published, when an edition came out, is YYYY,
+  YYYY-MM, or YYYY-MM-DD, as far as it is known. Date Added is a UTC
+  time.
 
   Fixed choices are written as codes:
     Category: comic, magazine, collected

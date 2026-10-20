@@ -90,6 +90,7 @@ pub struct Form {
 
     variant: adw::EntryRow,
     printing: adw::EntryRow,
+    published: adw::EntryRow,
     distribution: adw::ComboRow,
     cover_price: MoneyRow,
     canadian_price: adw::EntryRow,
@@ -425,6 +426,7 @@ impl Form {
         );
         let variant = entry_row(&gettext("Variant (blank for the standard cover)"));
         let printing = entry_row(&gettext("Printing (blank for a first printing)"));
+        let published = entry_row(&gettext("Published (e.g. 2019, Jul 2019, or 2019-07-03)"));
         let distribution = combo_row(
             &gettext("Distribution"),
             DISTRIBUTIONS.map(|(name, _)| name),
@@ -441,6 +443,7 @@ impl Form {
         let slipcase = adw::SwitchRow::builder().title(gettext("Slipcase")).build();
         edition.append(&variant);
         edition.append(&printing);
+        edition.append(&published);
         if category == Category::CollectedEdition {
             edition.append(&isbn);
             edition.append(&binding);
@@ -637,6 +640,7 @@ impl Form {
             arcs,
             variant,
             printing,
+            published,
             distribution,
             cover_price,
             canadian_price,
@@ -719,6 +723,7 @@ impl Form {
             &self.key_reason,
             &self.variant,
             &self.printing,
+            &self.published,
             &self.barcode,
             &self.grade,
             &self.cert_number,
@@ -806,6 +811,11 @@ impl Form {
         self.printing
             .set_text(&ed.printing.map(|p| p.to_string()).unwrap_or_default());
         select(&self.distribution, &DISTRIBUTIONS, ed.distribution);
+        self.published.set_text(
+            &ed.published
+                .map(format::partial_date_text)
+                .unwrap_or_default(),
+        );
         self.cover_price.set(ed.cover_price);
         self.canadian_price.set_text(
             &ed.canadian_cover_price_cents
@@ -989,6 +999,17 @@ impl Form {
             ed.has_dust_jacket = self.dust_jacket.is_active().then_some(true);
             ed.has_slipcase = self.slipcase.is_active().then_some(true);
         }
+        ed.published = match format::parse_partial_date(&self.published.text()) {
+            Ok(date) => date,
+            Err(()) => {
+                return invalid(
+                    &self.published,
+                    &gettext(
+                        "Enter when it was published like \u{201c}2019\u{201d}, \u{201c}Jul 2019\u{201d}, or \u{201c}2019-07-03\u{201d}",
+                    ),
+                );
+            }
+        };
         ed.cover_price = self.cover_price.amount()?;
         ed.canadian_cover_price_cents = match self
             .canadian_price

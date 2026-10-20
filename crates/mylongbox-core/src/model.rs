@@ -487,6 +487,103 @@ impl CoverDate {
     }
 }
 
+/// A date known to the year, the month, or the day, such as when an
+/// edition came out. Held and stored as `YYYY`, `YYYY-MM`, or
+/// `YYYY-MM-DD`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PartialDate {
+    year: u16,
+    month: Option<u8>,
+    day: Option<u8>,
+}
+
+impl PartialDate {
+    /// A day needs its month, and must be a real day of it.
+    pub fn new(year: u16, month: Option<u8>, day: Option<u8>) -> Option<Self> {
+        match (month, day) {
+            (None, Some(_)) => None,
+            (Some(m), Some(d)) => Date::new(year, m, d).ok().map(Self::from),
+            (month, None) => CoverDate::new(year, month).map(|_| Self {
+                year,
+                month,
+                day: None,
+            }),
+        }
+    }
+
+    pub fn year(self) -> u16 {
+        self.year
+    }
+
+    pub fn month(self) -> Option<u8> {
+        self.month
+    }
+
+    /// The whole date, when the day is known.
+    pub fn date(self) -> Option<Date> {
+        Date::new(self.year, self.month?, self.day?).ok()
+    }
+}
+
+impl From<Date> for PartialDate {
+    fn from(date: Date) -> Self {
+        Self {
+            year: date.year(),
+            month: Some(date.month()),
+            day: Some(date.day()),
+        }
+    }
+}
+
+impl fmt::Display for PartialDate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:04}", self.year)?;
+        if let Some(m) = self.month {
+            write!(f, "-{m:02}")?;
+        }
+        if let Some(d) = self.day {
+            write!(f, "-{d:02}")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::str::FromStr for PartialDate {
+    type Err = ();
+
+    /// Reads `YYYY`, `YYYY-MM`, or `YYYY-MM-DD` exactly.
+    fn from_str(text: &str) -> Result<Self, ()> {
+        let parts: Vec<&str> = text.split('-').collect();
+        let widths = [4, 2, 2];
+        if parts.len() > 3
+            || parts
+                .iter()
+                .zip(widths)
+                .any(|(p, w)| p.len() != w || !p.bytes().all(|b| b.is_ascii_digit()))
+        {
+            return Err(());
+        }
+        let year = parts[0].parse().map_err(|_| ())?;
+        let small = |i: usize| parts.get(i).map(|p| p.parse::<u8>().map_err(|_| ()));
+        let month = small(1).transpose()?;
+        let day = small(2).transpose()?;
+        Self::new(year, month, day).ok_or(())
+    }
+}
+
+impl ToSql for PartialDate {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::from(self.to_string()))
+    }
+}
+
+impl FromSql for PartialDate {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        let text = value.as_str()?;
+        text.parse().map_err(|()| invalid("date", text))
+    }
+}
+
 /// A 13-digit ISBN with a valid check digit, held without hyphens.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Isbn(String);
@@ -634,6 +731,9 @@ pub struct EditionFields {
     /// The Canadian price printed beside the US one, in Canadian cents.
     /// Shown as printed and never converted or totalled.
     pub canadian_cover_price_cents: Option<i64>,
+    /// When this edition came out, for one published after the issue
+    /// first was, such as a facsimile.
+    pub published: Option<PartialDate>,
     pub barcode: Option<String>,
     /// Collected editions only.
     pub isbn: Option<Isbn>,
@@ -743,6 +843,34 @@ mod tests {
         assert_eq!(d(1973, None).next_month(), Some(d(1973, None)));
         assert_eq!(CoverDate::new(1973, Some(13)), None);
         assert_eq!(CoverDate::new(0, None), None);
+    }
+
+    #[test]
+    fn partial_dates_read_and_write_as_far_as_known() {
+        for text in ["2019", "2019-07", "2019-07-03"] {
+            let d: PartialDate = text.parse().unwrap();
+            assert_eq!(d.to_string(), text);
+        }
+        let day: PartialDate = "2019-07-03".parse().unwrap();
+        assert_eq!(day.date(), crate::Date::new(2019, 7, 3).ok());
+        assert_eq!("2019-07".parse::<PartialDate>().unwrap().date(), None);
+        for bad in [
+            "19",
+            "2019-7",
+            "2019-13",
+            "2019-02-30",
+            "2019--03",
+            "2019-07-03-01",
+            "0000",
+            "",
+            "July 2019",
+        ] {
+            assert!(bad.parse::<PartialDate>().is_err(), "{bad}");
+        }
+        assert_eq!(PartialDate::new(2019, None, Some(3)), None);
+        assert!(
+            "2018-12-31".parse::<PartialDate>().unwrap() < "2019".parse::<PartialDate>().unwrap()
+        );
     }
 
     #[test]

@@ -531,6 +531,9 @@ fn edition_rows(e: &EditionDetail, links: &Links, current: Option<CopyId>) -> Ve
         _ => String::new(),
     };
     let facts = format::joined([
+        f.published
+            .map(|d| gettext_f("Published {date}", &[("date", &format::partial_date(d))]))
+            .unwrap_or_default(),
         f.binding
             .map(format::binding)
             .unwrap_or_default()

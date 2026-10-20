@@ -490,6 +490,50 @@ fn amounts_that_cannot_be_converted_do_not_match() {
 }
 
 #[test]
+fn edition_dates_known_to_the_year_or_month_count_as_all_of_it() {
+    let db = Database::open_in_memory().unwrap();
+    let add = |n: &str, published: Option<&str>| {
+        let mut e = BookEntry::new(Category::Comic, series("Spawn", 1992, None), number(n));
+        e.edition.published = published.map(|p| p.parse().unwrap());
+        db.add_book(&e).unwrap().copy
+    };
+    let (a, b, c) = (
+        add("1", Some("2018")),
+        add("2", Some("2019-07")),
+        add("3", Some("2019-07-03")),
+    );
+    add("4", None);
+    let find = |condition| -> BTreeSet<CopyId> {
+        db.filter_books(&FilterSet {
+            rules: vec![Filter::Date {
+                field: DateField::Published,
+                condition,
+            }],
+            owned_as: OwnedAs::SingleIssue,
+        })
+        .unwrap()
+        .into_iter()
+        .map(|r| r.copy)
+        .collect()
+    };
+    use DateCondition::*;
+    assert_eq!(find(Before(date("2019-01-01"))), set(&[a]));
+    assert_eq!(
+        find(Before(date("2018-12-31"))),
+        set(&[]),
+        "not all of 2018"
+    );
+    assert_eq!(find(After(date("2019-07-02"))), set(&[c]));
+    assert_eq!(find(After(date("2019-06-30"))), set(&[b, c]));
+    assert_eq!(
+        find(Between(date("2019-07-31"), date("2019-07-01"))),
+        set(&[b, c])
+    );
+    assert_eq!(find(InYear(2019)), set(&[b, c]));
+    assert_eq!(find(InYear(2018)), set(&[a]));
+}
+
+#[test]
 fn dates_compare_and_cover_dates_by_month() {
     let s = sample();
     let on = |field, condition| Filter::Date { field, condition };

@@ -296,7 +296,11 @@ CREATE TABLE edition (
     has_dust_jacket INTEGER CHECK (has_dust_jacket IN (0, 1)),
     has_slipcase INTEGER CHECK (has_slipcase IN (0, 1)),
     trash_id INTEGER REFERENCES trash (id) ON DELETE CASCADE, canadian_cover_price_cents INTEGER
-    CHECK (canadian_cover_price_cents >= 0),
+    CHECK (canadian_cover_price_cents >= 0), published TEXT CHECK (
+    published GLOB '[0-9][0-9][0-9][0-9]'
+    OR published GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]'
+    OR published GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'
+),
     CHECK ((cover_price_units IS NULL) = (cover_price_currency IS NULL))
 ) STRICT;
 

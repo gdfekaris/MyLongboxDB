@@ -108,6 +108,9 @@ pub enum DateField {
     /// By month; an issue dated only by year counts as the whole year.
     CoverDate,
     ReleaseDate,
+    /// When an edition came out; one known only to the year or month
+    /// counts as all of it.
+    Published,
     PurchaseDate,
     Added,
 }
@@ -441,6 +444,20 @@ fn money_sql(field: MoneyField) -> &'static str {
     }
 }
 
+/// The first and last days an edition's published date can mean.
+macro_rules! first_published_day {
+    () => {
+        "substr(e.published || '-01-01', 1, 10)"
+    };
+}
+
+macro_rules! last_published_day {
+    () => {
+        "CASE length(e.published) WHEN 4 THEN e.published || '-12-31'
+             WHEN 7 THEN e.published || '-31' ELSE e.published END"
+    };
+}
+
 /// Statements for before, after, and between on a date field.
 struct DateSql {
     issue_level: bool,
@@ -477,6 +494,29 @@ impl DateField {
                           AND cover_year * 100 + coalesce(cover_month, 12) <= ?2",
             },
             Self::ReleaseDate => date_sql!(true, "id", "issue", "release_date"),
+            // A date known to the year or month runs from its first day
+            // to its last. Dates compare as text, so day 31 serves as the
+            // last of any month.
+            Self::Published => DateSql {
+                issue_level: false,
+                before: concat!(
+                    "SELECT c.id FROM copy c JOIN edition e ON e.id = c.edition_id WHERE ",
+                    last_published_day!(),
+                    " < ?1"
+                ),
+                after: concat!(
+                    "SELECT c.id FROM copy c JOIN edition e ON e.id = c.edition_id WHERE ",
+                    first_published_day!(),
+                    " > ?1"
+                ),
+                between: concat!(
+                    "SELECT c.id FROM copy c JOIN edition e ON e.id = c.edition_id WHERE ",
+                    first_published_day!(),
+                    " >= ?1 AND ",
+                    last_published_day!(),
+                    " <= ?2"
+                ),
+            },
             Self::PurchaseDate => date_sql!(false, "id", "copy", "purchase_date"),
             Self::Added => date_sql!(false, "id", "copy", "substr(added_at, 1, 10)"),
         }

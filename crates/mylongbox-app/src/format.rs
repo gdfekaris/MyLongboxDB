@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use gtk::glib;
 use mylongbox_core::{
     Amount, Binding, BookCondition, CoverDate, Date, Distribution, Grade, GradeType,
-    MagazineFormat, PageQuality, RateTable, Role, SignaturePlacement, Verification,
+    MagazineFormat, PageQuality, PartialDate, RateTable, Role, SignaturePlacement, Verification,
 };
 
 use crate::i18n::{gettext, gettext_f, gettext_noop, ngettext_f, pgettext};
@@ -431,6 +431,33 @@ fn parse_typed_cover_date(text: &str) -> Result<Option<CoverDate>, ()> {
     date.map(Some).ok_or(())
 }
 
+/// A date as far as it is known: `2019`, `Jul 2019`, or `Jul 3, 2019`.
+pub fn partial_date(d: PartialDate) -> String {
+    match d.date() {
+        Some(day) => date(day),
+        None => cover_date(CoverDate::new(d.year(), d.month())),
+    }
+}
+
+/// A date as far as it is known, written so [`parse_partial_date`]
+/// reads it back: as a cover date is shown, or `YYYY-MM-DD` with a day.
+pub fn partial_date_text(d: PartialDate) -> String {
+    match d.date() {
+        Some(day) => day.to_string(),
+        None => partial_date(d),
+    }
+}
+
+/// Reads a date known to the year, month, or day: anything a cover date
+/// may be written as, or `YYYY-MM-DD`. Empty text is no date; `Err`
+/// means the text is not a date.
+pub fn parse_partial_date(text: &str) -> Result<Option<PartialDate>, ()> {
+    if let Ok(day) = text.trim().parse::<Date>() {
+        return Ok(Some(day.into()));
+    }
+    Ok(parse_cover_date(text)?.and_then(|d| PartialDate::new(d.year(), d.month(), None)))
+}
+
 /// e.g. `Mar 5, 1975`.
 pub fn date(date: Date) -> String {
     // Translators: a date such as "Mar 5, 1975".
@@ -509,6 +536,23 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn published_dates_read_back_as_shown_at_any_precision() {
+        let read = |t: &str| parse_partial_date(t).unwrap().unwrap();
+        for text in ["2019", "2019-07", "2019-07-03"] {
+            let d: PartialDate = text.parse().unwrap();
+            assert_eq!(read(&partial_date_text(d)), d, "{text}");
+        }
+        assert_eq!(read("Jul 2019").to_string(), "2019-07");
+        assert_eq!(read("7/2019").to_string(), "2019-07");
+        assert_eq!(read(" 2019-07-03 ").to_string(), "2019-07-03");
+        assert_eq!(partial_date(read("2019-07-03")), "Jul 3, 2019");
+        assert_eq!(partial_date(read("2019-07")), "Jul 2019");
+        assert_eq!(parse_partial_date("  "), Ok(None));
+        assert!(parse_partial_date("2019-02-30").is_err());
+        assert!(parse_partial_date("someday").is_err());
+    }
 
     #[test]
     fn printings_get_ordinals() {

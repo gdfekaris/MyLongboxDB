@@ -99,6 +99,7 @@ fn every_field_is_written() {
     e.edition.variant = "Newsstand".into();
     e.edition.printing = Some(2);
     e.edition.distribution = Some(Distribution::Newsstand);
+    e.edition.published = "1973-06".parse().ok();
     e.edition.cover_price = Some(usd("0.20"));
     e.edition.barcode = Some("071486024217".into());
     e.cover_artists = vec!["John Romita".into()];
@@ -176,6 +177,7 @@ fn every_field_is_written() {
     expect("Variant", "Newsstand");
     expect("Printing", "2");
     expect("Distribution", "newsstand");
+    expect("Published", "1973-06");
     expect("Cover Price", "0.20");
     expect("Cover Price Currency", "USD");
     expect("Barcode", "071486024217");

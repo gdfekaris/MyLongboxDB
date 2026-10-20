@@ -398,6 +398,11 @@ fn edition_fields(rng: &mut Rng, category: Category, variant: u32) -> EditionFie
         cover_price: Some(Amount::new(Currency::Usd, 12 + rng.below(500) as i64)),
         // Without drawing on the generator, so other fields stay as they were.
         canadian_cover_price_cents: (variant == 1).then_some(75),
+        published: if variant == 1 {
+            PartialDate::new(2019, Some(7), None)
+        } else {
+            None
+        },
         ..EditionFields::default()
     };
     if category == Category::CollectedEdition {
@@ -633,6 +638,10 @@ mod tests {
             (
                 "pedigrees",
                 "SELECT count(*) FROM copy WHERE pedigree <> ''",
+            ),
+            (
+                "edition dates",
+                "SELECT count(*) FROM edition WHERE published IS NOT NULL",
             ),
             ("series teams", "SELECT count(*) FROM series_team"),
             ("tags", "SELECT count(*) FROM copy_tag"),

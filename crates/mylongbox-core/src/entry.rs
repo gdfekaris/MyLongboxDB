@@ -618,5 +618,6 @@ fn merge_edition(old: &EditionFields, new: &EditionFields) -> EditionFields {
         binding: new.binding.or(old.binding),
         has_dust_jacket: new.has_dust_jacket.or(old.has_dust_jacket),
         has_slipcase: new.has_slipcase.or(old.has_slipcase),
+        published: new.published.or(old.published),
     }
 }
