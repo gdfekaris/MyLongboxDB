@@ -140,6 +140,16 @@ pub fn load(path: &Path) -> Result<Loaded, String> {
     Ok(Loaded { full, preview })
 }
 
+/// Readies a photo already in the collection for editing again, decoded
+/// the way a photo file is. Slow for large photos, so it runs away from
+/// the window.
+pub fn load_saved(jpeg: &[u8]) -> Result<Loaded, String> {
+    let bytes = jpeg.to_vec();
+    let full = confined(move || Ok(upright(decode_bytes(&bytes).map_err(|e| e.to_string())?)))?;
+    let preview = preview(&full, PREVIEW_EDGE);
+    Ok(Loaded { full, preview })
+}
+
 /// Decodes on a thread of its own that can reach no files, sockets, or
 /// other descriptors, so a photo crafted to take over a decoder finds
 /// nothing within reach of that thread. The decoders are the code most
@@ -365,5 +375,22 @@ mod tests {
             "this is not a JPEG, PNG, WebP, or HEIC photo"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_saved_photo_opens_again_for_editing() {
+        let saved = photo_of(1000, 1500);
+        let loaded = load_saved(&saved.full_jpeg).unwrap();
+        assert_eq!(
+            loaded.full.dimensions(),
+            (saved.width, saved.height),
+            "edited at the size it was saved"
+        );
+        let mut edit = Edit::default();
+        edit.turn_right();
+        let again = finish(&loaded.full, &edit, Output::default()).unwrap();
+        assert_eq!((again.width, again.height), (saved.height, saved.width));
+        assert_ne!(again.sha256, saved.sha256);
+        assert!(load_saved(b"not a photo").is_err());
     }
 }

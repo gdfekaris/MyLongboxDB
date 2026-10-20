@@ -35,6 +35,8 @@ pub struct Links {
     /// Asks for a photo of one side of a copy, new or replacing one.
     pub add_photo: Rc<dyn Fn(CopyId, Side)>,
     pub remove_photo: Rc<dyn Fn(CopyId, Side)>,
+    /// Opens the editor on a photo already saved.
+    pub edit_photo: Rc<dyn Fn(CopyId, Side)>,
     pub swap_photos: Rc<dyn Fn(CopyId)>,
     /// Opens the full-size view of a copy's photos at one side.
     pub view_photo: Rc<dyn Fn(CopyId, Side)>,
@@ -876,11 +878,12 @@ fn photo_row(c: &CopyDetail, links: &Links) -> gtk::ListBoxRow {
 fn photo_slot(copy: CopyId, side: Side, has_photo: bool, links: &Links) -> gtk::Box {
     // Whole sentences for each side, since languages differ in how a
     // side's name fits into them.
-    let (title, missing, replace_tip, remove_tip, add_tip) = match side {
+    let (title, missing, replace_tip, edit_tip, remove_tip, add_tip) = match side {
         Side::Front => (
             gettext("Front Cover"),
             gettext("No Front Cover Image"),
             gettext("Replace the Front Cover Photo"),
+            gettext("Edit the Front Cover Photo"),
             gettext("Remove the Front Cover Photo"),
             gettext("Add a Front Cover Photo"),
         ),
@@ -888,6 +891,7 @@ fn photo_slot(copy: CopyId, side: Side, has_photo: bool, links: &Links) -> gtk::
             gettext("Back Cover"),
             gettext("No Back Cover Image"),
             gettext("Replace the Back Cover Photo"),
+            gettext("Edit the Back Cover Photo"),
             gettext("Remove the Back Cover Photo"),
             gettext("Add a Back Cover Photo"),
         ),
@@ -895,6 +899,7 @@ fn photo_slot(copy: CopyId, side: Side, has_photo: bool, links: &Links) -> gtk::
             gettext("Signature"),
             gettext("No Signature Photo"),
             gettext("Replace the Signature Photo"),
+            gettext("Edit the Signature Photo"),
             gettext("Remove the Signature Photo"),
             gettext("Add a Photo of the Signature"),
         ),
@@ -938,6 +943,14 @@ fn photo_slot(copy: CopyId, side: Side, has_photo: bool, links: &Links) -> gtk::
             .build();
         let hook = links.remove_photo.clone();
         remove.connect_clicked(move |_| hook(copy, side));
+        let edit = gtk::Button::builder()
+            .icon_name("document-edit-symbolic")
+            .tooltip_text(&edit_tip)
+            .css_classes(["flat"])
+            .build();
+        let hook = links.edit_photo.clone();
+        edit.connect_clicked(move |_| hook(copy, side));
+        buttons.append(&edit);
         buttons.append(&replace);
         buttons.append(&remove);
     } else {

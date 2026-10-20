@@ -379,8 +379,11 @@ pub enum AppMsg {
         side: Side,
         loaded: Box<covers::Loaded>,
         edit: Edit,
+        before: Option<Box<CoverPhoto>>,
     },
     RemovePhoto(CopyId, Side),
+    /// Open the editor on a photo already saved.
+    EditPhoto(CopyId, Side),
     /// Put back a removed photo.
     RestorePhoto(CopyId, Side, Box<CoverPhoto>),
     SwapPhotos(CopyId),
@@ -483,6 +486,8 @@ pub enum CommandMsg {
         copy: CopyId,
         side: Side,
         loaded: Result<Box<covers::Loaded>, String>,
+        /// The photo saved before, when it is the one being edited again.
+        before: Option<Box<CoverPhoto>>,
     },
     /// A photo edited and saved as JPEGs, ready to store in the
     /// collection opened as number `opened`.
@@ -491,6 +496,7 @@ pub enum CommandMsg {
         copy: CopyId,
         side: Side,
         photo: Result<Box<CoverPhoto>, String>,
+        before: Option<Box<CoverPhoto>>,
     },
 }
 
@@ -1180,6 +1186,29 @@ impl Component for App {
                     copy,
                     side,
                     loaded: covers::load(&path).map(Box::new),
+                    before: None,
+                });
+            }
+            AppMsg::EditPhoto(copy, side) => {
+                let before = match self.with_db(|db| db.photo(copy, side)) {
+                    Ok(Some(photo)) => Box::new(photo),
+                    Ok(None) => return,
+                    Err(why) => {
+                        root.toast(&gettext_f(
+                            "Could not open the photo: {reason}",
+                            &[("reason", &why)],
+                        ));
+                        return;
+                    }
+                };
+                root.toast_working(&gettext("Opening the photo\u{2026}"));
+                let opened = self.opened;
+                sender.spawn_oneshot_command(move || CommandMsg::PhotoLoaded {
+                    opened,
+                    copy,
+                    side,
+                    loaded: covers::load_saved(&before.full_jpeg).map(Box::new),
+                    before: Some(before),
                 });
             }
             AppMsg::PhotoEdited {
@@ -1188,6 +1217,7 @@ impl Component for App {
                 side,
                 loaded,
                 edit,
+                before,
             } => {
                 root.toast_working(&gettext("Saving the photo\u{2026}"));
                 let output = self.settings.photos;
@@ -1196,6 +1226,7 @@ impl Component for App {
                     copy,
                     side,
                     photo: covers::finish(&loaded.full, &edit, output).map(Box::new),
+                    before,
                 });
             }
             AppMsg::RemovePhoto(copy, side) => match self.with_db(|db| db.remove_photo(copy, side))
@@ -1995,6 +2026,7 @@ impl Component for App {
                 copy,
                 side,
                 loaded: Ok(loaded),
+                before,
             } => {
                 root.end_working();
                 let title = match side {
@@ -2005,16 +2037,17 @@ impl Component for App {
                 let preview = loaded.preview.clone();
                 // The full photo waits here for the edit; closing the
                 // editor without saving drops it.
-                let loaded = RefCell::new(Some(loaded));
+                let waiting = RefCell::new(Some((loaded, before)));
                 let sender = sender.clone();
                 photo_editor::open(root, &title, preview, move |edit| {
-                    if let Some(loaded) = loaded.borrow_mut().take() {
+                    if let Some((loaded, before)) = waiting.borrow_mut().take() {
                         sender.input(AppMsg::PhotoEdited {
                             opened,
                             copy,
                             side,
                             loaded,
                             edit,
+                            before,
                         });
                     }
                 });
@@ -2029,8 +2062,29 @@ impl Component for App {
                 copy,
                 side,
                 photo: Ok(photo),
+                before: None,
                 ..
             } => self.store_photo(copy, side, &photo, PhotoDone::Added, root, &sender),
+            CommandMsg::PhotoReady {
+                copy,
+                side,
+                photo: Ok(photo),
+                before: Some(before),
+                ..
+            } => match self.with_db(|db| db.set_photo(copy, side, &photo)) {
+                Ok(()) => {
+                    covers::forget(copy);
+                    self.refresh_copy(copy, root, &sender);
+                    let undo = sender.clone();
+                    root.toast_undo(&photo_message(side, PhotoDone::Edited), move || {
+                        undo.input(AppMsg::RestorePhoto(copy, side, before.clone()));
+                    });
+                }
+                Err(why) => root.toast(&gettext_f(
+                    "Could not save the photo: {reason}",
+                    &[("reason", &why)],
+                )),
+            },
             CommandMsg::PhotoReady {
                 photo: Err(why), ..
             } => root.toast(&gettext_f(
@@ -2695,6 +2749,10 @@ impl App {
                     remove_photo: {
                         let s = sender.clone();
                         Rc::new(move |copy, side| s.input(AppMsg::RemovePhoto(copy, side)))
+                    },
+                    edit_photo: {
+                        let s = sender.clone();
+                        Rc::new(move |copy, side| s.input(AppMsg::EditPhoto(copy, side)))
                     },
                     swap_photos: {
                         let s = sender.clone();
@@ -3689,6 +3747,7 @@ enum Behind {
 #[derive(Clone, Copy)]
 enum PhotoDone {
     Added,
+    Edited,
     Removed,
     PutBack,
 }
@@ -3697,12 +3756,15 @@ enum PhotoDone {
 fn photo_message(side: Side, done: PhotoDone) -> String {
     match (side, done) {
         (Side::Front, PhotoDone::Added) => gettext("Front cover added"),
+        (Side::Front, PhotoDone::Edited) => gettext("Front cover saved"),
         (Side::Front, PhotoDone::Removed) => gettext("Front cover removed"),
         (Side::Front, PhotoDone::PutBack) => gettext("Front cover put back"),
         (Side::Back, PhotoDone::Added) => gettext("Back cover added"),
+        (Side::Back, PhotoDone::Edited) => gettext("Back cover saved"),
         (Side::Back, PhotoDone::Removed) => gettext("Back cover removed"),
         (Side::Back, PhotoDone::PutBack) => gettext("Back cover put back"),
         (Side::Signature, PhotoDone::Added) => gettext("Signature photo added"),
+        (Side::Signature, PhotoDone::Edited) => gettext("Signature photo saved"),
         (Side::Signature, PhotoDone::Removed) => gettext("Signature photo removed"),
         (Side::Signature, PhotoDone::PutBack) => gettext("Signature photo put back"),
     }
