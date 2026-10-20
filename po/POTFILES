@@ -4,6 +4,7 @@ crates/mylongbox-app/src/app.rs
 crates/mylongbox-app/src/books.rs
 crates/mylongbox-app/src/bulk_dialog.rs
 crates/mylongbox-app/src/chart.rs
+crates/mylongbox-app/src/covers.rs
 crates/mylongbox-app/src/customize.rs
 crates/mylongbox-app/src/filter_fields.rs
 crates/mylongbox-app/src/filter_panel.rs

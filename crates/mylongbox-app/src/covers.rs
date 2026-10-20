@@ -17,6 +17,8 @@ use mylongbox_media::{
     encode, preview, read_file, upright,
 };
 
+use crate::i18n::{fill, gettext};
+
 /// Thumbnails kept decoded: a few screens of the cover grid.
 const CACHED: usize = 240;
 
@@ -144,6 +146,11 @@ pub fn load(path: &Path) -> Result<Loaded, String> {
 fn confined<T: Send + 'static>(
     decode: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
+    // Looked up before the thread starts: a translation is read from a
+    // file, which the confined thread may not be able to open.
+    // Translators: {reason} says why the photo thread could not lock itself
+    // down, in English.
+    let unsafe_text = gettext("the photo could not be read safely: {reason}");
     let thread = std::thread::Builder::new()
         .name("photo".into())
         .spawn(move || {
@@ -152,14 +159,14 @@ fn confined<T: Send + 'static>(
                 Ok(mylongbox_sandbox::Enforced::Fully) => {}
                 // The filter still holds where Landlock does not.
                 Ok(level) => eprintln!("mylongboxdb: photo thread file limits: {level:?}"),
-                Err(why) => return Err(format!("the photo could not be read safely: {why}")),
+                Err(why) => return Err(fill(&unsafe_text, &[("reason", &why.to_string())])),
             }
             decode()
         })
         .map_err(|e| e.to_string())?;
     thread
         .join()
-        .unwrap_or_else(|_| Err("the photo could not be read".into()))
+        .unwrap_or_else(|_| Err(gettext("the photo could not be read")))
 }
 
 /// Applies the editor's changes to the full photo and makes the JPEGs
