@@ -683,11 +683,11 @@ fn an_import_can_go_a_few_rows_at_a_time() {
     assert_eq!(slices, 5);
     assert_eq!(run.report(), &whole);
     // Abandoned, it leaves nothing behind; finished, it keeps it all.
-    fresh.abandon_import(run).unwrap();
+    run.abandon().unwrap();
     assert!(fresh.browse(crate::Shelf::Everything).unwrap().is_empty());
     let mut run = fresh.start_import(&source).unwrap();
     while !fresh.import_rows(&mut run, &source, &settings, 7).unwrap() {}
-    assert_eq!(fresh.finish_import(run).unwrap(), whole);
+    assert_eq!(run.finish().unwrap(), whole);
     assert_eq!(csv_of(&fresh), text);
 }
 
@@ -788,4 +788,23 @@ fn cells_a_spreadsheet_would_run_are_guarded_and_come_back_as_they_were() {
         other.book_entry(row.copy).unwrap().issue.title,
         "'Til Death"
     );
+}
+
+#[test]
+fn a_run_dropped_unfinished_is_undone_and_later_edits_stay() {
+    let db = Database::open_in_memory().unwrap();
+    let source =
+        ImportSource::from_csv("Series,Issue Number\nThor,1\nThor,2\n".as_bytes()).unwrap();
+    let mut run = db.start_import(&source).unwrap();
+    db.import_rows(&mut run, &source, &settings(&source), 1)
+        .unwrap();
+    // Neither finished nor abandoned, as an early return could leave it.
+    drop(run);
+    assert!(
+        db.conn.is_autocommit(),
+        "no savepoint is left for later edits to join"
+    );
+    assert!(db.browse(crate::Shelf::Everything).unwrap().is_empty());
+    db.create_lookup::<CreatorId>("Jack Kirby").unwrap();
+    assert!(db.conn.is_autocommit());
 }

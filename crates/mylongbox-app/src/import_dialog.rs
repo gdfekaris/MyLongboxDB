@@ -451,8 +451,8 @@ impl Wizard {
         }
     }
 
-    fn fail(&self, run: ImportRun, db: &Database, why: &str) {
-        let _ = db.abandon_import(run);
+    fn fail(&self, run: ImportRun<'_>, why: &str) {
+        let _ = run.abandon();
         alert(&self.dialog, &gettext("Nothing Was Imported"), why);
         self.show(Stage::Columns);
     }
@@ -496,7 +496,7 @@ async fn run(wizard: Rc<Wizard>, keep: bool) {
     };
     loop {
         if wizard.cancelled.get() {
-            let _ = db.abandon_import(run);
+            let _ = run.abandon();
             wizard.show(Stage::Columns);
             return;
         }
@@ -507,7 +507,7 @@ async fn run(wizard: Rc<Wizard>, keep: bool) {
                 Ok(false) if started.elapsed() < SLICE => {}
                 Ok(false) => break false,
                 Err(e) => {
-                    wizard.fail(run, &db, &e.to_string());
+                    wizard.fail(run, &e.to_string());
                     return;
                 }
             }
@@ -521,7 +521,7 @@ async fn run(wizard: Rc<Wizard>, keep: bool) {
     }
 
     if !keep {
-        match db.abandon_import(run) {
+        match run.abandon() {
             Ok(report) => {
                 wizard.show_report(&report, false);
                 wizard.show(Stage::Checked(report.added()));
@@ -539,7 +539,7 @@ async fn run(wizard: Rc<Wizard>, keep: bool) {
     for (done, batch) in photos.chunks(workers).enumerate() {
         wizard.set_progress(Doing::AddingPhotos, done * workers, photos.len());
         if wizard.cancelled.get() {
-            let _ = db.abandon_import(run);
+            let _ = run.abandon();
             wizard.show(Stage::Columns);
             return;
         }
@@ -558,12 +558,12 @@ async fn run(wizard: Rc<Wizard>, keep: bool) {
                 .await
                 .unwrap_or_else(|_| Err(gettext("the photo could not be read")));
             if let Err(e) = db.import_photo(&mut run, photo, prepared) {
-                wizard.fail(run, &db, &e.to_string());
+                wizard.fail(run, &e.to_string());
                 return;
             }
         }
     }
-    match db.finish_import(run) {
+    match run.finish() {
         Ok(report) => {
             (wizard.imported)(report.added());
             if report.photo_problems.is_empty() {

@@ -903,11 +903,14 @@ pub struct PendingPhoto {
 
 /// An import under way. Rows are added a few at a time, so a window can
 /// show progress between them, inside one transaction that
-/// [`Database::finish_import`] commits or [`Database::abandon_import`]
-/// undoes. Until one of them is called, everything the collection is
-/// asked to do joins that transaction.
-#[derive(Debug)]
-pub struct ImportRun {
+/// [`ImportRun::finish`] commits or [`ImportRun::abandon`] undoes. Until
+/// then, everything the collection is asked to do joins that
+/// transaction, so a run dropped without either is undone, rather than
+/// left to gather every later change and lose it when the app closes.
+pub struct ImportRun<'db> {
+    db: &'db Database,
+    /// Set once the transaction is committed or undone.
+    ended: bool,
     before: Before,
     next: usize,
     with_photos: bool,
@@ -915,7 +918,7 @@ pub struct ImportRun {
     photos: Vec<PendingPhoto>,
 }
 
-impl ImportRun {
+impl ImportRun<'_> {
     /// How many rows have been read.
     pub fn rows_done(&self) -> usize {
         self.next
@@ -930,11 +933,39 @@ impl ImportRun {
     pub fn photos(&self) -> &[PendingPhoto] {
         &self.photos
     }
+
+    /// Keeps everything the run added, returning what it found.
+    pub fn finish(mut self) -> Result<ImportReport> {
+        self.db.conn.execute_batch("RELEASE import")?;
+        self.ended = true;
+        Ok(std::mem::take(&mut self.report))
+    }
+
+    /// Undoes everything the run added, returning what it found: a dry
+    /// run is a run abandoned once every row is read.
+    pub fn abandon(mut self) -> Result<ImportReport> {
+        self.db
+            .conn
+            .execute_batch("ROLLBACK TO import; RELEASE import")?;
+        self.ended = true;
+        Ok(std::mem::take(&mut self.report))
+    }
+}
+
+impl Drop for ImportRun<'_> {
+    fn drop(&mut self) {
+        if !self.ended {
+            let _ = self
+                .db
+                .conn
+                .execute_batch("ROLLBACK TO import; RELEASE import");
+        }
+    }
 }
 
 impl Database {
     /// Begins an import of `source`.
-    pub fn start_import(&self, source: &ImportSource) -> Result<ImportRun> {
+    pub fn start_import(&self, source: &ImportSource) -> Result<ImportRun<'_>> {
         let largest = |kept: Kept| -> Result<i64> {
             Ok(self.conn.query_row(kept.largest(), [], |r| r.get(0))?)
         };
@@ -946,6 +977,8 @@ impl Database {
         };
         self.conn.execute_batch("SAVEPOINT import")?;
         Ok(ImportRun {
+            db: self,
+            ended: false,
             before,
             next: 0,
             with_photos: source.archive.is_some(),
@@ -960,7 +993,7 @@ impl Database {
     /// abandoned.
     pub fn import_rows(
         &self,
-        run: &mut ImportRun,
+        run: &mut ImportRun<'_>,
         source: &ImportSource,
         settings: &ImportSettings,
         limit: usize,
@@ -1008,7 +1041,7 @@ impl Database {
     /// file, or notes why it could not be.
     pub fn import_photo(
         &self,
-        run: &mut ImportRun,
+        run: &mut ImportRun<'_>,
         photo: &PendingPhoto,
         prepared: std::result::Result<CoverPhoto, String>,
     ) -> Result<()> {
@@ -1026,20 +1059,6 @@ impl Database {
         Ok(())
     }
 
-    /// Keeps everything the run added.
-    pub fn finish_import(&self, run: ImportRun) -> Result<ImportReport> {
-        self.conn.execute_batch("RELEASE import")?;
-        Ok(run.report)
-    }
-
-    /// Undoes everything the run added, returning what it found: a dry
-    /// run is a run abandoned once every row is read.
-    pub fn abandon_import(&self, run: ImportRun) -> Result<ImportReport> {
-        self.conn
-            .execute_batch("ROLLBACK TO import; RELEASE import")?;
-        Ok(run.report)
-    }
-
     /// Runs the whole import and undoes it, reporting what each row
     /// would do.
     pub fn check_import(
@@ -1049,9 +1068,9 @@ impl Database {
     ) -> Result<ImportReport> {
         let mut run = self.start_import(source)?;
         match self.import_rows(&mut run, source, settings, usize::MAX) {
-            Ok(_) => self.abandon_import(run),
+            Ok(_) => run.abandon(),
             Err(e) => {
-                self.abandon_import(run)?;
+                run.abandon()?;
                 Err(e)
             }
         }
@@ -1076,9 +1095,9 @@ impl Database {
                 Ok(())
             });
         match added {
-            Ok(()) => self.finish_import(run),
+            Ok(()) => run.finish(),
             Err(e) => {
-                self.abandon_import(run)?;
+                run.abandon()?;
                 Err(e)
             }
         }
