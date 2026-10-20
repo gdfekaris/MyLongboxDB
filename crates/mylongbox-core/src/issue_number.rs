@@ -445,18 +445,36 @@ mod tests {
 
         #[test]
         fn next_always_sorts_later_in_the_same_group(text in any_text()) {
-            if let Ok(current) = IssueNumber::new(&text)
-                && let Some(following) = current.next()
-            {
-                prop_assert!(following.sort_key() > current.sort_key(),
-                    "{:?} -> {:?}", current.as_str(), following.as_str());
-                let group = |k: &str| k.split(SEP).next().unwrap_or("").to_owned();
-                if current.sort_key().starts_with('1') {
-                    prop_assert_eq!(group(current.sort_key()), group(following.sort_key()));
-                } else {
-                    prop_assert_eq!(&current.sort_key()[..1], &following.sort_key()[..1]);
-                }
+            next_sorts_later_in_its_group(&text);
+        }
+    }
+
+    /// The number after `text`, if it has one, sorts after it and in its
+    /// group.
+    fn next_sorts_later_in_its_group(text: &str) {
+        if let Ok(current) = IssueNumber::new(text)
+            && let Some(following) = current.next()
+        {
+            assert!(
+                following.sort_key() > current.sort_key(),
+                "{:?} -> {:?}",
+                current.as_str(),
+                following.as_str()
+            );
+            let group = |k: &str| k.split(SEP).next().unwrap_or("").to_owned();
+            if current.sort_key().starts_with('1') {
+                assert_eq!(group(current.sort_key()), group(following.sort_key()));
+            } else {
+                assert_eq!(&current.sort_key()[..1], &following.sort_key()[..1]);
             }
         }
+    }
+
+    // Cases proptest once found, kept as plain tests, since the seeds it
+    // saves stay outside the repository and so never reach CI. Add each
+    // new one here.
+    #[test]
+    fn next_sorts_later_for_cases_once_found() {
+        next_sorts_later_in_its_group("-\u{bd}");
     }
 }

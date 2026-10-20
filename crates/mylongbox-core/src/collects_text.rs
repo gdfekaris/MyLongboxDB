@@ -480,8 +480,7 @@ mod tests {
     proptest! {
         #[test]
         fn writing_then_reading_gives_the_same_list(entries in any_entries()) {
-            let text = format_collects(&entries);
-            prop_assert_eq!(parse_collects(&text), Ok(entries), "{}", text);
+            reads_back(&entries);
         }
 
         #[test]
@@ -495,5 +494,25 @@ mod tests {
             let text: String = chars.into_iter().collect();
             let _ = parse_collects(&text);
         }
+    }
+
+    /// Writing `entries` and reading the text gives them back.
+    fn reads_back(entries: &[CollectsEntry]) {
+        let text = format_collects(entries);
+        assert_eq!(parse_collects(&text).as_deref(), Ok(entries), "{text}");
+    }
+
+    // Cases proptest once found, kept as plain tests, since the seeds it
+    // saves stay outside the repository and so never reach CI. Add each
+    // new one here.
+    #[test]
+    fn cases_once_found_read_back() {
+        let aa = |n: &str| entry("Aa", Some(1900), n);
+        reads_back(&[aa("1"), aa("\u{bd}"), aa("1")]);
+    }
+
+    #[test]
+    fn cases_once_found_do_not_panic() {
+        let _ = parse_collects(",");
     }
 }
