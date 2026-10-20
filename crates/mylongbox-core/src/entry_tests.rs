@@ -271,6 +271,9 @@ fn adding_never_unmarks_or_clears_what_is_there() {
 
     let mut second = comic("X-Men", "1");
     second.cover_artists = vec!["Sol Brodsky".into()];
+    // Spaces alone are as blank as nothing typed.
+    second.edition.barcode = Some("   ".into());
+    second.issue.key_reason = "  ".into();
     let again = db.add_book(&second).unwrap();
     assert_eq!(again.edition, saved.edition);
 

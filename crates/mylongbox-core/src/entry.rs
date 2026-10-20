@@ -597,7 +597,12 @@ fn merge_edition(old: &EditionFields, new: &EditionFields) -> EditionFields {
         canadian_cover_price_cents: new
             .canadian_cover_price_cents
             .or(old.canadian_cover_price_cents),
-        barcode: new.barcode.clone().or_else(|| old.barcode.clone()),
+        // Spaces alone would be trimmed away on saving, erasing the old.
+        barcode: new
+            .barcode
+            .clone()
+            .filter(|b| !b.trim().is_empty())
+            .or_else(|| old.barcode.clone()),
         isbn: new.isbn.clone().or_else(|| old.isbn.clone()),
         binding: new.binding.or(old.binding),
         has_dust_jacket: new.has_dust_jacket.or(old.has_dust_jacket),
