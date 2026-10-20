@@ -201,6 +201,11 @@ impl Busy {
         *self.0.borrow_mut() = true;
         Some(BusyGuard(self.0.clone()))
     }
+
+    /// Whether some work is under way now.
+    pub fn is_busy(&self) -> bool {
+        *self.0.borrow()
+    }
 }
 
 pub struct BusyGuard(Rc<RefCell<bool>>);

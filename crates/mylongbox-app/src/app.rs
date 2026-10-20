@@ -1006,13 +1006,21 @@ impl Component for App {
                 about::show(root, size);
             }
             AppMsg::ShowShortcuts => shortcuts::dialog().present(Some(root)),
-            AppMsg::Quit => match &self.form {
-                Some(form) if form.is_dirty() => {
-                    confirm_discard(root, &sender, Some(AppMsg::QuitNow));
+            AppMsg::Quit => {
+                if self.still_working(root) {
+                    return;
                 }
-                _ => sender.input(AppMsg::QuitNow),
-            },
+                match &self.form {
+                    Some(form) if form.is_dirty() => {
+                        confirm_discard(root, &sender, Some(AppMsg::QuitNow));
+                    }
+                    _ => sender.input(AppMsg::QuitNow),
+                }
+            }
             AppMsg::QuitNow => {
+                if self.still_working(root) {
+                    return;
+                }
                 self.quitting.set(true);
                 root.close();
             }
@@ -1898,6 +1906,24 @@ impl Component for App {
 impl App {
     fn store(&self) -> Result<&CollectionStore, String> {
         self.store.as_ref().map_err(Clone::clone)
+    }
+
+    /// Whether work on the whole collection is under way, saying so if
+    /// it is. Quitting then would leave its files half written: an
+    /// export or backup where it was asked for, and a copy in the app's
+    /// own folder as large as the collection.
+    fn still_working(&self, root: &MainWindow) -> bool {
+        let busy = self.busy.is_busy();
+        if busy {
+            tell(
+                root,
+                &gettext("Still Working"),
+                &gettext(
+                    "quit once the work under way has finished, so that no file is left half written",
+                ),
+            );
+        }
+        busy
     }
 
     /// What work on the whole collection needs, if it can start now:
