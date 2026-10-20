@@ -27,6 +27,9 @@ pub struct Lookup<I> {
 pub struct LookupSql {
     /// Lowercase singular noun for messages, e.g. "creator".
     pub(crate) noun: &'static str,
+    /// What saved rules call an entry of this list, so they follow a
+    /// rename or merge.
+    pub(crate) named: Named,
     insert: &'static str,
     get: &'static str,
     list: &'static str,
@@ -68,6 +71,7 @@ mod sealed {
 macro_rules! lookup_sql {
     (
         noun: $noun:literal,
+        named: $named:ident,
         table: $t:literal,
         usage: $usage:literal,
         $(aliases: ($a:literal, $fk:literal),)?
@@ -75,6 +79,7 @@ macro_rules! lookup_sql {
     ) => {
         LookupSql {
             noun: $noun,
+            named: Named::$named,
             insert: concat!("INSERT INTO ", $t, " (uuid, name) VALUES (?1, ?2)"),
             get: concat!("SELECT id, uuid, name FROM ", $t, " WHERE id = ?1"),
             list: concat!("SELECT id, uuid, name FROM ", $t, " ORDER BY name COLLATE NOCASE, id"),
@@ -135,6 +140,7 @@ lookup_id!(
     PublisherId,
     lookup_sql! {
         noun: "publisher",
+        named: Publisher,
         table: "publisher",
         usage: "SELECT count(*) FROM series WHERE publisher_id = ?1",
         merge: [
@@ -148,6 +154,7 @@ lookup_id!(
     BoxId,
     lookup_sql! {
         noun: "box",
+        named: StorageBox,
         table: "storage_box",
         usage: "SELECT count(*) FROM copy WHERE box_id = ?1",
         merge: [
@@ -161,6 +168,7 @@ lookup_id!(
     TagId,
     lookup_sql! {
         noun: "tag",
+        named: Tag,
         table: "tag",
         usage: "SELECT count(*) FROM copy_tag WHERE tag_id = ?1",
         merge: [
@@ -176,6 +184,7 @@ lookup_id!(
     CreatorId,
     lookup_sql! {
         noun: "creator",
+        named: Creator,
         table: "creator",
         usage: "SELECT (SELECT count(*) FROM credit WHERE creator_id = ?1)
                     + (SELECT count(*) FROM edition_cover_artist WHERE creator_id = ?1)
@@ -207,6 +216,7 @@ lookup_id!(
     CharacterId,
     lookup_sql! {
         noun: "character",
+        named: Character,
         table: "character",
         usage: "SELECT count(*) FROM issue_character WHERE character_id = ?1",
         aliases: ("character_alias", "character_id"),
@@ -235,6 +245,7 @@ lookup_id!(
     TeamId,
     lookup_sql! {
         noun: "team",
+        named: Team,
         table: "team",
         usage: "SELECT count(*) FROM issue_team WHERE team_id = ?1",
         aliases: ("team_alias", "team_id"),
@@ -261,6 +272,7 @@ lookup_id!(
     StoryArcId,
     lookup_sql! {
         noun: "story arc",
+        named: StoryArc,
         table: "story_arc",
         usage: "SELECT count(*) FROM issue_story_arc WHERE story_arc_id = ?1",
         aliases: ("story_arc_alias", "story_arc_id"),
@@ -350,9 +362,7 @@ impl Database {
             }
         }
         tx.execute(sql.rename, params![id.raw(), name])?;
-        if let Some(what) = Named::of::<I>() {
-            self.rules_follow_rename(what, &old, &name)?;
-        }
+        self.rules_follow_rename(sql.named, &old, &name)?;
         tx.commit()?;
         Ok(())
     }
@@ -401,9 +411,7 @@ impl Database {
         let old = self.lookup(from)?.name;
         let new = self.lookup(into)?.name;
         run_steps(&tx, I::SQL.merge, [from.raw(), into.raw()])?;
-        if let Some(what) = Named::of::<I>() {
-            self.rules_follow_rename(what, &old, &new)?;
-        }
+        self.rules_follow_rename(I::SQL.named, &old, &new)?;
         tx.commit()?;
         Ok(())
     }

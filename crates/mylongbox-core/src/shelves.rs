@@ -8,7 +8,6 @@ use crate::catalog::query_all;
 use crate::db::Database;
 use crate::error::{Error, Result};
 use crate::filter::{Filter, FilterSet, ListField, TextCondition, TextField};
-use crate::lookup::LookupId;
 use crate::model::{CharacterId, CreatorId, SavedShelfId, SeriesId, StoryArcId, TagId, TeamId};
 
 /// The longest name a shelf may have, so it fits the sidebar.
@@ -40,20 +39,6 @@ pub(crate) enum Named {
 }
 
 impl Named {
-    /// The kind of list entry a lookup id names.
-    pub(crate) fn of<I: LookupId>() -> Option<Self> {
-        Some(match I::SQL.noun {
-            "publisher" => Self::Publisher,
-            "creator" => Self::Creator,
-            "character" => Self::Character,
-            "team" => Self::Team,
-            "story arc" => Self::StoryArc,
-            "tag" => Self::Tag,
-            "box" => Self::StorageBox,
-            _ => return None,
-        })
-    }
-
     /// The names in `rule` that mean an entry of this kind.
     fn names_in(self, rule: &mut Filter) -> Vec<&mut String> {
         match (self, rule) {

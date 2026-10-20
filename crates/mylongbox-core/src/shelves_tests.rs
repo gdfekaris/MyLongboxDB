@@ -430,23 +430,53 @@ fn hidden_sections_are_kept_by_code() {
 }
 
 #[test]
-fn every_list_of_names_is_followed_by_saved_rules() {
+fn rules_follow_a_rename_in_every_list_of_names() {
     use crate::LookupId;
-    use crate::shelves::Named;
-    fn named<I: LookupId>() -> Option<Named> {
-        Named::of::<I>()
+    /// The field a rule names an entry by, and how to rename one.
+    type Kind = (Option<TextField>, Option<ListField>, fn(&Database));
+    fn rename<I: LookupId>(db: &Database) {
+        let id = db.create_lookup::<I>("Gold").unwrap();
+        db.rename_lookup(id, "Gold 2").unwrap();
     }
-    assert!(
-        [
-            named::<PublisherId>(),
-            named::<CreatorId>(),
-            named::<CharacterId>(),
-            named::<TeamId>(),
-            named::<StoryArcId>(),
-            named::<TagId>(),
-            named::<BoxId>(),
-        ]
+    let rule = |field: Option<TextField>, list: Option<ListField>, name: &str| match (field, list) {
+        (Some(field), _) => Filter::Text {
+            field,
+            condition: TextCondition::Is,
+            value: name.into(),
+        },
+        (_, Some(field)) => Filter::List {
+            field,
+            condition: ListCondition::AnyOf,
+            names: vec![name.into()],
+        },
+        _ => unreachable!(),
+    };
+    let db = db();
+    // Every rule names "Gold", so a rename reaching the wrong kind of
+    // rule shows up as a change to the wrong shelf.
+    let kinds: [Kind; 5] = [
+        (Some(TextField::Publisher), None, rename::<PublisherId>),
+        (Some(TextField::StorageBox), None, rename::<BoxId>),
+        (None, Some(ListField::Tags), rename::<TagId>),
+        (None, Some(ListField::Teams), rename::<TeamId>),
+        (None, Some(ListField::StoryArcs), rename::<StoryArcId>),
+    ];
+    let shelves: Vec<_> = kinds
         .iter()
-        .all(Option::is_some)
-    );
+        .enumerate()
+        .map(|(i, (field, list, _))| {
+            db.add_saved_shelf(
+                &format!("Shelf {i}"),
+                &set(vec![rule(*field, *list, "Gold")]),
+            )
+            .unwrap()
+        })
+        .collect();
+    for (done, (_, _, rename)) in kinds.iter().enumerate() {
+        rename(&db);
+        for (i, ((field, list, _), shelf)) in kinds.iter().zip(&shelves).enumerate() {
+            let name = if i <= done { "Gold 2" } else { "Gold" };
+            assert_eq!(first_rule(&db, *shelf), rule(*field, *list, name));
+        }
+    }
 }
