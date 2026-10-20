@@ -535,6 +535,9 @@ fn the_stored_schema_is_written_as_it_always_was() {
     if made != expected {
         let out = std::env::temp_dir().join("mylongboxdb-expected_schema.sql");
         std::fs::write(&out, &made).unwrap();
-        panic!("the stored schema changed; the new text is in {}", out.display());
+        panic!(
+            "the stored schema changed; the new text is in {}",
+            out.display()
+        );
     }
 }
