@@ -137,6 +137,23 @@ fn case_accents_and_word_parts_do_not_matter() {
 }
 
 #[test]
+fn short_words_ignore_case_and_accents_like_longer_ones() {
+    let db = db();
+    let mut e = entry("Élan", 1990, "1");
+    e.credits = vec![("Ágnes Öst".into(), Role::Writer)];
+    let elan = add(&db, &e);
+    let mut e = entry("Ωmega", 1991, "1");
+    e.credits = vec![("Émile".into(), Role::Writer)];
+    let omega = add(&db, &e);
+    assert_eq!(found(&db, "el"), [elan]);
+    assert_eq!(found(&db, "ÉL"), [elan]);
+    assert_eq!(found(&db, "ag"), [elan]);
+    assert_eq!(found(&db, "os"), [elan]);
+    assert_eq!(found(&db, "ωm"), [omega], "case beyond A to Z");
+    assert_eq!(found(&db, "em"), [omega]);
+}
+
+#[test]
 fn every_word_must_be_found_somewhere() {
     let c = collection();
     assert_eq!(found(&c.db, "spider conway"), [c.spider]);

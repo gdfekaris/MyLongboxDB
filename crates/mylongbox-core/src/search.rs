@@ -415,6 +415,13 @@ impl Database {
         // starts with a symbol, such as "%", may appear anywhere.
         let short = term.chars().count() < 3;
         let word_start_only = short && term.chars().next().is_some_and(char::is_alphanumeric);
+        let row = |row: &rusqlite::Row<'_>| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        };
         let hits = if !short {
             query_all(
                 &self.conn,
@@ -422,27 +429,20 @@ impl Database {
                  JOIN search_source s ON s.id = f.rowid
                  WHERE search_text MATCH ?1",
                 [phrase(term)],
-                |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, i64>(1)?,
-                        row.get::<_, String>(2)?,
-                    ))
-                },
+                row,
             )?
         } else {
-            query_all(
+            // Compared folded, as the index compares longer words, so
+            // case and accents are ignored beyond what LIKE would; LIKE
+            // read every row anyway, since the word may be anywhere.
+            let mut all = query_all(
                 &self.conn,
-                "SELECT kind, owner, text FROM search_source WHERE text LIKE ?1 ESCAPE '\\'",
-                [format!("%{}%", like_escaped(term))],
-                |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, i64>(1)?,
-                        row.get::<_, String>(2)?,
-                    ))
-                },
-            )?
+                "SELECT kind, owner, text FROM search_source",
+                [],
+                row,
+            )?;
+            all.retain(|(_, _, text)| fold(text).contains(&folded));
+            all
         };
         // The best score for each owner of each kind.
         let mut owners: HashMap<Kind, HashMap<i64, f64>> = HashMap::new();
