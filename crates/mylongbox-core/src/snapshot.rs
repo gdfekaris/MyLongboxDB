@@ -5,10 +5,10 @@
 
 use std::path::{Path, PathBuf};
 
+use rusqlite::Connection;
 use rusqlite::backup::{Backup, StepResult};
-use rusqlite::{Connection, OpenFlags};
 
-use crate::db::Database;
+use crate::db::{Database, create_copy_target};
 use crate::error::{Error, Result};
 
 /// The file a copy is written to.
@@ -28,17 +28,7 @@ impl std::fmt::Debug for CopyTarget {
 impl CopyTarget {
     /// A new file at `path`, which must not exist yet.
     pub fn create(path: &Path) -> Result<Self> {
-        let path = std::path::absolute(path)?;
-        if path.exists() {
-            return Err(Error::Io(std::io::Error::from(
-                std::io::ErrorKind::AlreadyExists,
-            )));
-        }
-        let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
-            | OpenFlags::SQLITE_OPEN_CREATE
-            | OpenFlags::SQLITE_OPEN_NO_MUTEX
-            | OpenFlags::SQLITE_OPEN_NOFOLLOW;
-        let conn = Connection::open_with_flags(&path, flags)?;
+        let (path, conn) = create_copy_target(path)?;
         Ok(Self { conn, path })
     }
 

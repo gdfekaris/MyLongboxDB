@@ -1,5 +1,7 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
+use rusqlite::backup::Backup;
 use rusqlite::config::DbConfig;
 use rusqlite::limits::Limit;
 use rusqlite::{Connection, OpenFlags};
@@ -104,12 +106,9 @@ impl Database {
     /// it works where only the collection's own folders can be written.
     /// Returns the collection's size in bytes and the copy's.
     pub fn compact_into(&self, dest: &Path) -> Result<(u64, u64)> {
-        let dest = std::path::absolute(dest).map_err(Error::Io)?;
-        if dest.exists() {
-            return Err(Error::Io(std::io::Error::from(
-                std::io::ErrorKind::AlreadyExists,
-            )));
-        }
+        // VACUUM INTO accepts an empty file, so making one first refuses
+        // anything already at `dest` without a separate check.
+        let dest = create_empty(dest)?;
         let before = self.size_bytes()?;
         // VACUUM INTO writes the new file as an attached database, which
         // the connection otherwise refuses; the limit is restored whatever
@@ -223,27 +222,54 @@ pub(crate) fn run_steps(conn: &Connection, steps: &[&str], ids: [i64; 2]) -> Res
     Ok(())
 }
 
+/// Creates `path` as a new, empty file, returning it made absolute. The
+/// file is created in one step that fails if anything is already there,
+/// even a symbolic link, so nothing can be slipped in between a check
+/// and the write to send a copy somewhere else.
+pub(crate) fn create_empty(path: &Path) -> Result<PathBuf> {
+    let path = std::path::absolute(path).map_err(Error::Io)?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)?;
+    Ok(path)
+}
+
+/// Creates `path` as a new database to copy into. SQLite also refuses
+/// to follow a link put in the empty file's place before it opens it.
+pub(crate) fn create_copy_target(path: &Path) -> Result<(PathBuf, Connection)> {
+    let path = create_empty(path)?;
+    let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
+        | OpenFlags::SQLITE_OPEN_NO_MUTEX
+        | OpenFlags::SQLITE_OPEN_NOFOLLOW;
+    match Connection::open_with_flags(&path, flags) {
+        Ok(conn) => Ok((path, conn)),
+        Err(e) => {
+            let _ = std::fs::remove_file(&path);
+            Err(e.into())
+        }
+    }
+}
+
+/// Writes a consistent copy of the database `conn` has open to `dest`,
+/// which must not exist yet.
+fn write_copy(conn: &Connection, dest: &Path) -> Result<()> {
+    let (dest, mut copy) = create_copy_target(dest)?;
+    let written = Backup::new(conn, &mut copy)
+        .and_then(|backup| backup.run_to_completion(100, Duration::ZERO, None));
+    let closed = copy.close().map_err(|(_, e)| e);
+    if let Err(e) = written.and(closed) {
+        let _ = std::fs::remove_file(&dest);
+        return Err(e.into());
+    }
+    Ok(())
+}
+
 /// Hardens a fresh connection and confirms the file is ours to use.
 ///
 /// Every collection file is treated as untrusted, since it may have come
 /// from someone else. The settings follow SQLite's guidance for
 /// untrusted databases: <https://sqlite.org/security.html>.
-/// Writes a consistent copy of the database `conn` has open to `dest`,
-/// which must not exist yet.
-fn write_copy(conn: &Connection, dest: &Path) -> Result<()> {
-    let dest = std::path::absolute(dest).map_err(Error::Io)?;
-    if dest.exists() {
-        return Err(Error::Io(std::io::Error::from(
-            std::io::ErrorKind::AlreadyExists,
-        )));
-    }
-    conn.backup(rusqlite::MAIN_DB, &dest, None)
-        .inspect_err(|_| {
-            let _ = std::fs::remove_file(&dest);
-        })?;
-    Ok(())
-}
-
 pub(crate) fn connect(conn: Connection) -> Result<Connection> {
     // Defensive mode blocks writes to the schema and other features that
     // can corrupt a database even from ordinary SQL.
@@ -883,6 +909,33 @@ mod tests {
         assert_eq!(found, 0, "the removed name is gone from the index");
         drop(copy);
         std::fs::remove_file(&dest).unwrap();
+    }
+
+    #[test]
+    fn a_copy_never_follows_a_link_left_where_it_goes() {
+        let dir = std::env::temp_dir().join(format!("mlbx-copy-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Database::open(&dir.join("collection.sqlite")).unwrap();
+        let victim = dir.join("victim");
+        std::fs::write(&victim, "keep").unwrap();
+        let missing = dir.join("missing");
+        for (link, target) in [("to-file", &victim), ("dangling", &missing)] {
+            let link = dir.join(link);
+            std::os::unix::fs::symlink(target, &link).unwrap();
+            assert!(db.write_copy(&link).is_err());
+            assert!(db.compact_into(&link).is_err());
+            assert!(crate::CopyTarget::create(&link).is_err());
+            assert!(link.symlink_metadata().unwrap().is_symlink());
+        }
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+        assert!(!missing.exists(), "nothing is created through a link");
+        // A free name is still written to, and the copy opens.
+        let copy = dir.join("copy.sqlite");
+        db.write_copy(&copy).unwrap();
+        Database::open(&copy).unwrap();
+        drop(db);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
