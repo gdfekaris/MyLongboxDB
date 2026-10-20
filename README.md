@@ -137,10 +137,14 @@ its authors:
   refused before its pixels are decoded. HEIC photos are read by a copy
   of libheif built into the Flatpak with only the libde265 HEVC decoder
   and with plugin loading off, so no other code is loaded. Picked
-  photos are decoded on a thread that first locks itself out of every
-  file, socket, and other descriptor, so a photo crafted to take over a
-  decoder cannot reach your files from it, though the thread still
-  shares the app's memory. Each photo is
+  photos are decoded on a thread that first locks itself down: it
+  cannot open files or make, use, or pass on sockets, and can write
+  only to standard output and error. That stops the simple ways a
+  photo crafted to take over a decoder would reach your files, but not
+  a determined one: the thread shares the app's memory, so code that
+  takes it over can reach the rest of the app, and a few ways of using
+  descriptors the app already holds are not blocked. What holds then
+  are the limits on the whole app below. Each photo is
   re-encoded from its pixels, so no EXIF, GPS, XMP, camera, or comment
   data from the original file is kept, and the original is never
   changed. Photos stored in a collection are shown through the app's
@@ -182,7 +186,10 @@ its authors:
   D-Bus, and the file chooser use) is refused, and so is setting up
   io_uring, which could open sockets another way. The kernel keeps the
   filter until the app exits, so nothing can lift it. This holds even
-  outside the Flatpak, which already gives the app no network. Verify
+  outside the Flatpak, which already gives the app no network, with
+  one gap there: on a kernel that runs x32 programs, the filter does
+  not check x32 system calls, which the Flatpak's own filter refuses.
+  Verify
   with `cargo test -p mylongbox-sandbox`, whose tests apply the filter
   and show internet sockets failing while Unix sockets work, and, with
   the app open, `grep Seccomp_filters /proc/$(pgrep -x mylongboxdb)/status`,
