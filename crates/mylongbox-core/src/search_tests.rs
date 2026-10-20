@@ -28,6 +28,14 @@ fn add(db: &Database, e: &BookEntry) -> CopyId {
     db.add_book(e).unwrap().copy
 }
 
+impl Database {
+    fn copy_series(&self, copy: CopyId) -> SeriesId {
+        let edition = self.copy(copy).unwrap().edition;
+        let issue = self.edition(edition).unwrap().issue;
+        self.issue(issue).unwrap().series
+    }
+}
+
 /// The copies a query finds, in order.
 fn found(db: &Database, query: &str) -> Vec<CopyId> {
     db.quick_search(query)
@@ -207,6 +215,20 @@ fn imprints_find_their_series_books() {
     // Short words must begin a word of the imprint.
     assert_eq!(found(&db, "ve"), [sandman]);
     assert!(found(&db, "ti").is_empty());
+}
+
+#[test]
+fn those_in_every_issue_of_a_series_find_its_books() {
+    let db = db();
+    let tec = add(&db, &entry("Detective Comics", 1937, "27"));
+    add(&db, &entry("Action Comics", 1938, "1"));
+    let series = db.copy_series(tec);
+    let batman = db.create_lookup::<CharacterId>("Batman").unwrap();
+    let team = db.create_lookup::<TeamId>("Bat-Family").unwrap();
+    db.set_series_characters(series, &[batman]).unwrap();
+    db.set_series_teams(series, &[team]).unwrap();
+    assert_eq!(found(&db, "batman"), [tec]);
+    assert_eq!(found(&db, "bat-family"), [tec]);
 }
 
 #[test]

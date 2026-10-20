@@ -269,7 +269,7 @@ impl Met {
 
 /// `SELECT $id FROM $from WHERE $column$test`, as one fixed string.
 macro_rules! select_where {
-    ($id:literal, $from:literal, $column:literal, $test:literal) => {
+    ($id:literal, $from:expr, $column:literal, $test:literal) => {
         concat!("SELECT ", $id, " FROM ", $from, " WHERE ", $column, $test)
     };
 }
@@ -662,8 +662,24 @@ struct ListSql {
     all: &'static str,
 }
 
+/// Every issue's characters or teams, with an `issue_id` column and the
+/// entry's: those linked to the issue, and those of its series, who are
+/// in every issue of it.
+macro_rules! appearances {
+    (character) => {
+        "(SELECT issue_id, character_id FROM issue_character
+          UNION SELECT i.id, a.character_id FROM series_character a
+              JOIN issue i ON i.series_id = a.series_id)"
+    };
+    (team) => {
+        "(SELECT issue_id, team_id FROM issue_team
+          UNION SELECT i.id, a.team_id FROM series_team a
+              JOIN issue i ON i.series_id = a.series_id)"
+    };
+}
+
 macro_rules! list_sql {
-    ($issue_level:literal, $owner:literal, $from:literal, $id:literal) => {
+    ($issue_level:literal, $owner:literal, $from:expr, $id:literal) => {
         ListSql {
             issue_level: $issue_level,
             any: select_where!($owner, $from, $id, " IN (SELECT value FROM json_each(?1))"),
@@ -682,8 +698,10 @@ macro_rules! list_sql {
 impl ListField {
     fn sql(self) -> ListSql {
         match self {
-            Self::Characters => list_sql!(true, "issue_id", "issue_character", "character_id"),
-            Self::Teams => list_sql!(true, "issue_id", "issue_team", "team_id"),
+            Self::Characters => {
+                list_sql!(true, "issue_id", appearances!(character), "character_id")
+            }
+            Self::Teams => list_sql!(true, "issue_id", appearances!(team), "team_id"),
             Self::StoryArcs => list_sql!(true, "issue_id", "issue_story_arc", "story_arc_id"),
             Self::Tags => list_sql!(false, "copy_id", "copy_tag", "tag_id"),
             Self::SignedBy => list_sql!(false, "copy_id", "signature", "creator_id"),

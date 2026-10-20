@@ -43,6 +43,9 @@ pub struct IssueDetail {
     pub credits: Vec<Credit>,
     pub characters: Vec<Appearance<CharacterId>>,
     pub teams: Vec<Appearance<TeamId>>,
+    /// Those in every issue of the series, who are in this one too.
+    pub series_characters: Vec<Named<CharacterId>>,
+    pub series_teams: Vec<Named<TeamId>>,
     pub story_arcs: Vec<ArcPart>,
     /// Editions outside Trash, oldest first.
     pub editions: Vec<EditionDetail>,
@@ -89,6 +92,8 @@ impl Database {
             credits: self.credits(id)?,
             characters: self.characters(id)?,
             teams: self.teams(id)?,
+            series_characters: self.series_characters(series.id)?,
+            series_teams: self.series_teams(series.id)?,
             story_arcs: self.story_arcs(id)?,
             editions,
             collects: self.collects(id)?,

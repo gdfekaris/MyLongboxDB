@@ -835,3 +835,35 @@ fn a_copy_of_another_distribution_is_not_a_likely_duplicate() {
         ]
     );
 }
+
+#[test]
+fn series_characters_and_teams_are_added_to_the_series() {
+    let db = Database::open_in_memory().unwrap();
+    let mut thor = SeriesFields::new("Thor", Category::Comic);
+    thor.start_year = Some(1966);
+    let thor = db.create_series(&thor).unwrap();
+    let odin = db.create_lookup::<CharacterId>("Odin").unwrap();
+    db.set_series_characters(thor, &[odin]).unwrap();
+    let text = "Series,Start Year,Issue Number,Series Characters,Series Teams\n\
+                Thor,1966,1,Thor; Loki,Asgardians\n\
+                Thor,1966,2,,\n";
+    assert_eq!(import(&db, text).added(), 2);
+    let names = |list: Vec<crate::Named<CharacterId>>| -> Vec<String> {
+        list.into_iter().map(|n| n.name).collect()
+    };
+    // Those it had are kept, and a row with none takes none away.
+    assert_eq!(
+        names(db.series_characters(thor).unwrap()),
+        ["Loki", "Odin", "Thor"]
+    );
+    assert_eq!(db.series_teams(thor).unwrap()[0].name, "Asgardians");
+
+    // And they come back from an export.
+    let fresh = Database::open_in_memory().unwrap();
+    assert_eq!(import(&fresh, &csv_of(&db)).added(), 2);
+    let series = fresh.list_series().unwrap()[0].id;
+    assert_eq!(
+        names(fresh.series_characters(series).unwrap()),
+        ["Loki", "Odin", "Thor"]
+    );
+}

@@ -667,7 +667,8 @@ fn a_series_is_edited_with_its_publisher_named() {
     f.volume = Some(1);
     f.known_issue_count = Some(441);
     f.notes = "First run".into();
-    db.edit_series(series, &f, " marvel comics ").unwrap();
+    db.edit_series(series, &f, " marvel comics ", &[], &[])
+        .unwrap();
     let read = db.series(series).unwrap().fields;
     assert_eq!(read.publisher, Some(marvel), "found by name, in any case");
     assert_eq!(
@@ -676,13 +677,50 @@ fn a_series_is_edited_with_its_publisher_named() {
     );
     assert_eq!(read.notes, "First run");
 
-    db.edit_series(series, &f, "Atlas").unwrap();
+    db.edit_series(series, &f, "Atlas", &[], &[]).unwrap();
     let atlas = db.find_lookup::<PublisherId>("Atlas").unwrap();
     assert!(atlas.is_some(), "a new publisher is added");
     assert_eq!(db.series(series).unwrap().fields.publisher, atlas);
 
-    db.edit_series(series, &f, "  ").unwrap();
+    db.edit_series(series, &f, "  ", &[], &[]).unwrap();
     assert_eq!(db.series(series).unwrap().fields.publisher, None);
+}
+
+#[test]
+fn a_series_is_edited_with_those_in_every_issue_named() {
+    let db = db();
+    let saved = db.add_book(&comic("Amazing Spider-Man", "1")).unwrap();
+    let series = db.issue(saved.issue).unwrap().series;
+    let spidey = db.create_lookup::<CharacterId>("Spider-Man").unwrap();
+    db.add_alias(spidey, "Spidey").unwrap();
+    let f = db.series(series).unwrap().fields;
+    let names = |list: &[&str]| list.iter().map(|n| (*n).to_owned()).collect::<Vec<_>>();
+
+    db.edit_series(
+        series,
+        &f,
+        "",
+        &names(&["spidey", " ", "Mary Jane"]),
+        &names(&["Avengers"]),
+    )
+    .unwrap();
+    let cast: Vec<String> = db
+        .series_characters(series)
+        .unwrap()
+        .into_iter()
+        .map(|n| n.name)
+        .collect();
+    assert_eq!(
+        cast,
+        ["Mary Jane", "Spider-Man"],
+        "found by alternate name or added"
+    );
+    assert_eq!(db.series_teams(series).unwrap()[0].name, "Avengers");
+
+    db.edit_series(series, &f, "", &names(&["Spider-Man"]), &[])
+        .unwrap();
+    assert_eq!(db.series_characters(series).unwrap().len(), 1, "replaced");
+    assert!(db.series_teams(series).unwrap().is_empty());
 }
 
 #[test]
@@ -692,7 +730,18 @@ fn a_refused_series_edit_adds_no_publisher() {
     let series = db.issue(saved.issue).unwrap().series;
     let mut f = db.series(series).unwrap().fields;
     f.name = "   ".into();
-    assert!(db.edit_series(series, &f, "Charlton").is_err());
+    assert!(
+        db.edit_series(
+            series,
+            &f,
+            "Charlton",
+            &["Blue Beetle".into()],
+            &["Sentinels".into()]
+        )
+        .is_err()
+    );
     assert_eq!(db.find_lookup::<PublisherId>("Charlton").unwrap(), None);
+    assert_eq!(db.find_lookup::<CharacterId>("Blue Beetle").unwrap(), None);
+    assert_eq!(db.find_lookup::<TeamId>("Sentinels").unwrap(), None);
     assert_eq!(db.series(series).unwrap().fields.name, "Amazing Spider-Man");
 }

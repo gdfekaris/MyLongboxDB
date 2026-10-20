@@ -97,6 +97,10 @@ fn sample(conn: &Connection) -> Sample {
         "INSERT INTO issue_character (issue_id, character_id) VALUES (?1, ?2)",
         &[&issue, &character],
     );
+    exec(
+        "INSERT INTO series_character (series_id, character_id) VALUES (?1, ?2)",
+        &[&series, &character],
+    );
     let team = exec(
         "INSERT INTO team (uuid, name) VALUES (?1, 'Avengers')",
         &[&uuid(11)],
@@ -108,6 +112,10 @@ fn sample(conn: &Connection) -> Sample {
     exec(
         "INSERT INTO issue_team (issue_id, team_id) VALUES (?1, ?2)",
         &[&issue, &team],
+    );
+    exec(
+        "INSERT INTO series_team (series_id, team_id) VALUES (?1, ?2)",
+        &[&series, &team],
     );
     let arc = exec(
         "INSERT INTO story_arc (uuid, name) VALUES (?1, 'The Night Gwen Stacy Died')",
@@ -181,7 +189,8 @@ fn count(conn: &Connection, table: &str) -> i64 {
         "meta", "trash", "publisher", "series", "issue", "edition", "storage_box", "copy",
         "value_entry", "cover_photo", "creator", "creator_alias", "credit",
         "edition_cover_artist", "character", "character_alias", "issue_character", "team",
-        "team_alias", "issue_team", "story_arc", "story_arc_alias", "issue_story_arc", "tag",
+        "team_alias", "issue_team", "series_character", "series_team", "story_arc",
+        "story_arc_alias", "issue_story_arc", "tag",
         "copy_tag", "collects", "exchange_rate", "signature", "search_source", "saved_shelf",
         "hidden_section",
     );
@@ -205,7 +214,7 @@ fn user_tables(conn: &Connection) -> Vec<String> {
 #[test]
 fn schema_is_at_the_newest_version() {
     let db = Database::open_in_memory().unwrap();
-    assert_eq!(db.schema_version().unwrap(), 8);
+    assert_eq!(db.schema_version().unwrap(), 9);
 }
 
 #[test]
@@ -475,6 +484,8 @@ fn emptying_trash_deletes_the_group_and_everything_beneath() {
         ("edition_cover_artist", 0),
         ("issue_character", 0),
         ("issue_team", 0),
+        ("series_character", 0),
+        ("series_team", 0),
         ("issue_story_arc", 0),
         ("copy_tag", 0),
         ("signature", 0),

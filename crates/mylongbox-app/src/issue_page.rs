@@ -465,16 +465,32 @@ fn appearances(d: &IssueDetail) -> Option<adw::PreferencesGroup> {
             name.to_owned()
         }
     };
-    let characters: Vec<_> = d
+    // Those in every issue of the series join the issue's own, once each.
+    let mut characters: Vec<_> = d
         .characters
         .iter()
-        .map(|c| first(&c.name, c.first_appearance))
+        .map(|c| (c.name.as_str(), c.first_appearance))
         .collect();
-    let teams: Vec<_> = d
+    for c in &d.series_characters {
+        if !d.characters.iter().any(|own| own.id == c.id) {
+            characters.push((&c.name, false));
+        }
+    }
+    let mut teams: Vec<_> = d
         .teams
         .iter()
-        .map(|t| first(&t.name, t.first_appearance))
+        .map(|t| (t.name.as_str(), t.first_appearance))
         .collect();
+    for t in &d.series_teams {
+        if !d.teams.iter().any(|own| own.id == t.id) {
+            teams.push((&t.name, false));
+        }
+    }
+    let by_name = |a: &(&str, bool), b: &(&str, bool)| a.0.to_lowercase().cmp(&b.0.to_lowercase());
+    characters.sort_by(by_name);
+    teams.sort_by(by_name);
+    let characters: Vec<_> = characters.into_iter().map(|(n, f)| first(n, f)).collect();
+    let teams: Vec<_> = teams.into_iter().map(|(n, f)| first(n, f)).collect();
     let arcs: Vec<_> = d
         .story_arcs
         .iter()

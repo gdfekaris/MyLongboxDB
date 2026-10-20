@@ -158,3 +158,21 @@ fn trashed_issues_have_no_detail_page() {
     db.trash_series(s).unwrap();
     assert!(matches!(db.issue_detail(kept), Err(Error::InTrash)));
 }
+
+#[test]
+fn the_page_lists_those_in_every_issue_of_the_series() {
+    let db = db();
+    let s = series(&db, "Amazing Spider-Man", Category::Comic);
+    let one = issue(&db, s, "1");
+    let spidey = db.create_lookup::<CharacterId>("Spider-Man").unwrap();
+    let mj = db.create_lookup::<CharacterId>("Mary Jane").unwrap();
+    let team = db.create_lookup::<TeamId>("Avengers").unwrap();
+    db.set_characters(one, &[(mj, true)]).unwrap();
+    db.set_series_characters(s, &[spidey]).unwrap();
+    db.set_series_teams(s, &[team]).unwrap();
+    let d = db.issue_detail(one).unwrap();
+    assert_eq!(d.characters.len(), 1, "the issue's own, with its flags");
+    assert!(d.characters[0].first_appearance);
+    assert_eq!(d.series_characters[0].name, "Spider-Man");
+    assert_eq!(d.series_teams[0].name, "Avengers");
+}

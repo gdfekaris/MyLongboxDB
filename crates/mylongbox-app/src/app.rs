@@ -7,7 +7,7 @@ use gtk::{gio, glib};
 use mylongbox_core::{
     Amount, BulkChange, Category, CollectionInfo, CollectionStore, CopyId, CopyRow, CoverPhoto,
     Currency, Database, Date, EditionId, FilterSet, ImportSource, IssueId, Prefill, SavedShelf,
-    SavedShelfId, SeriesFields, SeriesId, Shelf, ShelfEntry, ShelfList, Side, TrashId, ValueEntry,
+    SavedShelfId, SeriesId, Shelf, ShelfEntry, ShelfList, Side, TrashId, ValueEntry,
 };
 use mylongbox_media::Edit;
 use relm4::typed_view::column::TypedColumnView;
@@ -399,7 +399,7 @@ pub enum AppMsg {
     Manage(Manage, Option<u32>),
     /// Ask for a series' new details, from the page of this copy if any.
     EditSeries(SeriesId, Option<CopyId>),
-    SaveSeries(SeriesId, Box<SeriesFields>, String, Option<CopyId>),
+    SaveSeries(SeriesId, Box<series_dialog::SeriesEdit>, Option<CopyId>),
     RenameEntry,
     EntryAliases,
     MergeEntry,
@@ -1464,31 +1464,45 @@ impl Component for App {
                         Some(p) => db.lookup(p)?.name,
                         None => String::new(),
                     };
-                    Ok((s, publisher))
+                    let characters = db
+                        .series_characters(series)?
+                        .into_iter()
+                        .map(|n| n.name)
+                        .collect::<Vec<_>>();
+                    let teams = db
+                        .series_teams(series)?
+                        .into_iter()
+                        .map(|n| n.name)
+                        .collect::<Vec<_>>();
+                    Ok((s, publisher, characters, teams))
                 });
                 match loaded {
-                    Ok((current, publisher)) => {
+                    Ok((current, publisher, characters, teams)) => {
                         let s = sender.clone();
                         series_dialog::ask(
                             root,
                             &current,
                             &publisher,
+                            (&characters, &teams),
                             db,
-                            move |fields, publisher| {
-                                s.input(AppMsg::SaveSeries(
-                                    series,
-                                    Box::new(fields),
-                                    publisher,
-                                    copy,
-                                ));
+                            move |edit| {
+                                s.input(AppMsg::SaveSeries(series, Box::new(edit), copy));
                             },
                         );
                     }
                     Err(why) => root.toast(&why.to_string()),
                 }
             }
-            AppMsg::SaveSeries(series, fields, publisher, copy) => {
-                match self.with_db(|db| db.edit_series(series, &fields, &publisher)) {
+            AppMsg::SaveSeries(series, edit, copy) => {
+                match self.with_db(|db| {
+                    db.edit_series(
+                        series,
+                        &edit.fields,
+                        &edit.publisher,
+                        &edit.characters,
+                        &edit.teams,
+                    )
+                }) {
                     Ok(()) => {
                         match copy {
                             Some(copy) => self.refresh_copy(copy, root, &sender),

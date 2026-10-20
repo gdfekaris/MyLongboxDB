@@ -471,3 +471,28 @@ fn the_readme_example_of_collects_reads_as_it_says() {
         .collect();
     assert_eq!(read, expected);
 }
+
+#[test]
+fn series_characters_and_teams_have_their_own_columns() {
+    let db = Database::open_in_memory().unwrap();
+    let mut e = BookEntry::new(
+        Category::Comic,
+        new_series("Amazing Spider-Man", 1963, None),
+        Some(IssueNumber::new("1").unwrap()),
+    );
+    e.characters = vec![("Mary Jane".into(), false)];
+    let saved = db.add_book(&e).unwrap();
+    let series = db.issue(saved.issue).unwrap().series;
+    let spidey = db.create_lookup::<CharacterId>("Spider-Man").unwrap();
+    let peter = db.create_lookup::<CharacterId>("Peter Parker").unwrap();
+    let team = db.create_lookup::<TeamId>("Avengers").unwrap();
+    db.set_series_characters(series, &[spidey, peter]).unwrap();
+    db.set_series_teams(series, &[team]).unwrap();
+    let rows = export(&db, None, false);
+    assert_eq!(
+        cell(&rows[0], "Series Characters"),
+        "Peter Parker; Spider-Man"
+    );
+    assert_eq!(cell(&rows[0], "Series Teams"), "Avengers");
+    assert_eq!(cell(&rows[0], "Characters"), "Mary Jane");
+}

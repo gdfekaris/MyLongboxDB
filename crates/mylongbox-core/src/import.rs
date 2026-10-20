@@ -20,9 +20,9 @@ use crate::error::{Error, Result};
 use crate::export::{COLUMNS, ROLE_COLUMN_NAMES, ROLE_COLUMNS, split, split_items, split_parts};
 use crate::issue_number::IssueNumber;
 use crate::model::{
-    Binding, BookCondition, Category, CopyId, CoverDate, Distribution, Grade, GradeType, Isbn,
-    MagazineFormat, PageQuality, RowUuid, SeriesId, Side, SignatureFields, SignaturePlacement,
-    Verification,
+    Binding, BookCondition, Category, CharacterId, CopyId, CoverDate, Distribution, Grade,
+    GradeType, Isbn, MagazineFormat, PageQuality, RowUuid, SeriesId, Side, SignatureFields,
+    SignaturePlacement, TeamId, Verification,
 };
 use crate::money::{Amount, Currency};
 use crate::photos::CoverPhoto;
@@ -411,6 +411,8 @@ struct Planned {
     series_id: Option<RowUuid>,
     known_issue_count: Option<u32>,
     series_notes: String,
+    series_characters: Vec<String>,
+    series_teams: Vec<String>,
     values: Vec<(Date, Amount, String)>,
     added_at: Option<String>,
     photos: Vec<(Side, String)>,
@@ -765,6 +767,8 @@ fn plan(cells: &Cells<'_>, today: Date) -> std::result::Result<Planned, String> 
         series_id: cells.read("Series ID", uuid)?,
         known_issue_count: cells.read("Known Issue Count", number)?,
         series_notes: cells.get("Series Notes").to_owned(),
+        series_characters: cells.list("Series Characters"),
+        series_teams: cells.list("Series Teams"),
         values,
         added_at: cells.read("Date Added", timestamp)?,
         photos,
@@ -1250,6 +1254,25 @@ impl Database {
                 fields.notes = std::mem::take(&mut planned.series_notes);
             }
             self.update_series(saved.series, &fields)?;
+        }
+        // Added to those the series already has, never taking any away.
+        if !planned.series_characters.is_empty() {
+            let mut ids: Vec<CharacterId> = self
+                .series_characters(saved.series)?
+                .into_iter()
+                .map(|n| n.id)
+                .collect();
+            ids.extend(self.names::<CharacterId>(&planned.series_characters)?);
+            self.set_series_characters(saved.series, &ids)?;
+        }
+        if !planned.series_teams.is_empty() {
+            let mut ids: Vec<TeamId> = self
+                .series_teams(saved.series)?
+                .into_iter()
+                .map(|n| n.id)
+                .collect();
+            ids.extend(self.names::<TeamId>(&planned.series_teams)?);
+            self.set_series_teams(saved.series, &ids)?;
         }
         if let Some(added_at) = &planned.added_at {
             self.conn.execute(

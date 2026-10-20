@@ -201,6 +201,45 @@ macro_rules! linked_copies {
     };
 }
 
+/// As [`linked_copies`], for the characters or teams in `$table` that
+/// are in every issue of a series: the live copies of each issue of the
+/// series, and of the collected editions that reprint them. Kept apart
+/// from the issues' own links rather than joined with them first, so
+/// each arm can start from its entries' index.
+macro_rules! series_linked_copies {
+    ($table:literal, $column:literal, $union:literal, $owners:literal) => {
+        concat!(
+            "SELECT a.",
+            $column,
+            " AS who, c.id AS copy FROM ",
+            $table,
+            " a
+             JOIN issue i ON i.series_id = a.series_id
+             JOIN edition e ON e.issue_id = i.id
+             JOIN copy c ON c.edition_id = e.id
+             WHERE +c.trash_id IS NULL AND a.",
+            $column,
+            " ",
+            $owners,
+            " ",
+            $union,
+            " SELECT a.",
+            $column,
+            ", c.id FROM ",
+            $table,
+            " a
+             JOIN issue i ON i.series_id = a.series_id
+             JOIN collects k ON k.collected_issue_id = i.id
+             JOIN edition e ON e.issue_id = k.collection_issue_id
+             JOIN copy c ON c.edition_id = e.id
+             WHERE +c.trash_id IS NULL AND a.",
+            $column,
+            " ",
+            $owners
+        )
+    };
+}
+
 /// Pairs each entry of a name list (`who`) with a book on its shelf
 /// (`copy`), once per book. Both a shelf and its count in the list read
 /// these pairs, so an entry never promises more books than its shelf shows.
@@ -254,10 +293,22 @@ macro_rules! shelf_pairs {
         )
     };
     (character, $union:literal, $owners:literal) => {
-        linked_copies!("issue_character", "character_id", $union, $owners)
+        concat!(
+            linked_copies!("issue_character", "character_id", $union, $owners),
+            " ",
+            $union,
+            " ",
+            series_linked_copies!("series_character", "character_id", $union, $owners)
+        )
     };
     (team, $union:literal, $owners:literal) => {
-        linked_copies!("issue_team", "team_id", $union, $owners)
+        concat!(
+            linked_copies!("issue_team", "team_id", $union, $owners),
+            " ",
+            $union,
+            " ",
+            series_linked_copies!("series_team", "team_id", $union, $owners)
+        )
     };
     (story_arc, $union:literal, $owners:literal) => {
         linked_copies!("issue_story_arc", "story_arc_id", $union, $owners)

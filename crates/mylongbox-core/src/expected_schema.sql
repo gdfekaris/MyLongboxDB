@@ -66,11 +66,17 @@ CREATE INDEX issue_team_team ON issue_team (team_id);
 -- index issue_trash
 CREATE INDEX issue_trash ON issue (trash_id);
 
+-- index series_character_character
+CREATE INDEX series_character_character ON series_character (character_id);
+
 -- index series_name
 CREATE INDEX series_name ON series (name COLLATE NOCASE);
 
 -- index series_publisher
 CREATE INDEX series_publisher ON series (publisher_id);
+
+-- index series_team_team
+CREATE INDEX series_team_team ON series_team (team_id);
 
 -- index series_trash
 CREATE INDEX series_trash ON series (trash_id);
@@ -127,6 +133,10 @@ CREATE INDEX signature_creator ON signature (creator_id);
 -- index sqlite_autoindex_saved_shelf_1, made by SQLite
 
 -- index sqlite_autoindex_series_1, made by SQLite
+
+-- index sqlite_autoindex_series_character_1, made by SQLite
+
+-- index sqlite_autoindex_series_team_1, made by SQLite
 
 -- index sqlite_autoindex_signature_1, made by SQLite
 
@@ -423,6 +433,20 @@ CREATE TABLE series (
     notes TEXT NOT NULL DEFAULT '',
     trash_id INTEGER REFERENCES trash (id) ON DELETE CASCADE, imprint TEXT NOT NULL DEFAULT '',
     CHECK (category = 'magazine' OR (magazine_format IS NULL AND black_and_white IS NULL))
+) STRICT;
+
+-- table series_character
+CREATE TABLE series_character (
+    series_id INTEGER NOT NULL REFERENCES series (id) ON DELETE CASCADE,
+    character_id INTEGER NOT NULL REFERENCES character (id) ON DELETE RESTRICT,
+    PRIMARY KEY (series_id, character_id)
+) STRICT;
+
+-- table series_team
+CREATE TABLE series_team (
+    series_id INTEGER NOT NULL REFERENCES series (id) ON DELETE CASCADE,
+    team_id INTEGER NOT NULL REFERENCES team (id) ON DELETE RESTRICT,
+    PRIMARY KEY (series_id, team_id)
 ) STRICT;
 
 -- table signature

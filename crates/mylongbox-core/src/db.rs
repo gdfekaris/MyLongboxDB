@@ -386,7 +386,7 @@ mod tests {
         }
         let before = dir.join("before.sqlite");
         let db = Database::open_keeping(&path, Some(&before)).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 8);
+        assert_eq!(db.schema_version().unwrap(), 9);
         assert!(db.saved_shelves().unwrap().is_empty());
         db.add_saved_shelf("Everything", &crate::FilterSet::default())
             .unwrap();
@@ -429,7 +429,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 8);
+        assert_eq!(db.schema_version().unwrap(), 9);
         let copy = db.copy(crate::model::CopyId(1)).unwrap();
         let mut fields = CopyFields {
             grade: Grade::from_tenths(94),
@@ -500,7 +500,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 8);
+        assert_eq!(db.schema_version().unwrap(), 9);
         assert!(db.integrity_check().unwrap().is_empty());
         let copy = CopyId(1);
         let signatures = db.signatures(copy).unwrap();
@@ -574,7 +574,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 8);
+        assert_eq!(db.schema_version().unwrap(), 9);
         assert!(db.integrity_check().unwrap().is_empty());
         let numbers: Vec<String> = db
             .browse(Shelf::Everything)
@@ -668,7 +668,7 @@ mod tests {
         for version in 1..=MIGRATIONS.len() {
             let path = edited_collection(&format!("v{version}"), version, "");
             let db = Database::open(&path).unwrap();
-            assert_eq!(db.schema_version().unwrap(), 8, "from version {version}");
+            assert_eq!(db.schema_version().unwrap(), 9, "from version {version}");
             drop(db);
             std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
         }

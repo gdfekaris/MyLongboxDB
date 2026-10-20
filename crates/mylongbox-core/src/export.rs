@@ -31,6 +31,8 @@ pub const COLUMNS: &[&str] = &[
     "Magazine Format",
     "Black and White",
     "Series Notes",
+    "Series Characters",
+    "Series Teams",
     "Issue Number",
     "Legacy Number",
     "Story Title",
@@ -384,6 +386,12 @@ impl Database {
             text(s.magazine_format.map(|f| f.code())),
             yes_no(s.black_and_white),
             s.notes.clone(),
+            join(
+                self.series_characters(series.id)?
+                    .into_iter()
+                    .map(|n| n.name),
+            ),
+            join(self.series_teams(series.id)?.into_iter().map(|n| n.name)),
             text(i.number.as_ref().map(|n| n.as_str().to_owned())),
             text(i.legacy_number),
             i.title.clone(),
@@ -481,6 +489,10 @@ collection.csv
   Story arcs give their part as \"Name (part 3)\". Characters and teams
   that make their first appearance are also listed in the First
   Appearances columns.
+
+  Series Characters and Series Teams are those in every issue of the
+  series, such as Spider-Man in Amazing Spider-Man; the Characters and
+  Teams columns list only those added to the issue itself.
 
   Amounts are a number and a currency code in separate columns:
     USD  US dollars

@@ -249,3 +249,25 @@ fn a_blank_title_is_filled_from_the_folded_issue() {
         "The Night Gwen Stacy Died"
     );
 }
+
+#[test]
+fn those_in_every_issue_join_the_series_merged_into() {
+    let db = db();
+    let from = series(&db, "Amazing Spiderman", Category::Comic);
+    let into = series(&db, "Amazing Spider-Man", Category::Comic);
+    let spidey = db.create_lookup::<CharacterId>("Spider-Man").unwrap();
+    let mj = db.create_lookup::<CharacterId>("Mary Jane").unwrap();
+    let team = db.create_lookup::<TeamId>("Avengers").unwrap();
+    db.set_series_characters(from, &[spidey, mj]).unwrap();
+    db.set_series_teams(from, &[team]).unwrap();
+    db.set_series_characters(into, &[spidey]).unwrap();
+    db.merge_series(from, into).unwrap();
+    let names: Vec<String> = db
+        .series_characters(into)
+        .unwrap()
+        .into_iter()
+        .map(|n| n.name)
+        .collect();
+    assert_eq!(names, ["Mary Jane", "Spider-Man"]);
+    assert_eq!(db.series_teams(into).unwrap()[0].id, team);
+}

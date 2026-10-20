@@ -447,3 +447,40 @@ fn list_counts_match_their_shelves() {
         }
     }
 }
+
+#[test]
+fn a_series_cast_puts_every_issue_on_their_shelves() {
+    let db = db();
+    let spidey = db.create_lookup::<CharacterId>("Spider-Man").unwrap();
+    let mj = db.create_lookup::<CharacterId>("Mary Jane").unwrap();
+    let team = db.create_lookup::<TeamId>("Avengers").unwrap();
+    let asm = series(&db, "Amazing Spider-Man", Category::Comic);
+    let (first, second) = (issue(&db, asm, "1"), issue(&db, asm, "2"));
+    let (a, b) = (own(&db, first), own(&db, second));
+    // Named on the issue as well, so still listed once.
+    db.set_characters(first, &[(spidey, true), (mj, false)])
+        .unwrap();
+    db.set_series_characters(asm, &[spidey]).unwrap();
+    db.set_series_teams(asm, &[team]).unwrap();
+    let line = series(&db, "Spider-Man Omnibus", Category::CollectedEdition);
+    let book = issue(&db, line, "1");
+    db.set_collects(book, "Amazing Spider-Man (1963) 2")
+        .unwrap();
+    let book_copy = own(&db, book);
+    let other = series(&db, "Fantastic Four", Category::Comic);
+    own(&db, issue(&db, other, "1"));
+
+    assert_eq!(copies(&db, Shelf::Character(spidey)), [a, b, book_copy]);
+    assert_eq!(copies(&db, Shelf::Character(mj)), [a]);
+    assert_eq!(copies(&db, Shelf::Team(team)), [a, b, book_copy]);
+    let count = |list, name: &str| {
+        db.shelf_list(list)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.name == name)
+            .unwrap()
+            .copies
+    };
+    assert_eq!(count(ShelfList::Characters, "Spider-Man"), 3);
+    assert_eq!(count(ShelfList::Teams, "Avengers"), 3);
+}

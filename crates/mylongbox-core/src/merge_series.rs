@@ -73,6 +73,18 @@ const COMBINE_ISSUE: &[&str] = &[
     "DELETE FROM issue WHERE id = ?1",
 ];
 
+/// Adds series ?1's characters and teams to series ?2's, once each.
+const COMBINE_CAST: &[&str] = &[
+    "INSERT INTO series_character (series_id, character_id)
+     SELECT ?2, character_id FROM series_character AS old WHERE series_id = ?1
+         AND NOT EXISTS (SELECT 1 FROM series_character
+             WHERE series_id = ?2 AND character_id = old.character_id)",
+    "INSERT INTO series_team (series_id, team_id)
+     SELECT ?2, team_id FROM series_team AS old WHERE series_id = ?1
+         AND NOT EXISTS (SELECT 1 FROM series_team
+             WHERE series_id = ?2 AND team_id = old.team_id)",
+];
+
 impl Database {
     /// Folds `from` into `into`. Issues only in `from` move across; an
     /// issue whose number `into` already has is combined with it, so its
@@ -136,6 +148,7 @@ impl Database {
              WHERE id = ?2",
             [from, into],
         )?;
+        run_steps(&tx, COMBINE_CAST, [from.0, into.0])?;
         tx.execute("DELETE FROM series WHERE id = ?1", [from])?;
         self.rules_follow_series_merge(from, into)?;
         self.series_rules_follow(&source.fields.name, &target.fields.name)?;

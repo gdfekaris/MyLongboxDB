@@ -9,9 +9,10 @@ use rusqlite::params;
 use crate::db::Database;
 use crate::error::Result;
 use crate::model::{
-    CharacterId, CopyId, CreatorId, EditionId, IssueId, Role, SignatureFields, StoryArcId, TagId,
-    TeamId,
+    CharacterId, CopyId, CreatorId, EditionId, IssueId, Role, SeriesId, SignatureFields,
+    StoryArcId, TagId, TeamId,
 };
+use crate::search::fold;
 
 /// A creator's credit on an issue.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -152,6 +153,107 @@ impl Database {
         }
         tx.commit()?;
         Ok(())
+    }
+
+    /// The characters in every issue of a series, by name.
+    pub fn series_characters(&self, series: SeriesId) -> Result<Vec<Named<CharacterId>>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT character.id, character.name
+             FROM series_character JOIN character ON character.id = series_character.character_id
+             WHERE series_character.series_id = ?1
+             ORDER BY character.name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([series], |row| {
+            Ok(Named {
+                id: row.get(0)?,
+                name: row.get(1)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn set_series_characters(
+        &self,
+        series: SeriesId,
+        characters: &[CharacterId],
+    ) -> Result<()> {
+        self.require_live_series(series)?;
+        let tx = self.tx()?;
+        tx.execute(
+            "DELETE FROM series_character WHERE series_id = ?1",
+            [series],
+        )?;
+        for character in unique(characters) {
+            tx.execute(
+                "INSERT INTO series_character (series_id, character_id) VALUES (?1, ?2)",
+                params![series, character],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// The teams in every issue of a series, by name.
+    pub fn series_teams(&self, series: SeriesId) -> Result<Vec<Named<TeamId>>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT team.id, team.name
+             FROM series_team JOIN team ON team.id = series_team.team_id
+             WHERE series_team.series_id = ?1
+             ORDER BY team.name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([series], |row| {
+            Ok(Named {
+                id: row.get(0)?,
+                name: row.get(1)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn set_series_teams(&self, series: SeriesId, teams: &[TeamId]) -> Result<()> {
+        self.require_live_series(series)?;
+        let tx = self.tx()?;
+        tx.execute("DELETE FROM series_team WHERE series_id = ?1", [series])?;
+        for team in unique(teams) {
+            tx.execute(
+                "INSERT INTO series_team (series_id, team_id) VALUES (?1, ?2)",
+                params![series, team],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// The characters and teams a series title names, by name or
+    /// alternate name, to offer as those in every issue: Spider-Man for
+    /// Amazing Spider-Man. A name counts only as whole words, and a
+    /// hyphen joins words, so Hulk is not offered for She-Hulk.
+    pub fn cast_in_title(&self, title: &str) -> Result<(Vec<String>, Vec<String>)> {
+        let found = |sql: &str| -> Result<Vec<String>> {
+            let mut stmt = self.conn.prepare(sql)?;
+            let rows = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get(1)?)))?;
+            let mut names = Vec::new();
+            for row in rows {
+                let (spelling, name): (String, String) = row?;
+                if names_words(title, &spelling) && !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+            names.sort_by_key(|n| fold(n));
+            Ok(names)
+        };
+        Ok((
+            found(
+                "SELECT name, name FROM character
+                 UNION ALL SELECT a.alias, c.name FROM character_alias a
+                     JOIN character c ON c.id = a.character_id",
+            )?,
+            found(
+                "SELECT name, name FROM team
+                 UNION ALL SELECT a.alias, t.name FROM team_alias a
+                     JOIN team t ON t.id = a.team_id",
+            )?,
+        ))
     }
 
     pub fn story_arcs(&self, issue: IssueId) -> Result<Vec<ArcPart>> {
@@ -320,6 +422,24 @@ impl Database {
     fn require_live_issue(&self, issue: IssueId) -> Result<()> {
         crate::catalog::live(self.issue(issue)?.trash)
     }
+
+    fn require_live_series(&self, series: SeriesId) -> Result<()> {
+        crate::catalog::live(self.series(series)?.trash)
+    }
+}
+
+/// Whether `title` holds `name` as whole words, ignoring case and
+/// accents.
+pub(crate) fn names_words(title: &str, name: &str) -> bool {
+    let (title, name) = (fold(title), fold(name.trim()));
+    if name.is_empty() {
+        return false;
+    }
+    let in_word = |c: char| c.is_alphanumeric() || c == '-';
+    title.match_indices(&name).any(|(at, _)| {
+        !title[..at].chars().next_back().is_some_and(in_word)
+            && !title[at + name.len()..].chars().next().is_some_and(in_word)
+    })
 }
 
 /// Drops exact repeats, keeping the first of each.

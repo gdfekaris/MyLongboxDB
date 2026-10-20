@@ -333,6 +333,41 @@ fn lists_include_any_all_or_none() {
 }
 
 #[test]
+fn lists_include_those_in_every_issue_of_a_series() {
+    use ListCondition::*;
+    use ListField::*;
+    let s = sample();
+    let asm = s.db.find_series_named("Amazing Spider-Man");
+    // On #121 alone until the series has him.
+    let spidey =
+        s.db.find_lookup::<CharacterId>("Spider-Man")
+            .unwrap()
+            .unwrap();
+    let team = s.db.create_lookup::<TeamId>("Spider-Friends").unwrap();
+    s.db.set_series_characters(asm, &[spidey]).unwrap();
+    s.db.set_series_teams(asm, &[team]).unwrap();
+    let list = |field, condition, names: &[&str]| Filter::List {
+        field,
+        condition,
+        names: names.iter().map(|n| (*n).into()).collect(),
+    };
+    for (rule, wanted) in [
+        (list(Characters, AnyOf, &["spider-man"]), set(&[s.a, s.b])),
+        (
+            list(Characters, AllOf, &["Spider-Man", "Green Goblin"]),
+            set(&[s.a]),
+        ),
+        (
+            list(Characters, NoneOf, &["Spider-Man"]),
+            set(&[s.c, s.d, s.e]),
+        ),
+        (list(Teams, AnyOf, &["Spider-Friends"]), set(&[s.a, s.b])),
+    ] {
+        assert_eq!(s.find(vec![rule.clone()]), wanted, "{rule:?}");
+    }
+}
+
+#[test]
 fn numbers_grades_and_issue_numbers_compare() {
     let s = sample();
     let n = |t: &str| IssueNumber::new(t).unwrap();

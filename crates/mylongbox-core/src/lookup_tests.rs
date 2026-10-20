@@ -389,3 +389,94 @@ fn links_cannot_be_changed_in_trash_or_given_bad_parts() {
     assert!(matches!(db.set_story_arcs(one, &[]), Err(Error::InTrash)));
     assert!(matches!(db.set_tags(copy, &[]), Err(Error::InTrash)));
 }
+
+// Characters and teams in every issue of a series ------------------------
+
+fn series_of(db: &Database, issue: IssueId) -> SeriesId {
+    db.issue(issue).unwrap().series
+}
+
+#[test]
+fn merging_and_deleting_count_those_in_every_issue_of_a_series() {
+    let db = db();
+    let (one, _, _) = issue(&db, "Amazing Spider-Man", "1");
+    let asm = series_of(&db, one);
+    let spidey = db.create_lookup::<CharacterId>("Spider-Man").unwrap();
+    let spider = db.create_lookup::<CharacterId>("Spiderman").unwrap();
+    let team = db.create_lookup::<TeamId>("Avengers").unwrap();
+    let teams = db.create_lookup::<TeamId>("The Avengers").unwrap();
+    db.set_series_characters(asm, &[spidey, spider]).unwrap();
+    db.set_series_teams(asm, &[teams]).unwrap();
+    assert!(matches!(
+        db.delete_lookup(spidey),
+        Err(Error::InUse { uses: 1 })
+    ));
+
+    db.merge_lookups(spider, spidey).unwrap();
+    db.merge_lookups(teams, team).unwrap();
+    let ids =
+        |list: Vec<crate::Named<CharacterId>>| list.into_iter().map(|n| n.id).collect::<Vec<_>>();
+    assert_eq!(ids(db.series_characters(asm).unwrap()), [spidey]);
+    assert_eq!(db.series_teams(asm).unwrap()[0].id, team);
+}
+
+#[test]
+fn a_series_cast_cannot_be_changed_in_trash() {
+    let db = db();
+    let (one, _, _) = issue(&db, "X-Men", "1");
+    let series = series_of(&db, one);
+    db.trash_series(series).unwrap();
+    assert!(matches!(
+        db.set_series_characters(series, &[]),
+        Err(Error::InTrash)
+    ));
+    assert!(matches!(
+        db.set_series_teams(series, &[]),
+        Err(Error::InTrash)
+    ));
+}
+
+#[test]
+fn names_in_a_series_title_are_offered_as_whole_words() {
+    let db = db();
+    for name in ["Peter Parker", "Hulk", "Thor", "Storm", "Élan"] {
+        db.create_lookup::<CharacterId>(name).unwrap();
+    }
+    let spidey = db.create_lookup::<CharacterId>("Spider-Man").unwrap();
+    db.add_alias(spidey, "Spidey").unwrap();
+    for name in ["X-Men", "Avengers", "Justice League"] {
+        db.create_lookup::<TeamId>(name).unwrap();
+    }
+    let offered = |title: &str| db.cast_in_title(title).unwrap();
+    let none = Vec::<String>::new();
+    assert_eq!(
+        offered("The Amazing Spider-Man"),
+        (vec!["Spider-Man".to_owned()], none.clone())
+    );
+    assert_eq!(
+        offered("uncanny x-men"),
+        (none.clone(), vec!["X-Men".to_owned()])
+    );
+    // A hyphen joins words, and a name must be whole words.
+    assert_eq!(offered("She-Hulk"), (none.clone(), none.clone()));
+    assert_eq!(offered("Thorough Tales"), (none.clone(), none.clone()));
+    // Alternate names count, and give the entry's own name.
+    assert_eq!(
+        offered("Spidey Super Stories"),
+        (vec!["Spider-Man".to_owned()], none.clone())
+    );
+    assert_eq!(
+        offered("Peter Parker, the Spectacular Spider-Man"),
+        (
+            vec!["Peter Parker".to_owned(), "Spider-Man".to_owned()],
+            none.clone()
+        )
+    );
+    assert_eq!(
+        offered("Avengers/Justice League: ELAN"),
+        (
+            vec!["Élan".to_owned()],
+            vec!["Avengers".to_owned(), "Justice League".to_owned()]
+        )
+    );
+}

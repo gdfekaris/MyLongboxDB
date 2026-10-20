@@ -520,7 +520,7 @@ impl Database {
             .collect()
     }
 
-    fn names<I: LookupId>(&self, names: &[String]) -> Result<Vec<I>> {
+    pub(crate) fn names<I: LookupId>(&self, names: &[String]) -> Result<Vec<I>> {
         names
             .iter()
             .filter(|name| !name.trim().is_empty())
@@ -528,11 +528,19 @@ impl Database {
             .collect()
     }
 
-    /// Saves a series' details with its publisher given by name, as the
-    /// Edit Series dialog has it: found by name or alternate name, added
-    /// if there is none, or cleared when blank. One unit, so a refused
-    /// change leaves no new publisher behind.
-    pub fn edit_series(&self, id: SeriesId, fields: &SeriesFields, publisher: &str) -> Result<()> {
+    /// Saves a series' details as the Edit Series dialog has them, with
+    /// its publisher and the characters and teams in every issue given
+    /// by name: each found by name or alternate name, or added if there
+    /// is none; a blank publisher clears it. One unit, so a refused
+    /// change leaves no new names behind.
+    pub fn edit_series(
+        &self,
+        id: SeriesId,
+        fields: &SeriesFields,
+        publisher: &str,
+        characters: &[String],
+        teams: &[String],
+    ) -> Result<()> {
         let tx = self.tx()?;
         let mut f = fields.clone();
         f.publisher = match publisher.trim() {
@@ -540,6 +548,8 @@ impl Database {
             name => Some(self.name::<PublisherId>(name)?),
         };
         self.update_series(id, &f)?;
+        self.set_series_characters(id, &self.names::<CharacterId>(characters)?)?;
+        self.set_series_teams(id, &self.names::<TeamId>(teams)?)?;
         tx.commit()
     }
 

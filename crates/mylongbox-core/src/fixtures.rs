@@ -213,6 +213,13 @@ pub(crate) fn generate(db: &Database, spec: FixtureSpec) -> Result<FixtureSummar
         }
         let series = db.create_series(&fields)?;
         summary.series += 1;
+        // A character and team in every issue of some series, chosen
+        // without drawing on the generator, so other fields stay as they were.
+        if series_number % 7 == 0 {
+            let at = series_number;
+            db.set_series_characters(series, &[characters[at % characters.len()]])?;
+            db.set_series_teams(series, &[teams[at % teams.len()]])?;
+        }
         if category == Category::Comic {
             comic_series.push((series, fields.name.clone(), fields.start_year, run_length));
         }
@@ -618,6 +625,8 @@ mod tests {
                 "first appearances",
                 "SELECT count(*) FROM issue_character WHERE first_appearance = 1",
             ),
+            ("series characters", "SELECT count(*) FROM series_character"),
+            ("series teams", "SELECT count(*) FROM series_team"),
             ("tags", "SELECT count(*) FROM copy_tag"),
             ("signatures", "SELECT count(*) FROM signature"),
             (

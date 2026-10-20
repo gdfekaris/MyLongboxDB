@@ -218,7 +218,8 @@ lookup_id!(
         noun: "character",
         named: Character,
         table: "character",
-        usage: "SELECT count(*) FROM issue_character WHERE character_id = ?1",
+        usage: "SELECT (SELECT count(*) FROM issue_character WHERE character_id = ?1)
+                    + (SELECT count(*) FROM series_character WHERE character_id = ?1)",
         aliases: ("character_alias", "character_id"),
         merge: [
             // Keep a first-appearance flag from either side.
@@ -231,6 +232,11 @@ lookup_id!(
              WHERE character_id = ?1 AND NOT EXISTS (SELECT 1 FROM issue_character
                  WHERE issue_id = old.issue_id AND character_id = ?2)",
             "DELETE FROM issue_character WHERE character_id = ?1",
+            "INSERT INTO series_character (series_id, character_id)
+             SELECT series_id, ?2 FROM series_character AS old WHERE character_id = ?1
+                 AND NOT EXISTS (SELECT 1 FROM series_character
+                     WHERE series_id = old.series_id AND character_id = ?2)",
+            "DELETE FROM series_character WHERE character_id = ?1",
             "INSERT INTO character_alias (character_id, alias)
              SELECT ?2, moved FROM (
                  SELECT alias AS moved FROM character_alias WHERE character_id = ?1
@@ -247,7 +253,8 @@ lookup_id!(
         noun: "team",
         named: Team,
         table: "team",
-        usage: "SELECT count(*) FROM issue_team WHERE team_id = ?1",
+        usage: "SELECT (SELECT count(*) FROM issue_team WHERE team_id = ?1)
+                    + (SELECT count(*) FROM series_team WHERE team_id = ?1)",
         aliases: ("team_alias", "team_id"),
         merge: [
             "UPDATE issue_team SET first_appearance = 1
@@ -258,6 +265,11 @@ lookup_id!(
              WHERE team_id = ?1 AND NOT EXISTS (SELECT 1 FROM issue_team
                  WHERE issue_id = old.issue_id AND team_id = ?2)",
             "DELETE FROM issue_team WHERE team_id = ?1",
+            "INSERT INTO series_team (series_id, team_id)
+             SELECT series_id, ?2 FROM series_team AS old WHERE team_id = ?1
+                 AND NOT EXISTS (SELECT 1 FROM series_team
+                     WHERE series_id = old.series_id AND team_id = ?2)",
+            "DELETE FROM series_team WHERE team_id = ?1",
             "INSERT INTO team_alias (team_id, alias)
              SELECT ?2, moved FROM (
                  SELECT alias AS moved FROM team_alias WHERE team_id = ?1
