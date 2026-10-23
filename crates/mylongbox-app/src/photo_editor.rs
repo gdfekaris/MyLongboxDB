@@ -6,7 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk::{cairo, glib};
+use gtk::{cairo, gdk, glib};
 use mylongbox_media::{Crop, Edit, MAX_STRAIGHTEN, RgbImage, apply_edit};
 
 use crate::covers;
@@ -14,6 +14,11 @@ use crate::i18n::gettext;
 
 /// How close, in pixels, the pointer must be to grab an edge or corner.
 const REACH: f64 = 14.0;
+
+/// How far an arrow key moves the selected part of the crop, in pixels
+/// of the picture as shown, and how far with Shift held.
+const NUDGE: f64 = 1.0;
+const BIG_NUDGE: f64 = 10.0;
 
 /// Which edges of the crop a drag moves; all four moves the whole crop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,6 +36,33 @@ impl Grip {
         right: true,
         bottom: true,
     };
+
+    /// What Tab steps through, in order: the whole crop, then each edge.
+    const CYCLE: [Self; 5] = [
+        Self::MOVE,
+        Self::edge(true, false, false, false),
+        Self::edge(false, true, false, false),
+        Self::edge(false, false, true, false),
+        Self::edge(false, false, false, true),
+    ];
+
+    const fn edge(left: bool, top: bool, right: bool, bottom: bool) -> Self {
+        Self {
+            left,
+            top,
+            right,
+            bottom,
+        }
+    }
+
+    /// The part Tab selects after this one, or `None` past the last,
+    /// when focus moves on out of the crop. A corner, picked with the
+    /// pointer, counts as the whole crop.
+    fn next(self, back: bool) -> Option<Self> {
+        let at = Self::CYCLE.iter().position(|g| *g == self).unwrap_or(0);
+        let to = if back { at.checked_sub(1)? } else { at + 1 };
+        Self::CYCLE.get(to).copied()
+    }
 
     fn cursor(self) -> &'static str {
         match (self.left || self.right, self.top || self.bottom) {
@@ -147,6 +179,9 @@ struct Editor {
     area: gtk::DrawingArea,
     straighten: gtk::Scale,
     drag: Cell<Option<(Grip, Crop)>>,
+    /// What the arrow keys move: the part of the crop last grabbed or
+    /// picked with Tab.
+    selected: Cell<Grip>,
     /// Whether a redraw is already waiting to run.
     redraw_waiting: Cell<bool>,
 }
@@ -227,6 +262,41 @@ impl Editor {
             cr.rectangle(x - 5.0, y - 5.0, 10.0, 10.0);
         }
         let _ = cr.fill();
+        // While the crop has keyboard focus, mark what the arrows move.
+        if self.area.is_focus() {
+            let g = self.selected.get();
+            cr.set_source_rgb(0.21, 0.52, 0.89);
+            cr.set_line_width(4.0);
+            // Drawn just inside the crop, so an edge on the picture's
+            // border is not half cut off.
+            let (l, t, r, b) = (l + 2.0, t + 2.0, r - 2.0, b - 2.0);
+            if g == Grip::MOVE {
+                cr.rectangle(l, t, r - l, b - t);
+            } else {
+                for (on, (x0, y0, x1, y1)) in [
+                    (g.left, (l, t, l, b)),
+                    (g.top, (l, t, r, t)),
+                    (g.right, (r, t, r, b)),
+                    (g.bottom, (l, b, r, b)),
+                ] {
+                    if on {
+                        cr.move_to(x0, y0);
+                        cr.line_to(x1, y1);
+                    }
+                }
+            }
+            let _ = cr.stroke();
+        }
+    }
+
+    /// Moves the selected part of the crop by `(dx, dy)` area pixels.
+    fn nudge(&self, dx: f64, dy: f64) {
+        let mut edit = self.edit.get();
+        edit.crop = self
+            .layout()
+            .dragged(edit.crop, self.selected.get(), dx, dy);
+        self.edit.set(edit);
+        self.area.queue_draw();
     }
 }
 
@@ -250,7 +320,19 @@ pub fn open(
     let area = gtk::DrawingArea::builder()
         .hexpand(true)
         .vexpand(true)
+        .focusable(true)
+        .focus_on_click(true)
         .build();
+    // Translators: the frame drawn over a photo to choose what part of it
+    // to keep.
+    let crop_name = gettext("Crop");
+    area.update_property(&[
+        gtk::accessible::Property::Label(&crop_name),
+        gtk::accessible::Property::Description(&gettext(
+            "Arrow keys move the selected edge, or the whole crop; Shift moves it further. \
+             Tab selects the next edge.",
+        )),
+    ]);
     let canvas = gtk::Overlay::builder()
         .child(&picture)
         .margin_top(18)
@@ -268,6 +350,9 @@ pub fn open(
     );
     straighten.set_value(0.0);
     straighten.set_digits(1);
+    // Arrow keys step by a tenth of a degree; rounding keeps the steps
+    // from drifting.
+    straighten.set_round_digits(1);
     straighten.set_format_value_func(|_, degrees| format!("{degrees:.1}\u{b0}"));
     straighten.set_draw_value(true);
     straighten.set_hexpand(true);
@@ -284,6 +369,7 @@ pub fn open(
         area: area.clone(),
         straighten: straighten.clone(),
         drag: Cell::new(None),
+        selected: Cell::new(Grip::MOVE),
         redraw_waiting: Cell::new(false),
     });
     editor.refresh();
@@ -302,7 +388,13 @@ pub fn open(
         drag.connect_drag_begin(move |_, x, y| {
             if let Some(e) = weak.upgrade() {
                 let crop = e.edit.get().crop;
-                e.drag.set(e.layout().grip(crop, x, y).map(|g| (g, crop)));
+                let grip = e.layout().grip(crop, x, y);
+                e.drag.set(grip.map(|g| (g, crop)));
+                if let Some(grip) = grip {
+                    e.selected.set(grip);
+                    e.area.grab_focus();
+                    e.area.queue_draw();
+                }
             }
         });
     }
@@ -342,6 +434,61 @@ pub fn open(
         });
     }
     area.add_controller(motion);
+    let keys = gtk::EventControllerKey::new();
+    {
+        let weak = Rc::downgrade(&editor);
+        keys.connect_key_pressed(move |_, key, _, state| {
+            let Some(e) = weak.upgrade() else {
+                return glib::Propagation::Proceed;
+            };
+            let step = if state.contains(gdk::ModifierType::SHIFT_MASK) {
+                BIG_NUDGE
+            } else {
+                NUDGE
+            };
+            let (dx, dy) = match key {
+                gdk::Key::Left | gdk::Key::KP_Left => (-step, 0.0),
+                gdk::Key::Right | gdk::Key::KP_Right => (step, 0.0),
+                gdk::Key::Up | gdk::Key::KP_Up => (0.0, -step),
+                gdk::Key::Down | gdk::Key::KP_Down => (0.0, step),
+                gdk::Key::Tab | gdk::Key::KP_Tab | gdk::Key::ISO_Left_Tab => {
+                    let back = key == gdk::Key::ISO_Left_Tab
+                        || state.contains(gdk::ModifierType::SHIFT_MASK);
+                    // Past either end, Tab leaves the crop as usual.
+                    let Some(next) = e.selected.get().next(back) else {
+                        return glib::Propagation::Proceed;
+                    };
+                    e.selected.set(next);
+                    e.area.queue_draw();
+                    return glib::Propagation::Stop;
+                }
+                _ => return glib::Propagation::Proceed,
+            };
+            e.nudge(dx, dy);
+            glib::Propagation::Stop
+        });
+    }
+    area.add_controller(keys);
+    let focus = gtk::EventControllerFocus::new();
+    {
+        let weak = Rc::downgrade(&editor);
+        focus.connect_enter(move |_| {
+            if let Some(e) = weak.upgrade() {
+                e.area.queue_draw();
+            }
+        });
+    }
+    {
+        // Coming back with Tab starts again from the whole crop.
+        let weak = Rc::downgrade(&editor);
+        focus.connect_leave(move |_| {
+            if let Some(e) = weak.upgrade() {
+                e.selected.set(Grip::MOVE);
+                e.area.queue_draw();
+            }
+        });
+    }
+    area.add_controller(focus);
     {
         let weak = Rc::downgrade(&editor);
         straighten.connect_value_changed(move |scale| {
@@ -539,5 +686,31 @@ mod tests {
                 bottom: 0.5
             }
         );
+    }
+
+    #[test]
+    fn tab_steps_through_the_crop_then_leaves() {
+        let mut order = vec![Grip::MOVE];
+        while let Some(next) = order.last().unwrap().next(false) {
+            order.push(next);
+        }
+        assert_eq!(order, Grip::CYCLE);
+        assert_eq!(Grip::MOVE.next(true), None);
+        assert_eq!(Grip::CYCLE[4].next(true), Some(Grip::CYCLE[3]));
+        // A corner grabbed with the pointer steps on as the whole crop.
+        let corner = Grip::edge(true, true, false, false);
+        assert_eq!(corner.next(false), Some(Grip::CYCLE[1]));
+    }
+
+    #[test]
+    fn a_nudge_moves_only_what_its_direction_can() {
+        let l = layout();
+        let right_edge = Grip::CYCLE[3];
+        // Up and down leave a side edge where it is.
+        assert_eq!(l.dragged(Crop::FULL, right_edge, 0.0, NUDGE), Crop::FULL);
+        // One pixel of the 150-pixel-wide picture.
+        let crop = l.dragged(Crop::FULL, right_edge, -NUDGE, 0.0);
+        assert!((crop.right - (1.0 - 1.0 / 150.0)).abs() < 1e-6);
+        assert_eq!((crop.left, crop.top, crop.bottom), (0.0, 0.0, 1.0));
     }
 }
