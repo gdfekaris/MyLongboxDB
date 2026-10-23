@@ -37,8 +37,13 @@
   --bar: var(--turquoise);
   --bar-deep: #176e6e;
   --bar-text: var(--paper);
-  --bar-button: rgba(20, 22, 31, 0.2);
-  --bar-button-hover: rgba(20, 22, 31, 0.36);
+  --key: #1a7d7d;
+  --key-lit: #3bb3b0;
+  --key-top: #2a9e9c;
+  --key-foot: #166a6a;
+  --key-glint: rgba(232, 199, 102, 0.8);
+  --key-shade: rgba(10, 30, 30, 0.35);
+  --key-base: #0d4747;
   --side: var(--pulp);
   --bulb: #fff6d6;
   --bulb-halo: rgba(255, 246, 214, 0.35);
@@ -96,8 +101,13 @@
     --bar: #0d0f16;
     --bar-deep: #0d0f16;
     --bar-text: var(--newsprint);
-    --bar-button: rgba(243, 234, 211, 0.09);
-    --bar-button-hover: rgba(243, 234, 211, 0.18);
+    --key: #20263a;
+    --key-lit: #3a4360;
+    --key-top: #2e3550;
+    --key-foot: #181c2b;
+    --key-glint: rgba(232, 199, 102, 0.6);
+    --key-shade: rgba(0, 0, 0, 0.45);
+    --key-base: #000000;
     --side: #181c29;
     --bulb: #ffe9a8;
     --bulb-halo: rgba(232, 199, 102, 0.45);
@@ -170,14 +180,19 @@ statuspage .title {
     1px 1px rgba(215, 38, 61, 0.5);
 }
 
-/* The top bar: a theatre marquee. Bulbs run along both edges and a
- * sunburst rises behind the title. The bulb rows are its edges, so it
- * has no border, and its padding keeps the buttons clear of them. */
+/* The top bar: a theatre marquee sign. A frame of small bulbs runs
+ * round all four edges and a sunburst rises behind the title. The
+ * bulbs are its border; the bar's inner box stands in from them, as
+ * padding on the bar itself would throw GTK's placing of the bulb rows
+ * off. Where the sidebar's bar meets the content's, the frame leaves
+ * out the meeting edges, so the two read as one sign. */
 headerbar {
   background-color: var(--bar);
   background-image:
-    radial-gradient(circle, var(--bulb) 1.4px, var(--bulb-halo) 2.4px, transparent 3.4px),
-    radial-gradient(circle, var(--bulb) 1.4px, var(--bulb-halo) 2.4px, transparent 3.4px),
+    radial-gradient(circle, var(--bulb) 1px, var(--bulb-halo) 1.8px, transparent 2.6px),
+    radial-gradient(circle, var(--bulb) 1px, var(--bulb-halo) 1.8px, transparent 2.6px),
+    radial-gradient(circle, var(--bulb) 1px, var(--bulb-halo) 1.8px, transparent 2.6px),
+    radial-gradient(circle, var(--bulb) 1px, var(--bulb-halo) 1.8px, transparent 2.6px),
     conic-gradient(from -90deg at 50% 100%,
       var(--ray) 0deg 6deg, transparent 6deg 15deg,
       var(--ray) 15deg 21deg, transparent 21deg 30deg,
@@ -192,14 +207,31 @@ headerbar {
       var(--ray) 150deg 156deg, transparent 156deg 165deg,
       var(--ray) 165deg 171deg, transparent 171deg 180deg,
       transparent 180deg);
-  background-size: 14px 7px, 14px 7px, 320px 100%;
-  background-position: 3px top, 10px bottom, center;
-  background-repeat: repeat-x, repeat-x, no-repeat;
+  background-size: 10px 6px, 10px 6px, 6px 10px, 6px 10px, 320px 100%;
+  background-position: 0 top, 5px bottom, left 0, right 5px, center;
+  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y, no-repeat;
   color: var(--bar-text);
   border: none;
   box-shadow: none;
-  padding-top: 9px;
-  padding-bottom: 9px;
+  padding: 0;
+}
+/* One height for every bar, so the sidebar's frame and the content's
+ * line up. */
+headerbar > windowhandle {
+  margin: 8px 10px 9px;
+  min-height: 42px;
+}
+.sidebar-pane headerbar {
+  background-size: 10px 6px, 10px 6px, 6px 10px, 0 0, 0 0;
+}
+.sidebar-pane headerbar > windowhandle {
+  margin-right: 4px;
+}
+.content-pane headerbar {
+  background-size: 10px 6px, 10px 6px, 0 0, 6px 10px, 320px 100%;
+}
+.content-pane headerbar > windowhandle {
+  margin-left: 4px;
 }
 headerbar .title {
   color: var(--bar-text);
@@ -214,50 +246,71 @@ headerbar .subtitle {
  * and holds still when animations are turned off. */
 @media (prefers-color-scheme: dark) {
   headerbar.chase {
-    background-position: 10px top, 3px bottom, center;
+    background-position: 5px top, 0 bottom, left 5px, right 0, center;
   }
   headerbar .title {
     text-shadow: 1px 1px 0 var(--ink), 0 0 8px rgba(232, 199, 102, 0.55);
   }
 }
 
-/* Header buttons have no outlines, which would crowd the bulbs: they
- * are round, shaded into the bar, and darken when pointed at. */
+/* Header buttons are Deco push buttons, like a lobby's elevator call
+ * buttons: raised on a base, lit by a brass glint along the top, and
+ * sinking onto the base when pressed. No outlines, which would crowd
+ * the bulbs. */
 headerbar button:not(.suggested-action):not(.destructive-action),
-headerbar menubutton > button {
-  background-color: var(--bar-button);
+headerbar menubutton > button,
+headerbar toggle-group > toggle {
+  background-color: var(--key);
+  background-image: linear-gradient(to bottom, var(--key-top), var(--key-foot));
   color: var(--bar-text);
   border: none;
   border-radius: 999px;
-  box-shadow: none;
+  box-shadow:
+    inset 0 1px 0 var(--key-glint),
+    inset 0 -2px 0 var(--key-shade),
+    0 2px 0 var(--key-base);
   min-width: 30px;
   min-height: 30px;
   padding: 0;
+  margin-bottom: 2px;
+  transition: background-image 150ms ease-out, box-shadow 150ms ease-out,
+    transform 150ms ease-out;
 }
 headerbar button.text-button:not(.image-button),
 headerbar menubutton > button.text-button:not(.image-button) {
-  border-radius: 0;
-  padding: 0 12px;
+  border-radius: 4px;
+  padding: 0 14px;
 }
 headerbar button:not(.suggested-action):not(.destructive-action):hover,
 headerbar menubutton > button:hover,
+headerbar toggle-group > toggle:hover {
+  background-image: linear-gradient(to bottom, var(--key-lit), var(--key-top));
+}
+headerbar button:not(.suggested-action):not(.destructive-action):active,
 headerbar button:not(.suggested-action):not(.destructive-action):checked,
-headerbar menubutton > button:checked {
-  background-color: var(--bar-button-hover);
-  box-shadow: none;
-  transform: none;
+headerbar menubutton > button:active,
+headerbar menubutton > button:checked,
+headerbar toggle-group > toggle:active {
+  background-image: linear-gradient(to bottom, var(--key-foot), var(--key-top));
+  box-shadow: inset 0 2px 3px var(--key-shade);
+  transform: translate(0, 2px);
+}
+/* The view shown is a lit button, held down. */
+headerbar toggle-group > toggle:checked {
+  background-color: var(--gold);
+  background-image: linear-gradient(to bottom, var(--gold), var(--gold-light));
+  color: var(--ink);
+  box-shadow: inset 0 2px 3px rgba(20, 22, 31, 0.35);
+  transform: translate(0, 2px);
 }
 headerbar toggle-group {
   border: none;
-  border-radius: 999px;
   box-shadow: none;
-  background-color: var(--bar-button);
+  background: none;
+  padding: 0;
 }
 headerbar toggle-group > toggle {
-  border-radius: 999px;
-}
-headerbar toggle-group > toggle:not(:checked) {
-  color: var(--bar-text);
+  margin: 0 2px 2px;
 }
 
 /* The sidebar is a lobby's elevator panel: fluted along its edge, its
@@ -272,9 +325,6 @@ headerbar toggle-group > toggle:not(:checked) {
   background-position: calc(100% - 4px) top, right top;
   background-repeat: no-repeat, no-repeat;
   color: var(--text);
-}
-.sidebar-pane headerbar {
-  background-size: 14px 7px, 14px 7px, 0 0;
 }
 .navigation-sidebar {
   background: none;
@@ -502,13 +552,27 @@ button.suggested-action:not(.flat):hover, button.destructive-action:not(.flat):h
  * turquoise would vanish into the bar. */
 headerbar button.suggested-action:not(.flat) {
   background-color: var(--zap);
+  background-image: linear-gradient(to bottom, #ffd966, #e0ad1a);
   color: var(--ink);
   border: none;
-  box-shadow: none;
+  border-radius: 4px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -2px 0 rgba(120, 80, 0, 0.3),
+    0 2px 0 #8a6a12;
+  margin-bottom: 2px;
 }
 headerbar button.suggested-action:not(.flat):hover {
-  background-color: var(--gold-light);
-  box-shadow: none;
+  background-image: linear-gradient(to bottom, #ffe48a, #f4c430);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -2px 0 rgba(120, 80, 0, 0.3),
+    0 2px 0 #8a6a12;
+}
+headerbar button.suggested-action:not(.flat):active {
+  background-image: linear-gradient(to bottom, #e0ad1a, #ffd966);
+  box-shadow: inset 0 2px 3px rgba(120, 80, 0, 0.45);
+  transform: translate(0, 2px);
 }
 button.pill {
   padding: 10px 28px 8px;
@@ -591,6 +655,10 @@ dialog.floating sheet headerbar {
   border-bottom: none;
   box-shadow: none;
   animation: none;
+}
+dialog.floating sheet headerbar > windowhandle {
+  margin: 0;
+  min-height: 0;
 }
 dialog.floating sheet headerbar .title {
   color: var(--text);
