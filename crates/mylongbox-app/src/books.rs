@@ -129,6 +129,12 @@ impl RelmGridItem for Book {
         let badge = badge(row);
         widgets.badge.set_visible(!badge.is_empty());
         widgets.badge.set_label(&badge);
+        // Styles may mark a key issue's badge out.
+        if row.is_key {
+            widgets.badge.add_css_class("key");
+        } else {
+            widgets.badge.remove_css_class("key");
+        }
         widgets.signed.set_visible(row.signed);
         widgets.series.set_label(&row.series);
         widgets.issue.set_label(&issue_line(row));
