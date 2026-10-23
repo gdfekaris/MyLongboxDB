@@ -50,6 +50,9 @@
   --dots: rgba(20, 22, 31, 0.07);
   --dots-cyan: rgba(27, 154, 214, 0.07);
   --ray: rgba(201, 162, 39, 0.09);
+  --bar-ray: rgba(240, 210, 120, 0.3);
+  /* The bar's own color, see-through, for fading into it. */
+  --bar-clear: rgba(31, 138, 138, 0);
   --tower: rgba(31, 138, 138, 0.09);
   --glow: transparent;
 
@@ -114,6 +117,8 @@
     --dots: rgba(232, 199, 102, 0.06);
     --dots-cyan: rgba(27, 154, 214, 0.07);
     --ray: rgba(232, 199, 102, 0.05);
+    --bar-ray: rgba(232, 199, 102, 0.17);
+    --bar-clear: rgba(13, 15, 22, 0);
     --tower: rgba(31, 138, 138, 0.16);
     --glow: rgba(232, 199, 102, 0.45);
 
@@ -181,7 +186,8 @@ statuspage .title {
 }
 
 /* The top bar: a theatre marquee sign. A frame of small bulbs runs
- * round all four edges and a sunburst rises behind the title. The
+ * round all four edges and a sunburst rises behind the title, its sides
+ * fading into the bar. The
  * bulbs are its border; the bar's inner box stands in from them, as
  * padding on the bar itself would throw GTK's placing of the bulb rows
  * off. Where the sidebar's bar meets the content's, the frame leaves
@@ -193,23 +199,24 @@ headerbar {
     radial-gradient(circle, var(--bulb) 1px, var(--bulb-halo) 1.8px, transparent 2.6px),
     radial-gradient(circle, var(--bulb) 1px, var(--bulb-halo) 1.8px, transparent 2.6px),
     radial-gradient(circle, var(--bulb) 1px, var(--bulb-halo) 1.8px, transparent 2.6px),
+    linear-gradient(to right, var(--bar), var(--bar-clear) 22% 78%, var(--bar)),
     conic-gradient(from -90deg at 50% 100%,
-      var(--ray) 0deg 6deg, transparent 6deg 15deg,
-      var(--ray) 15deg 21deg, transparent 21deg 30deg,
-      var(--ray) 30deg 36deg, transparent 36deg 45deg,
-      var(--ray) 45deg 51deg, transparent 51deg 60deg,
-      var(--ray) 60deg 66deg, transparent 66deg 75deg,
-      var(--ray) 75deg 81deg, transparent 81deg 90deg,
-      var(--ray) 90deg 96deg, transparent 96deg 105deg,
-      var(--ray) 105deg 111deg, transparent 111deg 120deg,
-      var(--ray) 120deg 126deg, transparent 126deg 135deg,
-      var(--ray) 135deg 141deg, transparent 141deg 150deg,
-      var(--ray) 150deg 156deg, transparent 156deg 165deg,
-      var(--ray) 165deg 171deg, transparent 171deg 180deg,
+      var(--bar-ray) 0deg 6deg, transparent 6deg 15deg,
+      var(--bar-ray) 15deg 21deg, transparent 21deg 30deg,
+      var(--bar-ray) 30deg 36deg, transparent 36deg 45deg,
+      var(--bar-ray) 45deg 51deg, transparent 51deg 60deg,
+      var(--bar-ray) 60deg 66deg, transparent 66deg 75deg,
+      var(--bar-ray) 75deg 81deg, transparent 81deg 90deg,
+      var(--bar-ray) 90deg 96deg, transparent 96deg 105deg,
+      var(--bar-ray) 105deg 111deg, transparent 111deg 120deg,
+      var(--bar-ray) 120deg 126deg, transparent 126deg 135deg,
+      var(--bar-ray) 135deg 141deg, transparent 141deg 150deg,
+      var(--bar-ray) 150deg 156deg, transparent 156deg 165deg,
+      var(--bar-ray) 165deg 171deg, transparent 171deg 180deg,
       transparent 180deg);
-  background-size: 10px 6px, 10px 6px, 6px 10px, 6px 10px, 320px 100%;
-  background-position: 0 top, 5px bottom, left 0, right 5px, center;
-  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y, no-repeat;
+  background-size: 10px 6px, 10px 6px, 6px 10px, 6px 10px, 360px 100%, 360px 100%;
+  background-position: 0 top, 5px bottom, left 0, right 5px, center, center;
+  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y, no-repeat, no-repeat;
   color: var(--bar-text);
   border: none;
   box-shadow: none;
@@ -228,31 +235,36 @@ toolbarview > .top-bar .collapse-spacing {
   padding-bottom: 0;
 }
 .sidebar-pane headerbar {
-  background-size: 10px 6px, 10px 6px, 6px 10px, 0 0, 0 0;
+  background-size: 10px 6px, 10px 6px, 6px 10px, 0 0, 0 0, 0 0;
 }
 .sidebar-pane headerbar > windowhandle {
   margin-right: 4px;
 }
 .content-pane headerbar {
-  background-size: 10px 6px, 10px 6px, 0 0, 6px 10px, 320px 100%;
+  background-size: 10px 6px, 10px 6px, 0 0, 6px 10px, 360px 100%, 360px 100%;
 }
 .content-pane headerbar > windowhandle {
   margin-left: 4px;
 }
+/* No extra letter spacing here: GTK leaves it out when it measures a
+ * title, which would cut the end off. */
 headerbar .title {
   color: var(--bar-text);
-  letter-spacing: 0.03em;
+  font-size: 1.22em;
+  letter-spacing: 0;
   text-shadow: 1px 1px 0 var(--ink), 2px 2px 0 var(--ink);
 }
 headerbar .subtitle {
-  color: color-mix(in srgb, var(--bar-text) 80%, transparent);
+  color: var(--bar-text);
+  opacity: 1;
+  text-shadow: 1px 1px 0 var(--ink);
 }
 
 /* At night the bulbs chase, slowly: the app marks the bars in turn,
  * and holds still when animations are turned off. */
 @media (prefers-color-scheme: dark) {
   headerbar.chase {
-    background-position: 5px top, 0 bottom, left 5px, right 0, center;
+    background-position: 5px top, 0 bottom, left 5px, right 0, center, center;
   }
   headerbar .title {
     text-shadow: 1px 1px 0 var(--ink), 0 0 8px rgba(232, 199, 102, 0.55);
