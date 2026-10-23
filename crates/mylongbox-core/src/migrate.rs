@@ -57,6 +57,10 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         version: 11,
         sql: include_str!("migrations/0011_edition_published.sql"),
     },
+    Migration {
+        version: 12,
+        sql: include_str!("migrations/0012_artist_credit.sql"),
+    },
 ];
 
 const META_DDL: &str = "CREATE TABLE IF NOT EXISTS meta (

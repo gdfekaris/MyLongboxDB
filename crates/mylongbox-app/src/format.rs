@@ -300,6 +300,7 @@ pub fn magazine_format(format: MagazineFormat) -> &'static str {
 pub fn role(role: Role) -> &'static str {
     match role {
         Role::Writer => label(gettext_noop("Writers")),
+        Role::Artist => label(gettext_noop("Artists")),
         Role::Penciller => label(gettext_noop("Pencillers")),
         Role::Inker => label(gettext_noop("Inkers")),
         Role::Colorist => label(gettext_noop("Colorists")),

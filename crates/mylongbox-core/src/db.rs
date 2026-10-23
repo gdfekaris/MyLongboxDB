@@ -386,7 +386,7 @@ mod tests {
         }
         let before = dir.join("before.sqlite");
         let db = Database::open_keeping(&path, Some(&before)).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 11);
+        assert_eq!(db.schema_version().unwrap(), 12);
         assert!(db.saved_shelves().unwrap().is_empty());
         db.add_saved_shelf("Everything", &crate::FilterSet::default())
             .unwrap();
@@ -429,7 +429,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 11);
+        assert_eq!(db.schema_version().unwrap(), 12);
         let copy = db.copy(crate::model::CopyId(1)).unwrap();
         let mut fields = CopyFields {
             grade: Grade::from_tenths(94),
@@ -500,7 +500,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 11);
+        assert_eq!(db.schema_version().unwrap(), 12);
         assert!(db.integrity_check().unwrap().is_empty());
         let copy = CopyId(1);
         let signatures = db.signatures(copy).unwrap();
@@ -531,6 +531,75 @@ mod tests {
         assert_eq!(
             db.photo_sides(copy).unwrap(),
             [Side::Front, Side::Signature]
+        );
+        drop(db);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_version_11_collection_keeps_its_credits_and_takes_artists() {
+        use crate::model::{CreatorId, IssueId, Role};
+        let dir = std::env::temp_dir().join(format!("mlbx-upgrade-12-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("old.sqlite");
+        {
+            let mut conn = connect(Connection::open(&path).unwrap()).unwrap();
+            migrate::run(&mut conn, &MIGRATIONS[..11]).unwrap();
+            conn.execute_batch(
+                "INSERT INTO series (id, uuid, name, category)
+                     VALUES (1, '00000000-0000-4000-8000-000000000001', 'X-Men', 'comic');
+                 INSERT INTO issue (id, uuid, series_id, number, number_sort)
+                     VALUES (1, '00000000-0000-4000-8000-000000000002', 1, '1', '1');
+                 INSERT INTO creator (id, uuid, name)
+                     VALUES (1, '00000000-0000-4000-8000-000000000005', 'Stan Lee'),
+                            (2, '00000000-0000-4000-8000-000000000006', 'Jack Kirby');
+                 INSERT INTO credit (issue_id, creator_id, role)
+                     VALUES (1, 1, 'writer'), (1, 2, 'penciller'), (1, 2, 'inker');",
+            )
+            .unwrap();
+            // Version 11 knows no artist credit.
+            assert!(
+                conn.execute(
+                    "INSERT INTO credit (issue_id, creator_id, role) VALUES (1, 2, 'artist')",
+                    [],
+                )
+                .is_err()
+            );
+        }
+        let db = Database::open(&path).unwrap();
+        assert_eq!(db.schema_version().unwrap(), 12);
+        assert!(db.integrity_check().unwrap().is_empty());
+        let issue = IssueId(1);
+        let roles = |db: &Database| -> Vec<(String, Role)> {
+            db.credits(issue)
+                .unwrap()
+                .into_iter()
+                .map(|c| (c.name, c.role))
+                .collect()
+        };
+        assert_eq!(
+            roles(&db),
+            [
+                ("Stan Lee".to_owned(), Role::Writer),
+                ("Jack Kirby".to_owned(), Role::Penciller),
+                ("Jack Kirby".to_owned(), Role::Inker),
+            ]
+        );
+        // What the upgrade allows now, listed after the writer.
+        db.set_credits(
+            issue,
+            &[(CreatorId(2), Role::Artist), (CreatorId(1), Role::Writer)],
+        )
+        .unwrap();
+        drop(db);
+        let db = Database::open(&path).unwrap();
+        assert_eq!(
+            roles(&db),
+            [
+                ("Stan Lee".to_owned(), Role::Writer),
+                ("Jack Kirby".to_owned(), Role::Artist),
+            ]
         );
         drop(db);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -574,7 +643,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 11);
+        assert_eq!(db.schema_version().unwrap(), 12);
         assert!(db.integrity_check().unwrap().is_empty());
         let numbers: Vec<String> = db
             .browse(Shelf::Everything)
@@ -668,7 +737,7 @@ mod tests {
         for version in 1..=MIGRATIONS.len() {
             let path = edited_collection(&format!("v{version}"), version, "");
             let db = Database::open(&path).unwrap();
-            assert_eq!(db.schema_version().unwrap(), 11, "from version {version}");
+            assert_eq!(db.schema_version().unwrap(), 12, "from version {version}");
             drop(db);
             std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
         }

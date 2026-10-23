@@ -86,6 +86,7 @@ fn every_field_is_written() {
     e.issue.synopsis = "Line one,\n\"quoted\" line two".into();
     e.credits = vec![
         ("Gerry Conway".into(), Role::Writer),
+        ("Ross Andru".into(), Role::Artist),
         ("Gil Kane".into(), Role::Penciller),
         ("John Romita".into(), Role::Inker),
         ("John Romita".into(), Role::CoverArtist),
@@ -164,6 +165,7 @@ fn every_field_is_written() {
     expect("Key Reason", "Death of Gwen Stacy");
     expect("Synopsis", "Line one,\n\"quoted\" line two");
     expect("Writers", "Gerry Conway");
+    expect("Artists", "Ross Andru");
     expect("Pencillers", "Gil Kane");
     expect("Inkers", "John Romita");
     expect("Cover Artists", "John Romita");

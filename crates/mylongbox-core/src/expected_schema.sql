@@ -267,11 +267,12 @@ CREATE TABLE creator_alias (
 ) STRICT;
 
 -- table credit
-CREATE TABLE credit (
+CREATE TABLE "credit" (
     issue_id INTEGER NOT NULL REFERENCES issue (id) ON DELETE CASCADE,
     creator_id INTEGER NOT NULL REFERENCES creator (id) ON DELETE RESTRICT,
     role TEXT NOT NULL CHECK (role IN (
-        'writer', 'penciller', 'inker', 'colorist', 'letterer', 'cover_artist', 'editor',
+        'writer', 'artist', 'penciller', 'inker', 'colorist', 'letterer', 'cover_artist',
+        'editor',
         -- Magazines.
         'article', 'interview'
     )),

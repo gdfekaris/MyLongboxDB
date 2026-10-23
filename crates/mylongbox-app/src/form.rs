@@ -1774,8 +1774,11 @@ struct NameRow {
 
 /// Roles in the order offered. Only magazines credit articles and
 /// interviews.
-const ROLES: [(&str, Role); 9] = [
+const ROLES: [(&str, Role); 10] = [
     (gettext_noop("Writer"), Role::Writer),
+    // Translators: someone credited for the art as a whole, when who
+    // pencilled and who inked is not known.
+    (gettext_noop("Artist"), Role::Artist),
     (gettext_noop("Penciller"), Role::Penciller),
     (gettext_noop("Inker"), Role::Inker),
     (gettext_noop("Colorist"), Role::Colorist),
@@ -1789,7 +1792,7 @@ const ROLES: [(&str, Role); 9] = [
 fn roles(category: Category) -> &'static [(&'static str, Role)] {
     match category {
         Category::Magazine => &ROLES,
-        Category::Comic | Category::CollectedEdition => &ROLES[..7],
+        Category::Comic | Category::CollectedEdition => &ROLES[..8],
     }
 }
 

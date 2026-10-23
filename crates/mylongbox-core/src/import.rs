@@ -273,7 +273,7 @@ const ALIASES: &[(&str, &str)] = &[
     ("volume number", "Volume"),
     ("cover year", "Cover Date"),
     ("writer", "Writers"),
-    ("artist", "Pencillers"),
+    ("artist", "Artists"),
     ("penciller", "Pencillers"),
     ("penciler", "Pencillers"),
     ("pencilers", "Pencillers"),

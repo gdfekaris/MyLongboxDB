@@ -97,6 +97,8 @@ fn headers_are_matched_by_name_or_a_common_other_name() {
         "Price Paid",
         "Mystery",
         "Title",
+        "Artist",
+        "Penciler",
     ]
     .map(str::to_owned)
     .into();
@@ -110,6 +112,9 @@ fn headers_are_matched_by_name_or_a_common_other_name() {
             None,
             // "Title" would mean the series, but that is taken.
             None,
+            // An artist is not assumed to have pencilled.
+            Some("Artists"),
+            Some("Pencillers"),
         ]
     );
     let own: Vec<String> = COLUMNS.iter().map(|c| (*c).to_owned()).collect();

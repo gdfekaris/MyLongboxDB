@@ -209,6 +209,9 @@ code_enum! {
     /// What a creator did on an issue. Listed in the order credits show.
     pub enum Role {
         Writer = "writer",
+        /// Drew the story, when the credit does not say who pencilled
+        /// and who inked.
+        Artist = "artist",
         Penciller = "penciller",
         Inker = "inker",
         Colorist = "colorist",

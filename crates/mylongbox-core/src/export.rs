@@ -43,6 +43,7 @@ pub const COLUMNS: &[&str] = &[
     "Key Reason",
     "Synopsis",
     "Writers",
+    "Artists",
     "Pencillers",
     "Inkers",
     "Colorists",
@@ -97,8 +98,9 @@ pub const COLUMNS: &[&str] = &[
 ];
 
 /// The columns of the credit roles, in the order of [`ROLE_COLUMNS`].
-pub(crate) const ROLE_COLUMN_NAMES: [&str; 9] = [
+pub(crate) const ROLE_COLUMN_NAMES: [&str; 10] = [
     "Writers",
+    "Artists",
     "Pencillers",
     "Inkers",
     "Colorists",
@@ -110,8 +112,9 @@ pub(crate) const ROLE_COLUMN_NAMES: [&str; 9] = [
 ];
 
 /// The credit roles in the order of their columns.
-pub(crate) const ROLE_COLUMNS: [Role; 9] = [
+pub(crate) const ROLE_COLUMNS: [Role; 10] = [
     Role::Writer,
+    Role::Artist,
     Role::Penciller,
     Role::Inker,
     Role::Colorist,
