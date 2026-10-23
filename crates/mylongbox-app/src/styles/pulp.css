@@ -114,6 +114,7 @@
     --side: #181c29;
     --bulb: #ffe9a8;
     --bulb-halo: rgba(232, 199, 102, 0.45);
+    --bulb-dim: rgba(255, 233, 168, 0.28);
     --dots: rgba(232, 199, 102, 0.06);
     --dots-cyan: rgba(27, 154, 214, 0.07);
     --ray: rgba(232, 199, 102, 0.05);
@@ -187,18 +188,40 @@ statuspage .title {
 
 /* The top bar: a theatre marquee sign. A frame of small bulbs runs
  * round all four edges and a sunburst rises behind the title, its sides
- * fading into the bar. The
- * bulbs are its border; the bar's inner box stands in from them, as
- * padding on the bar itself would throw GTK's placing of the bulb rows
- * off. Where the sidebar's bar meets the content's, the frame leaves
- * out the meeting edges, so the two read as one sign. */
+ * fading into the bar.
+ *
+ * No two bulbs overlap. The rows space their bulbs 10px apart along the
+ * top and bottom and own the corners; the bar is 70px tall, and each
+ * side carries just the five bulbs between the rows. Bulbs come in two
+ * sets, a and b, alternating, so that at night they can take turns to
+ * light without moving.
+ *
+ * The bar's inner box stands in from the bulbs, as padding on the bar
+ * itself would throw GTK's placing of them off. Where the sidebar's bar
+ * meets the content's, the frame leaves out the meeting sides, and the
+ * sidebar's rows run on from its left edge so the content's continue
+ * them, reading as one sign. */
 headerbar {
+  --bulb-a: var(--bulb);
+  --halo-a: var(--bulb-halo);
+  --bulb-b: var(--bulb);
+  --halo-b: var(--bulb-halo);
   background-color: var(--bar);
   background-image:
-    radial-gradient(circle, var(--bulb) 1px, var(--bulb-halo) 1.8px, transparent 2.6px),
-    radial-gradient(circle, var(--bulb) 1px, var(--bulb-halo) 1.8px, transparent 2.6px),
-    radial-gradient(circle, var(--bulb) 1px, var(--bulb-halo) 1.8px, transparent 2.6px),
-    radial-gradient(circle, var(--bulb) 1px, var(--bulb-halo) 1.8px, transparent 2.6px),
+    radial-gradient(circle at 25% 50%, var(--bulb-a) 1px, var(--halo-a) 1.8px, transparent 2.6px),
+    radial-gradient(circle at 75% 50%, var(--bulb-b) 1px, var(--halo-b) 1.8px, transparent 2.6px),
+    radial-gradient(circle at 25% 50%, var(--bulb-a) 1px, var(--halo-a) 1.8px, transparent 2.6px),
+    radial-gradient(circle at 75% 50%, var(--bulb-b) 1px, var(--halo-b) 1.8px, transparent 2.6px),
+    radial-gradient(circle at 50% 50%, var(--bulb-b) 1px, var(--halo-b) 1.8px, transparent 2.6px),
+    radial-gradient(circle at 50% 50%, var(--bulb-a) 1px, var(--halo-a) 1.8px, transparent 2.6px),
+    radial-gradient(circle at 50% 50%, var(--bulb-b) 1px, var(--halo-b) 1.8px, transparent 2.6px),
+    radial-gradient(circle at 50% 50%, var(--bulb-a) 1px, var(--halo-a) 1.8px, transparent 2.6px),
+    radial-gradient(circle at 50% 50%, var(--bulb-b) 1px, var(--halo-b) 1.8px, transparent 2.6px),
+    radial-gradient(circle at 50% 50%, var(--bulb-b) 1px, var(--halo-b) 1.8px, transparent 2.6px),
+    radial-gradient(circle at 50% 50%, var(--bulb-a) 1px, var(--halo-a) 1.8px, transparent 2.6px),
+    radial-gradient(circle at 50% 50%, var(--bulb-b) 1px, var(--halo-b) 1.8px, transparent 2.6px),
+    radial-gradient(circle at 50% 50%, var(--bulb-a) 1px, var(--halo-a) 1.8px, transparent 2.6px),
+    radial-gradient(circle at 50% 50%, var(--bulb-b) 1px, var(--halo-b) 1.8px, transparent 2.6px),
     linear-gradient(to right, var(--bar), var(--bar-clear) 22% 78%, var(--bar)),
     conic-gradient(from -90deg at 50% 100%,
       var(--bar-ray) 0deg 6deg, transparent 6deg 15deg,
@@ -214,20 +237,31 @@ headerbar {
       var(--bar-ray) 150deg 156deg, transparent 156deg 165deg,
       var(--bar-ray) 165deg 171deg, transparent 171deg 180deg,
       transparent 180deg);
-  background-size: 10px 6px, 10px 6px, 6px 10px, 6px 10px, 360px 100%, 360px 100%;
-  background-position: 0 top, 5px bottom, left 0, right 5px, center, center;
-  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y, no-repeat, no-repeat;
+  background-size:
+    20px 10px, 20px 10px, 20px 10px, 20px 10px, 10px 10px,
+    10px 10px, 10px 10px, 10px 10px, 10px 10px, 10px 10px,
+    10px 10px, 10px 10px, 10px 10px, 10px 10px, 360px 100%,
+    360px 100%;
+  background-position:
+    left top, left top, left bottom, left bottom, left 10px,
+    left 20px, left 30px, left 40px, left 50px, right 10px,
+    right 20px, right 30px, right 40px, right 50px, center,
+    center;
+  background-repeat:
+    space no-repeat, space no-repeat, space no-repeat, space no-repeat, no-repeat, no-repeat,
+    no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat,
+    no-repeat, no-repeat, no-repeat, no-repeat;
   color: var(--bar-text);
   border: none;
   box-shadow: none;
   padding: 0;
 }
-/* One height for every bar, and no gap above a bar that shares its
- * toolbar with others (as the content's does, with the search bar and
- * banners), so the sidebar's frame and the content's line up bulb for
- * bulb. */
+/* Every bar is the same 70px, and none has a gap above it where it
+ * shares its toolbar with others (as the content's does, with the
+ * search bar and banners), so the sidebar's frame and the content's
+ * line up bulb for bulb. */
 headerbar > windowhandle {
-  margin: 8px 10px 9px;
+  margin: 12px;
   min-height: 46px;
 }
 toolbarview > .top-bar .collapse-spacing {
@@ -235,13 +269,25 @@ toolbarview > .top-bar .collapse-spacing {
   padding-bottom: 0;
 }
 .sidebar-pane headerbar {
-  background-size: 10px 6px, 10px 6px, 6px 10px, 0 0, 0 0, 0 0;
+  background-size:
+    20px 10px, 20px 10px, 20px 10px, 20px 10px, 10px 10px,
+    10px 10px, 10px 10px, 10px 10px, 10px 10px, 0 0,
+    0 0, 0 0, 0 0, 0 0, 0 0,
+    0 0;
+  background-repeat:
+    repeat-x, repeat-x, repeat-x, repeat-x, no-repeat, no-repeat,
+    no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat,
+    no-repeat, no-repeat, no-repeat, no-repeat;
 }
 .sidebar-pane headerbar > windowhandle {
   margin-right: 4px;
 }
 .content-pane headerbar {
-  background-size: 10px 6px, 10px 6px, 0 0, 6px 10px, 360px 100%, 360px 100%;
+  background-size:
+    20px 10px, 20px 10px, 20px 10px, 20px 10px, 0 0,
+    0 0, 0 0, 0 0, 0 0, 10px 10px,
+    10px 10px, 10px 10px, 10px 10px, 10px 10px, 360px 100%,
+    360px 100%;
 }
 .content-pane headerbar > windowhandle {
   margin-left: 4px;
@@ -260,11 +306,19 @@ headerbar .subtitle {
   text-shadow: 1px 1px 0 var(--ink);
 }
 
-/* At night the bulbs chase, slowly: the app marks the bars in turn,
- * and holds still when animations are turned off. */
+/* At night the bulbs chase, slowly, the two sets taking turns to light:
+ * the app marks the bars in turn, and holds still when animations are
+ * turned off. */
 @media (prefers-color-scheme: dark) {
+  headerbar {
+    --bulb-b: var(--bulb-dim);
+    --halo-b: transparent;
+  }
   headerbar.chase {
-    background-position: 5px top, 0 bottom, left 5px, right 0, center, center;
+    --bulb-a: var(--bulb-dim);
+    --halo-a: transparent;
+    --bulb-b: var(--bulb);
+    --halo-b: var(--bulb-halo);
   }
   headerbar .title {
     text-shadow: 1px 1px 0 var(--ink), 0 0 8px rgba(232, 199, 102, 0.55);
@@ -320,6 +374,13 @@ headerbar toggle-group > toggle:checked {
   color: var(--ink);
   box-shadow: inset 0 2px 3px rgba(20, 22, 31, 0.35);
   transform: translate(0, 2px);
+}
+/* The window's own buttons draw a ring round their icons, which the
+ * push button already gives them. */
+windowcontrols > button > image,
+windowcontrols > button:hover > image {
+  background: none;
+  box-shadow: none;
 }
 headerbar toggle-group {
   border: none;
