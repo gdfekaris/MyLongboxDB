@@ -261,4 +261,6 @@ MIT. See [LICENSE](LICENSE).
 
 The Flatpak also includes libheif and libde265, which are licensed under
 the GNU LGPL and linked dynamically. Their license files are installed
-in `/app/share/licenses/`.
+in `/app/share/licenses/`. The Limelight, Josefin Sans, and DM Sans
+typefaces in `data/fonts/` are licensed under the SIL Open Font License
+1.1, with each license beside its font.
