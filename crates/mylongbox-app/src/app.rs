@@ -823,6 +823,7 @@ impl Component for App {
             model.settings.style,
             model.settings.scheme,
         );
+        root.set_wording();
 
         let startup = match &model.store {
             Ok(store) => store
@@ -1398,6 +1399,9 @@ impl Component for App {
                 // would rebuild the book list each time for nothing.
                 let shown = (self.settings.currency, self.settings.grade_names)
                     != (settings.currency, settings.grade_names);
+                // A style may name places its own way and add to the books
+                // shown.
+                let restyled = self.settings.style != settings.style;
                 if (self.settings.style, self.settings.scheme) != (settings.style, settings.scheme)
                 {
                     style::apply(&WidgetExt::display(root), settings.style, settings.scheme);
@@ -1409,7 +1413,11 @@ impl Component for App {
                         &[("reason", &why.to_string())],
                     ));
                 }
-                if shown {
+                if restyled {
+                    root.set_wording();
+                    self.refresh_sidebar(root);
+                }
+                if shown || restyled {
                     self.refresh_display(root);
                     self.back_to_section(root);
                 }
@@ -3020,7 +3028,7 @@ impl App {
             match (&self.shelf, self.saved_name()) {
                 (Some(entry), _) => entry.name.clone(),
                 (None, Some(name)) => name,
-                (None, None) => gettext(self.section.name),
+                (None, None) => gettext(style::word(self.section.name)),
             }
         }
     }
@@ -3267,7 +3275,7 @@ impl App {
             }
             group_starts.push(self.places.len());
             for section in visible {
-                sidebar.append(&label(&gettext(section.name)));
+                sidebar.append(&label(&gettext(style::word(section.name))));
                 self.places.push(Place::Section(section));
             }
         }
@@ -3331,7 +3339,7 @@ impl App {
         let entries = sections()
             .map(|s| customize::Entry {
                 code: s.code,
-                name: gettext(s.name),
+                name: gettext(style::word(s.name)),
                 locked: s.locked(),
                 hidden: hidden.iter().any(|h| h == s.code),
             })
@@ -3376,10 +3384,18 @@ impl App {
         }
         match (&self.shelf, self.saved_name()) {
             (Some(entry), _) => {
-                root.set_location(collection, &entry.name, &gettext(self.section.name));
+                root.set_location(
+                    collection,
+                    &entry.name,
+                    &gettext(style::word(self.section.name)),
+                );
             }
             (None, Some(name)) => root.set_location(collection, &name, collection),
-            (None, None) => root.set_location(collection, &gettext(self.section.name), collection),
+            (None, None) => root.set_location(
+                collection,
+                &gettext(style::word(self.section.name)),
+                collection,
+            ),
         }
         root.set_back_visible(self.shelf.is_some());
         match (&self.shelf, self.section.content) {

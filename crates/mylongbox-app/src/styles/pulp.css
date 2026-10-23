@@ -1,0 +1,720 @@
+/* Deco Pulp: a comic shop that opened in 1938 on the ground floor of a
+ * Wilshire Boulevard Art Deco tower. The building gives the structure:
+ * turquoise terra cotta, gold trim, stepped setbacks, fluting,
+ * sunbursts and a theatre marquee. The comics give the energy: ink
+ * outlines, hard offset shadows, Ben-Day dots, speech balloons and
+ * starbursts. Gold stays trim and the four printing inks stay sparks,
+ * so neither side takes over.
+ *
+ * Type: Limelight for marquee titles, Josefin Sans in tracked capitals
+ * for labels, like a lobby directory, and DM Sans for reading. */
+
+:root {
+  --ink: #14161f;
+  --ink-soft: #1e2333;
+  --newsprint: #f3ead3;
+  --pulp: #e6d5ae;
+  --paper: #fbf8f1;
+  --gold: #c9a227;
+  --gold-light: #e8c766;
+  --gold-deep: #8a6a12;
+  --turquoise: #1f8a8a;
+  --verdigris: #5e8c7a;
+  --pow: #d7263d;
+  --zap: #f4c430;
+  --cyan: #1b9ad6;
+  --coral: #ff5e7e;
+
+  /* Roles, which the night scheme below recasts. */
+  --page: var(--newsprint);
+  --panel: var(--paper);
+  --tint: color-mix(in srgb, var(--pulp) 45%, var(--paper));
+  --text: var(--ink);
+  --line: var(--ink);
+  --drop: var(--ink);
+  --trim: var(--gold);
+  --trim-text: var(--gold-deep);
+  --bar: var(--turquoise);
+  --bar-deep: #176e6e;
+  --bar-text: var(--paper);
+  --side: var(--pulp);
+  --bulb: #fff6d6;
+  --bulb-halo: rgba(255, 246, 214, 0.35);
+  --dots: rgba(20, 22, 31, 0.07);
+  --dots-cyan: rgba(27, 154, 214, 0.07);
+  --ray: rgba(201, 162, 39, 0.09);
+  --tower: rgba(31, 138, 138, 0.09);
+  --glow: transparent;
+
+  --window-bg-color: var(--page);
+  --window-fg-color: var(--text);
+  --view-bg-color: var(--panel);
+  --view-fg-color: var(--text);
+  --card-bg-color: var(--panel);
+  --card-fg-color: var(--text);
+  --dialog-bg-color: var(--page);
+  --dialog-fg-color: var(--text);
+  --popover-bg-color: var(--panel);
+  --popover-fg-color: var(--text);
+  --sidebar-bg-color: var(--side);
+  --sidebar-fg-color: var(--text);
+  --sidebar-backdrop-color: var(--side);
+  --sidebar-border-color: var(--line);
+  --headerbar-bg-color: var(--bar);
+  --headerbar-fg-color: var(--bar-text);
+  --headerbar-backdrop-color: var(--bar);
+  --headerbar-border-color: var(--line);
+  --accent-bg-color: #1a7878;
+  --accent-fg-color: #ffffff;
+  --accent-color: #146464;
+  --destructive-bg-color: var(--pow);
+  --destructive-fg-color: #ffffff;
+  --destructive-color: #b01c30;
+  --success-bg-color: var(--verdigris);
+  --success-color: #3f6b5a;
+  --warning-bg-color: var(--zap);
+  --warning-color: #8a5a00;
+  --error-color: #b01c30;
+  --thumbnail-bg-color: var(--pulp);
+  --window-radius: 2px;
+}
+
+/* Midnight on Wilshire: navy night, cream lettering, gold trim that
+ * glows like neon. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: var(--ink);
+    --panel: var(--ink-soft);
+    --tint: #232a3d;
+    --text: var(--newsprint);
+    --line: #05060a;
+    --drop: #05060a;
+    --trim: var(--gold);
+    --trim-text: var(--gold-light);
+    --bar: #0d0f16;
+    --bar-deep: #0d0f16;
+    --bar-text: var(--newsprint);
+    --side: #181c29;
+    --bulb: #ffe9a8;
+    --bulb-halo: rgba(232, 199, 102, 0.45);
+    --dots: rgba(232, 199, 102, 0.06);
+    --dots-cyan: rgba(27, 154, 214, 0.07);
+    --ray: rgba(232, 199, 102, 0.05);
+    --tower: rgba(31, 138, 138, 0.16);
+    --glow: rgba(232, 199, 102, 0.45);
+
+    --accent-bg-color: var(--turquoise);
+    --accent-fg-color: #ffffff;
+    --accent-color: #5cc8c8;
+    --destructive-color: #ff7f8f;
+    --success-color: #8cc4ad;
+    --warning-color: var(--zap);
+    --error-color: #ff7f8f;
+  }
+}
+
+window {
+  font-family: "DM Sans", "Adwaita Sans", sans-serif;
+}
+
+/* Ben-Day dots in black and cyan, the screens set a little apart, as on
+ * cheap newsprint. */
+window.background, dialog.floating sheet {
+  background-image:
+    radial-gradient(circle, var(--dots) 1px, transparent 1.6px),
+    radial-gradient(circle, var(--dots-cyan) 1px, transparent 1.6px);
+  background-size: 7px 7px, 9px 9px;
+  background-position: 0 0, 4px 3px;
+}
+
+/* Lettering. Limelight is the marquee; Josefin Sans in spaced capitals
+ * labels things, like a building directory. */
+headerbar .title, statuspage .title, .title-1, .observatory-figure {
+  font-family: "Limelight", "TeX Gyre Adventor", serif;
+  font-weight: normal;
+}
+.title-2, .title-3, .title-4, .heading, .caption-heading,
+preferencesgroup .labels > .heading, button, toggle-group > toggle,
+.navigation-sidebar > row, columnview > header > button,
+.observatory-label, .cover-corner, .cover-badge, .starburst-label,
+tooltip {
+  font-family: "Josefin Sans", "TeX Gyre Adventor", sans-serif;
+}
+preferencesgroup .labels > .heading, .navigation-sidebar > row,
+columnview > header > button, .observatory-label, button.pill,
+button.suggested-action, button.destructive-action, .starburst-label,
+statuspage .title {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+/* The biggest titles: inked round, with a hard turquoise shadow. */
+statuspage .title {
+  color: var(--paper);
+  letter-spacing: 0.06em;
+  text-shadow:
+    -1px -1px 0 var(--ink), 1px -1px 0 var(--ink),
+    -1px 1px 0 var(--ink), 1px 1px 0 var(--ink),
+    0 2px 0 var(--ink), 2px 0 0 var(--ink),
+    4px 4px 0 var(--turquoise);
+}
+/* Headline figures look a little misprinted: cyan and red ghosts set
+ * off the black, as on a press slightly out of register. */
+.title-1, .observatory-figure {
+  text-shadow:
+    -1px 0 rgba(27, 154, 214, 0.55),
+    1px 1px rgba(215, 38, 61, 0.5);
+}
+
+/* The top bar: a theatre marquee. Bulbs run along both edges, a sunburst
+ * rises behind the title, and a gold rule runs underneath. */
+headerbar {
+  background-color: var(--bar);
+  background-image:
+    radial-gradient(circle, var(--bulb) 1.4px, var(--bulb-halo) 2.4px, transparent 3.4px),
+    radial-gradient(circle, var(--bulb) 1.4px, var(--bulb-halo) 2.4px, transparent 3.4px),
+    conic-gradient(from -90deg at 50% 100%,
+      var(--ray) 0deg 6deg, transparent 6deg 15deg,
+      var(--ray) 15deg 21deg, transparent 21deg 30deg,
+      var(--ray) 30deg 36deg, transparent 36deg 45deg,
+      var(--ray) 45deg 51deg, transparent 51deg 60deg,
+      var(--ray) 60deg 66deg, transparent 66deg 75deg,
+      var(--ray) 75deg 81deg, transparent 81deg 90deg,
+      var(--ray) 90deg 96deg, transparent 96deg 105deg,
+      var(--ray) 105deg 111deg, transparent 111deg 120deg,
+      var(--ray) 120deg 126deg, transparent 126deg 135deg,
+      var(--ray) 135deg 141deg, transparent 141deg 150deg,
+      var(--ray) 150deg 156deg, transparent 156deg 165deg,
+      var(--ray) 165deg 171deg, transparent 171deg 180deg,
+      transparent 180deg);
+  background-size: 14px 7px, 14px 7px, 320px 100%;
+  background-position: 3px top, 10px bottom, center;
+  background-repeat: repeat-x, repeat-x, no-repeat;
+  color: var(--bar-text);
+  border-bottom: 3px double var(--trim);
+  box-shadow: 0 1px 0 var(--line), 0 2px 8px var(--glow);
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+headerbar .title {
+  color: var(--bar-text);
+  letter-spacing: 0.03em;
+  text-shadow: 1px 1px 0 var(--ink), 2px 2px 0 var(--ink);
+}
+headerbar .subtitle {
+  color: color-mix(in srgb, var(--bar-text) 80%, transparent);
+}
+
+/* At night the bulbs chase, slowly: the app marks the bars in turn,
+ * and holds still when animations are turned off. */
+@media (prefers-color-scheme: dark) {
+  headerbar.chase {
+    background-position: 10px top, 3px bottom, center;
+  }
+  headerbar .title {
+    text-shadow: 1px 1px 0 var(--ink), 0 0 8px rgba(232, 199, 102, 0.55);
+  }
+}
+
+/* Header buttons are round with gold rims, like the bolts of a
+ * marquee frame; text buttons are gold-rimmed plaques. */
+headerbar button:not(.suggested-action):not(.destructive-action),
+headerbar menubutton > button {
+  background-color: transparent;
+  color: var(--bar-text);
+  border: 2px solid color-mix(in srgb, var(--gold) 70%, transparent);
+  border-radius: 999px;
+  box-shadow: none;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+}
+headerbar button.text-button:not(.image-button),
+headerbar menubutton > button.text-button:not(.image-button) {
+  border-radius: 0;
+  padding: 0 12px;
+}
+headerbar button:not(.suggested-action):not(.destructive-action):hover,
+headerbar menubutton > button:hover,
+headerbar button:not(.suggested-action):not(.destructive-action):checked,
+headerbar menubutton > button:checked {
+  background-color: color-mix(in srgb, var(--ink) 30%, transparent);
+  border-color: var(--gold-light);
+  box-shadow: 0 0 6px var(--glow);
+  transform: none;
+}
+headerbar toggle-group {
+  border: 2px solid color-mix(in srgb, var(--gold) 70%, transparent);
+  border-radius: 999px;
+  box-shadow: none;
+  background: none;
+}
+headerbar toggle-group > toggle {
+  border-radius: 999px;
+}
+headerbar toggle-group > toggle:not(:checked) {
+  color: var(--bar-text);
+}
+
+/* The sidebar is a lobby's elevator panel: fluted along its edge, its
+ * floors in spaced capitals, the one shown marked by a gold needle. */
+.sidebar-pane {
+  background-color: var(--side);
+  background-image:
+    repeating-linear-gradient(to right,
+      var(--trim) 0 1px, transparent 1px 4px),
+    linear-gradient(var(--line), var(--line));
+  background-size: 13px 100%, 2px 100%;
+  background-position: calc(100% - 4px) top, right top;
+  background-repeat: no-repeat, no-repeat;
+  color: var(--text);
+}
+.sidebar-pane headerbar {
+  background-size: 14px 7px, 14px 7px, 0 0;
+}
+.navigation-sidebar {
+  background: none;
+  margin-right: 20px;
+}
+.navigation-sidebar > row {
+  font-size: 0.86em;
+  font-weight: 600;
+  min-height: 34px;
+  border-radius: 0;
+}
+.navigation-sidebar > row:hover:not(:selected) {
+  background-color: color-mix(in srgb, var(--turquoise) 14%, transparent);
+}
+/* The needle: a gold bar with a chevron point. */
+.navigation-sidebar > row:selected {
+  background-color: var(--turquoise);
+  background-image:
+    linear-gradient(to bottom right, transparent 50%, var(--gold-light) 50%),
+    linear-gradient(to top right, transparent 50%, var(--gold-light) 50%);
+  background-size: 9px 50%, 9px 50%;
+  background-position: right top, right bottom;
+  background-repeat: no-repeat;
+  color: #ffffff;
+  box-shadow: inset 5px 0 0 var(--gold-light), 0 0 8px var(--glow);
+}
+.navigation-sidebar separator {
+  background: none;
+  min-height: 2px;
+  background-image: linear-gradient(to right, transparent, var(--trim), transparent);
+  margin: 4px 12px;
+}
+
+/* Section headings: spaced capitals over a gold chevron rule. */
+preferencesgroup .labels > .heading {
+  color: var(--trim-text);
+  font-weight: bold;
+  padding-bottom: 8px;
+  background-image:
+    linear-gradient(135deg, transparent 0 33%, var(--trim) 33% 50%, transparent 50%),
+    linear-gradient(45deg, transparent 0 50%, var(--trim) 50% 67%, transparent 67%);
+  background-size: 8px 5px, 8px 5px;
+  background-position: left bottom, left bottom;
+  background-repeat: repeat-x;
+}
+
+/* Panels: inked edges and a hard shadow, like a printed panel lifted
+ * off the page. */
+list.boxed-list, columnview {
+  border: 2px solid var(--line);
+  border-radius: 0;
+  box-shadow: 4px 4px 0 var(--drop);
+}
+/* Lists read like a longbox ledger: alternate tints and gold hairlines. */
+list.boxed-list > row {
+  border-bottom: 1px solid color-mix(in srgb, var(--trim) 55%, transparent);
+}
+list.boxed-list > row:last-child {
+  border-bottom: none;
+}
+list.boxed-list > row:nth-child(even), columnview > listview > row:nth-child(even) {
+  background-color: var(--tint);
+}
+columnview > header {
+  background-image:
+    linear-gradient(135deg, transparent 0 33%, var(--trim) 33% 50%, transparent 50%),
+    linear-gradient(45deg, transparent 0 50%, var(--trim) 50% 67%, transparent 67%);
+  background-size: 8px 5px, 8px 5px;
+  background-position: left bottom, left bottom;
+  background-repeat: repeat-x;
+  padding-bottom: 4px;
+}
+columnview > header > button,
+columnview > header > button:hover,
+columnview > header > button:active {
+  font-size: 0.82em;
+  font-weight: bold;
+  color: var(--trim-text);
+  background: none;
+  border: none;
+  box-shadow: none;
+  transform: none;
+}
+list.boxed-list > row:selected, columnview > listview > row:selected {
+  background-color: color-mix(in srgb, var(--turquoise) 28%, var(--panel));
+}
+
+/* Covers sit in Deco frames: an inked edge with a thin gold line just
+ * inside, lifting off the page when pointed at. */
+.card {
+  border: 2px solid var(--line);
+  border-radius: 0;
+  box-shadow: 4px 4px 0 var(--drop);
+  outline: 1px solid color-mix(in srgb, var(--gold) 85%, transparent);
+  outline-offset: -5px;
+  transition: box-shadow 200ms ease-out, outline-color 200ms ease-out;
+}
+gridview > child:hover .card {
+  box-shadow: 7px 7px 0 var(--drop);
+  outline-color: var(--gold-light);
+}
+gridview > child {
+  border-radius: 0;
+}
+gridview > child:selected {
+  background-color: color-mix(in srgb, var(--turquoise) 22%, transparent);
+  box-shadow: inset 0 0 0 3px var(--turquoise);
+}
+gridview > child .caption-heading {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.82em;
+}
+
+/* The shine of a Mylar bag. */
+.cover-sheen {
+  background-image: linear-gradient(115deg,
+    transparent 0 32%, rgba(255, 255, 255, 0.2) 38%,
+    rgba(255, 255, 255, 0.05) 46%, transparent 52% 60%,
+    rgba(255, 255, 255, 0.1) 64%, transparent 68%);
+}
+
+/* The issue number boxed in the corner, as on Golden Age covers. */
+.cover-corner {
+  background-color: var(--paper);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  box-shadow: inset 0 0 0 1px var(--paper), inset 0 0 0 2px var(--gold);
+  font-weight: bold;
+  font-size: 0.82em;
+  padding: 3px 5px 1px;
+  margin: 7px 0 0 7px;
+}
+
+/* Grades are slab labels: gold-rimmed, golden for near mint and up,
+ * turquoise in the middle and verdigris below. No grade is shamed in
+ * red. Bindings and "Signed" take the plain label. */
+.cover-badge {
+  background-color: var(--ink);
+  color: var(--newsprint);
+  border: 2px solid var(--gold);
+  border-radius: 0;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+  padding: 3px 6px 1px;
+}
+.cover-badge.grade-high {
+  background-color: var(--gold-light);
+  color: var(--ink);
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--gold-deep);
+}
+.cover-badge.grade-mid {
+  background-color: var(--turquoise);
+  color: #ffffff;
+}
+.cover-badge.grade-low {
+  background-color: var(--verdigris);
+  color: #ffffff;
+}
+
+/* A key issue's starburst. */
+.starburst {
+  color: var(--zap);
+}
+.starburst-label {
+  color: var(--ink);
+  font-size: 0.68em;
+  font-weight: bold;
+  letter-spacing: 0.06em;
+  padding-top: 2px;
+}
+
+/* Buttons are stamps: inked, with a hard shadow, pressed down onto it
+ * when clicked. */
+button:not(.flat):not(.link), toggle-group {
+  border: 2px solid var(--line);
+  border-radius: 0;
+  box-shadow: 3px 3px 0 var(--drop);
+  transition: box-shadow 150ms ease-out, transform 150ms ease-out;
+}
+button:not(.flat):not(.link) {
+  background-color: var(--panel);
+  color: var(--text);
+}
+button:not(.flat):not(.link):hover {
+  box-shadow: inset 0 0 0 1px var(--gold), 5px 5px 0 var(--drop);
+}
+button:not(.flat):not(.link):active, button:not(.flat):not(.link):checked {
+  box-shadow: none;
+  transform: translate(3px, 3px);
+}
+button.suggested-action:not(.flat) {
+  background-color: var(--accent-bg-color);
+  color: #ffffff;
+  font-weight: bold;
+}
+button.destructive-action:not(.flat) {
+  background-color: var(--pow);
+  color: #ffffff;
+  font-weight: bold;
+}
+button.suggested-action:not(.flat):hover, button.destructive-action:not(.flat):hover {
+  box-shadow: inset 0 0 0 1px var(--gold-light), 5px 5px 0 var(--drop);
+}
+/* On the marquee the main action is a yellow price sticker, as
+ * turquoise would vanish into the bar. */
+headerbar button.suggested-action:not(.flat) {
+  background-color: var(--zap);
+  color: var(--ink);
+  border-color: var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+button.pill {
+  padding: 10px 28px 8px;
+}
+button.circular {
+  border-radius: 999px;
+}
+toggle-group {
+  padding: 0;
+  background-color: var(--panel);
+}
+toggle-group > toggle {
+  border-radius: 0;
+  font-weight: 600;
+}
+toggle-group > toggle:checked {
+  background-color: var(--gold);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+/* Fields are inset plaques. */
+entry, spinbutton, searchbar entry {
+  background-color: color-mix(in srgb, var(--pulp) 55%, var(--paper));
+  color: var(--ink);
+  border: 2px solid var(--line);
+  border-radius: 0;
+  box-shadow: inset 2px 2px 0 rgba(20, 22, 31, 0.1);
+}
+entry:focus-within, spinbutton:focus-within {
+  border-color: var(--turquoise);
+  outline: 2px solid color-mix(in srgb, var(--turquoise) 50%, transparent);
+  outline-offset: 0;
+}
+@media (prefers-color-scheme: dark) {
+  entry, spinbutton, searchbar entry {
+    background-color: #262d42;
+    color: var(--newsprint);
+    box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.3);
+  }
+  entry:focus-within, spinbutton:focus-within {
+    border-color: var(--gold);
+    outline-color: var(--glow);
+  }
+}
+/* Number boxes inside a list row keep the row's frame. */
+row spinbutton {
+  border: none;
+  background: none;
+  box-shadow: none;
+}
+searchbar > revealer > box {
+  border-bottom: 2px solid var(--line);
+}
+
+/* Dialogs: a double gold frame with Deco fans in its corners, set
+ * forward of the page by an inked edge and a hard shadow. */
+dialog.floating sheet {
+  border: 4px double var(--gold);
+  border-radius: 0;
+  box-shadow: 0 0 0 2px var(--line), 8px 8px 0 2px var(--drop);
+  background-image:
+    radial-gradient(circle at 0 0, transparent 0 14px, var(--gold) 14px 15.5px,
+      transparent 15.5px 20px, var(--gold) 20px 21.5px, transparent 21.5px),
+    radial-gradient(circle at 100% 0, transparent 0 14px, var(--gold) 14px 15.5px,
+      transparent 15.5px 20px, var(--gold) 20px 21.5px, transparent 21.5px),
+    radial-gradient(circle at 0 100%, transparent 0 14px, var(--gold) 14px 15.5px,
+      transparent 15.5px 20px, var(--gold) 20px 21.5px, transparent 21.5px),
+    radial-gradient(circle at 100% 100%, transparent 0 14px, var(--gold) 14px 15.5px,
+      transparent 15.5px 20px, var(--gold) 20px 21.5px, transparent 21.5px),
+    radial-gradient(circle, var(--dots) 1px, transparent 1.6px);
+  background-size: 24px 24px, 24px 24px, 24px 24px, 24px 24px, 7px 7px;
+  background-position: left top, right top, left bottom, right bottom, 0 0;
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+}
+dialog.floating sheet headerbar {
+  background-image: none;
+  background-color: transparent;
+  color: var(--text);
+  border-bottom: none;
+  box-shadow: none;
+  animation: none;
+}
+dialog.floating sheet headerbar .title {
+  color: var(--text);
+  text-shadow: none;
+}
+dialog.floating sheet headerbar button:not(.suggested-action):not(.destructive-action),
+dialog.floating sheet headerbar menubutton > button {
+  color: var(--text);
+}
+dialog.floating sheet headerbar button:checked {
+  background-color: var(--gold);
+  border-color: var(--line);
+  color: var(--ink);
+  box-shadow: none;
+}
+popover > contents {
+  border: 2px solid var(--line);
+  border-radius: 0;
+  box-shadow: inset 0 0 0 2px var(--panel), inset 0 0 0 3px var(--gold);
+  padding: 8px;
+}
+popover modelbutton:hover, popover modelbutton:selected {
+  background-color: color-mix(in srgb, var(--turquoise) 20%, transparent);
+}
+
+/* Empty shelves and the start page: a Deco tower against a sunburst,
+ * with the words in a speech balloon. */
+statuspage {
+  background-image:
+    linear-gradient(var(--tower), var(--tower)),
+    linear-gradient(var(--tower), var(--tower)),
+    linear-gradient(var(--tower), var(--tower)),
+    linear-gradient(var(--tower), var(--tower)),
+    conic-gradient(from -90deg at 50% 100%,
+      var(--ray) 0deg 6deg, transparent 6deg 12deg,
+      var(--ray) 12deg 18deg, transparent 18deg 24deg,
+      var(--ray) 24deg 30deg, transparent 30deg 36deg,
+      var(--ray) 36deg 42deg, transparent 42deg 48deg,
+      var(--ray) 48deg 54deg, transparent 54deg 60deg,
+      var(--ray) 60deg 66deg, transparent 66deg 72deg,
+      var(--ray) 72deg 78deg, transparent 78deg 84deg,
+      var(--ray) 84deg 90deg, transparent 90deg 96deg,
+      var(--ray) 96deg 102deg, transparent 102deg 108deg,
+      var(--ray) 108deg 114deg, transparent 114deg 120deg,
+      var(--ray) 120deg 126deg, transparent 126deg 132deg,
+      var(--ray) 132deg 138deg, transparent 138deg 144deg,
+      var(--ray) 144deg 150deg, transparent 150deg 156deg,
+      var(--ray) 156deg 162deg, transparent 162deg 168deg,
+      var(--ray) 168deg 174deg, transparent 174deg 180deg,
+      transparent 180deg),
+    radial-gradient(circle, var(--dots) 1px, transparent 1.6px);
+  background-size: 24px 150px, 64px 112px, 112px 78px, 176px 44px, auto, 7px 7px;
+  background-position: center bottom, center bottom, center bottom, center bottom, center, 0 0;
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+}
+statuspage .description {
+  background-color: var(--paper);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 18px;
+  box-shadow: 3px 3px 0 var(--drop);
+  padding: 10px 18px;
+}
+
+/* The bar at the foot of a page: a gold rule and three Streamline speed
+ * lines. */
+actionbar > revealer > box {
+  background-image: linear-gradient(to bottom,
+    var(--trim) 0 2px, transparent 2px 4px,
+    var(--trim) 4px 5px, transparent 5px 7px,
+    var(--trim) 7px 8px, transparent 8px);
+  background-size: 100% 8px;
+  background-position: top;
+  background-repeat: no-repeat;
+  border-top: none;
+  box-shadow: none;
+  padding-top: 9px;
+}
+/* Reminders are price stickers. */
+banner > revealer > widget {
+  background-color: var(--zap);
+  color: var(--ink);
+  border-bottom: 2px solid var(--ink);
+}
+toast {
+  background-color: var(--ink);
+  color: var(--newsprint);
+  border: 2px solid var(--gold);
+  border-radius: 0;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* Speech balloons for tooltips. */
+tooltip, tooltip.background {
+  background-color: var(--paper);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 16px;
+  padding: 6px 12px 4px;
+  font-weight: 600;
+}
+
+/* The Observatory: big marquee figures over instruments. */
+.observatory {
+  padding: 18px 12px 14px;
+  border: 4px double var(--gold);
+  background-color: var(--panel);
+  box-shadow: 0 0 0 2px var(--line), 6px 6px 0 2px var(--drop);
+  margin: 4px 8px 8px 4px;
+}
+.observatory-figure {
+  font-size: 2em;
+  color: var(--text);
+}
+.observatory-label {
+  font-size: 0.78em;
+  font-weight: bold;
+  color: var(--trim-text);
+}
+
+.accent {
+  color: var(--accent-color);
+}
+link, button.link {
+  color: var(--cyan);
+}
+switch {
+  border: 2px solid var(--line);
+}
+switch:checked {
+  background-color: var(--verdigris);
+}
+switch > slider {
+  border-radius: 999px;
+}
+checkbutton > check, radio {
+  border: 2px solid var(--line);
+}
+checkbutton > check:checked, radio:checked {
+  background-color: var(--turquoise);
+  color: #ffffff;
+}
+scale > trough > highlight, progressbar > trough > progress {
+  background-color: var(--turquoise);
+}
+scale > trough > slider {
+  border: 2px solid var(--line);
+  background-color: var(--gold-light);
+}
+
+*:focus-visible {
+  outline-color: color-mix(in srgb, var(--turquoise) 70%, transparent);
+}

@@ -9,6 +9,7 @@ use relm4::typed_view::grid::RelmGridItem;
 use relm4::typed_view::list::RelmListItem;
 
 use crate::i18n::{gettext, gettext_f, gettext_noop, ngettext_f};
+use crate::style::{self, Style};
 use crate::{covers, format};
 
 /// One physical book in the cover grid or the list, and whether its card
@@ -20,6 +21,11 @@ pub struct BookWidgets {
     missing: gtk::Box,
     badge: gtk::Label,
     signed: gtk::Label,
+    /// Deco Pulp's touches: the issue number boxed in the corner as on
+    /// old covers, a starburst for a key issue, and the shine of a bag.
+    corner: gtk::Label,
+    key: gtk::Overlay,
+    sheen: gtk::Box,
     series: gtk::Label,
     issue: gtk::Label,
     needs: gtk::Label,
@@ -69,9 +75,29 @@ impl RelmGridItem for Book {
             .margin_start(6)
             .css_classes(["cover-badge"])
             .build();
+        // The issue line under the cover gives the number too, so
+        // screen readers pass it over.
+        let corner = gtk::Label::builder()
+            .accessible_role(gtk::AccessibleRole::Presentation)
+            .halign(gtk::Align::Start)
+            .valign(gtk::Align::Start)
+            .css_classes(["cover-corner"])
+            .build();
+        let key = starburst(&gettext("Key"));
+        key.set_halign(gtk::Align::End);
+        key.set_valign(gtk::Align::End);
+        key.set_margin_end(4);
+        key.set_margin_bottom(4);
+        let sheen = gtk::Box::builder()
+            .can_target(false)
+            .css_classes(["cover-sheen"])
+            .build();
         let overlay = gtk::Overlay::builder().child(&cover).build();
+        overlay.add_overlay(&sheen);
         overlay.add_overlay(&badge);
         overlay.add_overlay(&signed);
+        overlay.add_overlay(&corner);
+        overlay.add_overlay(&key);
 
         let label = |classes: &[&str]| {
             gtk::Label::builder()
@@ -113,6 +139,9 @@ impl RelmGridItem for Book {
                 missing,
                 badge,
                 signed,
+                corner,
+                key,
+                sheen,
                 series,
                 issue,
                 needs,
@@ -129,13 +158,20 @@ impl RelmGridItem for Book {
         let badge = badge(row);
         widgets.badge.set_visible(!badge.is_empty());
         widgets.badge.set_label(&badge);
-        // Styles may mark a key issue's badge out.
-        if row.is_key {
-            widgets.badge.add_css_class("key");
-        } else {
-            widgets.badge.remove_css_class("key");
+        // A style may tint the badge by how high the grade is.
+        for class in ["grade-high", "grade-mid", "grade-low"] {
+            widgets.badge.remove_css_class(class);
+        }
+        if let Some(class) = grade_class(row) {
+            widgets.badge.add_css_class(class);
         }
         widgets.signed.set_visible(row.signed);
+        let pulp = style::current() == Style::Pulp;
+        let corner = number(row);
+        widgets.corner.set_visible(pulp && !corner.is_empty());
+        widgets.corner.set_label(&corner);
+        widgets.key.set_visible(pulp && row.is_key);
+        widgets.sheen.set_visible(pulp && texture.is_some());
         widgets.series.set_label(&row.series);
         widgets.issue.set_label(&issue_line(row));
         let needs = if self.1 {
@@ -147,6 +183,70 @@ impl RelmGridItem for Book {
         widgets.needs.set_label(&needs);
         root.set_tooltip_text(Some(&row.label()));
     }
+}
+
+/// How a comic's grade ranks, for a style to tint it by: near mint and
+/// up, fine and up, or below.
+fn grade_class(row: &CopyRow) -> Option<&'static str> {
+    if row.category == Category::CollectedEdition {
+        return None;
+    }
+    Some(match row.grade?.tenths() {
+        90.. => "grade-high",
+        60..=89 => "grade-mid",
+        _ => "grade-low",
+    })
+}
+
+/// A comic-book starburst around `text`. Its fill is the color the
+/// style gives `.starburst`, and its ink is the style's text color.
+fn starburst(text: &str) -> gtk::Overlay {
+    const SIZE: i32 = 48;
+    let burst = gtk::DrawingArea::builder()
+        .content_width(SIZE)
+        .content_height(SIZE)
+        .css_classes(["starburst"])
+        .build();
+    burst.set_draw_func(|area, cr, width, height| {
+        let (cx, cy) = (f64::from(width) / 2.0, f64::from(height) / 2.0);
+        let outer = cx.min(cy) - 2.0;
+        let star = |dx: f64, dy: f64| {
+            const POINTS: u32 = 12;
+            for i in 0..POINTS * 2 {
+                let r = if i % 2 == 0 { outer } else { outer * 0.7 };
+                let a = f64::from(i) * std::f64::consts::PI / f64::from(POINTS);
+                cr.line_to(cx + dx + r * a.cos(), cy + dy + r * a.sin());
+            }
+            cr.close_path();
+        };
+        let set = |c: gtk::gdk::RGBA| {
+            cr.set_source_rgba(
+                f64::from(c.red()),
+                f64::from(c.green()),
+                f64::from(c.blue()),
+                f64::from(c.alpha()),
+            );
+        };
+        let ink = gtk::gdk::RGBA::new(0.08, 0.09, 0.12, 1.0);
+        // A hard printed shadow, then the burst, inked round.
+        set(ink);
+        star(2.0, 2.0);
+        // Drawing errors only leave the burst blank.
+        let _ = cr.fill();
+        star(0.0, 0.0);
+        set(area.color());
+        let _ = cr.fill_preserve();
+        set(ink);
+        cr.set_line_width(1.5);
+        let _ = cr.stroke();
+    });
+    let label = gtk::Label::builder()
+        .label(text)
+        .css_classes(["starburst-label"])
+        .build();
+    let overlay = gtk::Overlay::builder().child(&burst).build();
+    overlay.add_overlay(&label);
+    overlay
 }
 
 /// What a book still needs, e.g. `Needs back photo, value`, or nothing
@@ -507,6 +607,18 @@ mod tests {
             ..row()
         };
         assert_eq!(issue_line(&book), "Spider-Man Omnibus");
+    }
+
+    #[test]
+    fn grades_rank_for_tinting() {
+        let graded = |tenths| CopyRow {
+            grade: Grade::from_tenths(tenths),
+            ..row()
+        };
+        assert_eq!(grade_class(&graded(94)), Some("grade-high"));
+        assert_eq!(grade_class(&graded(60)), Some("grade-mid"));
+        assert_eq!(grade_class(&graded(55)), Some("grade-low"));
+        assert_eq!(grade_class(&row()), None);
     }
 
     #[test]

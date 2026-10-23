@@ -4,6 +4,7 @@ use adw::prelude::*;
 use mylongbox_core::{Amount, Currency, Date, ValueEntry};
 
 use crate::i18n::gettext;
+use crate::style::{self, Style};
 
 /// Space around the line, so dots at the edges are not cut off.
 const PAD: f64 = 8.0;
@@ -57,6 +58,58 @@ fn bounds(values: impl Iterator<Item = i64>) -> (i64, i64) {
     values.fold((i64::MAX, i64::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)))
 }
 
+/// Deco Pulp's touch: printed dots beneath the line, in the line's
+/// color, and a gold tick under each value.
+fn halftone_under(
+    cr: &gtk::cairo::Context,
+    spots: &[(f64, f64)],
+    (width, height): (f64, f64),
+    color: gtk::gdk::RGBA,
+) {
+    let (Some(first), Some(last)) = (spots.first(), spots.last()) else {
+        return;
+    };
+    cr.save().ok();
+    cr.move_to(first.0, height);
+    for &(x, y) in spots {
+        cr.line_to(x, y);
+    }
+    cr.line_to(last.0, height);
+    cr.close_path();
+    cr.clip();
+    cr.set_source_rgba(
+        f64::from(color.red()),
+        f64::from(color.green()),
+        f64::from(color.blue()),
+        0.35,
+    );
+    const STEP: f64 = 5.0;
+    let mut row = 0;
+    let mut y = 0.0;
+    while y < height {
+        // Every other row sits half a step over, as a printing screen does.
+        let mut x = if row % 2 == 0 { 0.0 } else { STEP / 2.0 };
+        while x < width {
+            cr.arc(x, y, 1.1, 0.0, std::f64::consts::TAU);
+            x += STEP;
+        }
+        y += STEP;
+        row += 1;
+    }
+    // Drawing errors only leave the chart plainer.
+    let _ = cr.fill();
+    cr.restore().ok();
+    cr.save().ok();
+    cr.set_source_rgb(0.788, 0.635, 0.153);
+    cr.set_line_width(1.5);
+    for &(x, _) in spots {
+        cr.move_to(x, height - 5.0);
+        cr.line_to(x, height);
+    }
+    let _ = cr.stroke();
+    cr.restore().ok();
+}
+
 pub fn value_chart(values: &[ValueEntry]) -> gtk::DrawingArea {
     let dated: Vec<_> = values.iter().map(|v| (v.date, v.value)).collect();
     let points = points(&dated);
@@ -81,6 +134,10 @@ pub fn value_chart(values: &[ValueEntry]) -> gtk::DrawingArea {
             f64::from(color.blue()),
             0.8,
         );
+        if style::current() == Style::Pulp {
+            let size = (f64::from(width), f64::from(height));
+            halftone_under(cr, &spots, size, color);
+        }
         cr.set_line_width(2.0);
         for (i, &(x, y)) in spots.iter().enumerate() {
             if i == 0 {

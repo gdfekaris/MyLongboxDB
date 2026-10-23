@@ -143,7 +143,7 @@ mod tests {
                 quality: 90,
             },
             safety_copies: false,
-            style: Style::Deco,
+            style: Style::Pulp,
             scheme: Scheme::Dark,
         };
         wanted.save(&path).unwrap();

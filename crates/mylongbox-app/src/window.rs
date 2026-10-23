@@ -3,6 +3,7 @@ use adw::subclass::prelude::*;
 use gtk::{gio, glib};
 
 use crate::i18n::{gettext, gettext_f, ngettext_f};
+use crate::style;
 
 // The template macro reads the Blueprint file without telling Cargo about
 // it; including the bytes makes edits to the file trigger a rebuild.
@@ -46,6 +47,8 @@ mod imp {
         pub results_bar: TemplateChild<gtk::ActionBar>,
         #[template_child]
         pub results_label: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub add_button: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub entry_menu_button: TemplateChild<gtk::MenuButton>,
         #[template_child]
@@ -291,6 +294,18 @@ impl MainWindow {
         let banner = &self.imp().rates_banner;
         banner.set_title(reminder.unwrap_or(""));
         banner.set_revealed(reminder.is_some());
+    }
+
+    /// Names the add button and fills the search box's hint in the
+    /// style's words.
+    pub fn set_wording(&self) {
+        let imp = self.imp();
+        imp.add_button
+            .set_tooltip_text(Some(&gettext(style::word("Add"))));
+        imp.search_entry
+            .set_placeholder_text(Some(&gettext(style::word(
+                "Search series, titles, people, characters, tags, notes\u{2026}",
+            ))));
     }
 
     pub fn search_entry(&self) -> gtk::SearchEntry {
