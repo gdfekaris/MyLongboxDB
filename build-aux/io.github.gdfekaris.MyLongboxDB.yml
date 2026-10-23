@@ -108,8 +108,8 @@ modules:
       - for size in 16 32 48 64 128 256 512; do install -Dm644
         data/icons/hicolor/${size}x${size}/apps/io.github.gdfekaris.MyLongboxDB.png
         -t /app/share/icons/hicolor/${size}x${size}/apps/ || exit 1; done
-      # Typefaces for the Deco Pulp style, with their licences. The
-      # runtime's fontconfig looks in /app/share/fonts.
+      # Typefaces for the Deco Pulp and Retro Desktop styles, with their
+      # licences. The runtime's fontconfig looks in /app/share/fonts.
       - install -Dm644 data/fonts/*.ttf -t /app/share/fonts/mylongboxdb/
       - install -Dm644 data/fonts/*-OFL.txt -t /app/share/licenses/io.github.gdfekaris.MyLongboxDB/fonts/
       - fc-cache -f /app/share/fonts
