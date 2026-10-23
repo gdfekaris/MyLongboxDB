@@ -87,6 +87,36 @@ thread_local! {
     static ADDED: Cell<bool> = const { Cell::new(false) };
     static CURRENT: Cell<Style> = const { Cell::new(Style::Standard) };
     static CHASE: RefCell<Option<glib::SourceId>> = const { RefCell::new(None) };
+    /// The desktop's own window-button layout and scroll bars, from
+    /// before a style changed them.
+    static DESKTOP: RefCell<Option<(Option<glib::GString>, bool)>> = const { RefCell::new(None) };
+}
+
+/// Retro Desktop's window furniture, beyond its stylesheet: the
+/// control-menu box at the left of the title bar, and scroll bars that
+/// stay in view rather than appearing over the content. Any other style
+/// gets the desktop's own back.
+fn furnish(style: Style) {
+    let Some(settings) = gtk::Settings::default() else {
+        return;
+    };
+    DESKTOP.with_borrow_mut(|desktop| {
+        let (layout, overlay) = desktop
+            .get_or_insert_with(|| {
+                (
+                    settings.gtk_decoration_layout(),
+                    settings.is_gtk_overlay_scrolling(),
+                )
+            })
+            .clone();
+        if style == Style::Retro {
+            settings.set_gtk_decoration_layout(Some("icon:minimize,maximize,close"));
+            settings.set_gtk_overlay_scrolling(false);
+        } else {
+            settings.set_gtk_decoration_layout(layout.as_deref());
+            settings.set_gtk_overlay_scrolling(overlay);
+        }
+    });
 }
 
 /// How often Deco Pulp's marquee bulbs step along at night.
@@ -187,6 +217,7 @@ pub fn apply(display: &gdk::Display, style: Style, scheme: Scheme) {
     };
     CURRENT.set(style);
     chase(style == Style::Pulp && scheme == Scheme::Dark);
+    furnish(style);
     adw::StyleManager::default().set_color_scheme(adw_scheme);
     PROVIDER.with(|provider| {
         // Each stylesheet answers its own `prefers-color-scheme`

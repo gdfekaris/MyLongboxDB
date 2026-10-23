@@ -1,18 +1,27 @@
-/* Retro Desktop: the grey bevelled controls, navy title bars and white
- * list boxes of early-1990s desktops. Type stays smooth and full size,
- * and keyboard focus keeps a clear ring, so it reads like today. */
+/* Retro Desktop: the desktops of the early 1990s, Windows 3.1 above all.
+ * Grey control faces lit from the top left, black outlines with
+ * clipped corners, white wells to type into, navy for what is active
+ * or chosen, bold type throughout, dotted focus rectangles, etched
+ * group boxes, dithered troughs and patterned desktops. The title bar
+ * keeps its navy fade, a touch from later in the decade. Type keeps its
+ * pixel grid but stays full size, so it reads as well as anything
+ * today. */
 
 :root {
   --face: #c0c0c0;
   --hilite: #ffffff;
   --light: #dfdfdf;
   --shadow: #808080;
-  --dark: #0a0a0a;
+  --dark: #000000;
   --title-a: #000080;
   --title-b: #1084d0;
   --desk: #008080;
+  --desk-line: rgba(0, 0, 0, 0.16);
+  --desk-glint: rgba(255, 255, 255, 0.13);
   --ink: #000000;
   --well: #ffffff;
+  --select: #000080;
+  --select-fg: #ffffff;
 
   --window-bg-color: var(--face);
   --window-fg-color: var(--ink);
@@ -22,7 +31,7 @@
   --card-fg-color: var(--ink);
   --dialog-bg-color: var(--face);
   --dialog-fg-color: var(--ink);
-  --popover-bg-color: var(--face);
+  --popover-bg-color: var(--well);
   --popover-fg-color: var(--ink);
   --sidebar-bg-color: var(--well);
   --sidebar-fg-color: var(--ink);
@@ -32,15 +41,15 @@
   --headerbar-fg-color: #ffffff;
   --headerbar-backdrop-color: #808080;
   --headerbar-border-color: var(--dark);
-  --accent-bg-color: #000080;
-  --accent-fg-color: #ffffff;
+  --accent-bg-color: var(--select);
+  --accent-fg-color: var(--select-fg);
   --accent-color: #000080;
-  --destructive-bg-color: #a00000;
+  --destructive-bg-color: #800000;
   --destructive-fg-color: #ffffff;
-  --destructive-color: #a00000;
-  --success-color: #006000;
-  --warning-color: #805000;
-  --error-color: #a00000;
+  --destructive-color: #800000;
+  --success-color: #008000;
+  --warning-color: #808000;
+  --error-color: #800000;
   --thumbnail-bg-color: var(--face);
   --window-radius: 0;
 }
@@ -55,12 +64,14 @@
     --title-a: #000060;
     --title-b: #007878;
     --desk: #004848;
+    --desk-line: rgba(0, 0, 0, 0.3);
+    --desk-glint: rgba(255, 255, 255, 0.07);
     --ink: #f2f2f2;
     --well: #262626;
+    --select: #00a0a0;
+    --select-fg: #000000;
 
     --headerbar-backdrop-color: #2a2a2a;
-    --accent-bg-color: #00a0a0;
-    --accent-fg-color: #000000;
     --accent-color: #40d0d0;
     --destructive-bg-color: #c03030;
     --destructive-color: #ff7070;
@@ -70,22 +81,25 @@
   }
 }
 
+/* Type set on a pixel grid, as screen fonts of the day were, and bold
+ * throughout, as the System font was, at today's sizes. */
 window {
-  font-family: "Liberation Sans", "Arial", sans-serif;
+  font-family: "DotGothic16", "Liberation Sans", sans-serif;
+  font-weight: bold;
 }
 
-/* Square corners throughout, as on the old desktops. */
-window, button, entry, spinbutton, popover > contents, .card, list.boxed-list,
+/* Square corners throughout. Buttons are the exception: their outline
+ * clips its corner pixels, as Windows 3.1 drew them. */
+window, entry, spinbutton, popover > contents, .card, list.boxed-list,
 list.boxed-list > row, row, switch, switch > slider, checkbutton > check,
 dropdown > button, combobox > button, .cover-badge, banner > revealer > widget,
 dialog.floating sheet, toast, scale > trough, scale > trough > slider,
-progressbar > trough, progressbar > trough > progress, menubutton > button,
-tooltip, tooltip > *, .osd, toggle-group, toggle-group > toggle, frame,
-textview {
+progressbar > trough, progressbar > trough > progress, tooltip, tooltip > *,
+.osd, toggle-group, frame, textview, scrollbar slider {
   border-radius: 0;
 }
 
-/* Title bars: a navy fade with bold white titles. */
+/* Title bars: a navy fade with bold white titles, centred. */
 headerbar {
   background-image: linear-gradient(to right, var(--title-a), var(--title-b));
   color: #ffffff;
@@ -99,55 +113,51 @@ headerbar:backdrop {
   background-image: linear-gradient(to right, #808080, #b0b0b0);
 }
 
-/* Raised, bevelled buttons, pressed in when held or on. Flat buttons
- * show their bevel only when pointed at, like old toolbars. */
-button, headerbar button, toggle-group > toggle {
+/* Push buttons: a black outline with clipped corners, lit from the top
+ * left, sinking when pressed with the label moving down and right. */
+button, toggle-group > toggle {
   background-color: var(--face);
   background-image: none;
   color: var(--ink);
-  border: none;
+  border: 1px solid var(--dark);
+  border-radius: 2px;
   box-shadow:
-    inset -1px -1px var(--dark),
     inset 1px 1px var(--hilite),
-    inset -2px -2px var(--shadow),
-    inset 2px 2px var(--light);
+    inset -1px -1px var(--shadow),
+    inset -2px -2px var(--shadow);
 }
 button:hover, toggle-group > toggle:hover {
   background-color: color-mix(in srgb, var(--face) 92%, var(--hilite));
 }
-button:active, button:checked, toggle-group > toggle:checked,
-headerbar button:active, headerbar button:checked {
-  background-color: color-mix(in srgb, var(--face) 85%, var(--dark));
-  box-shadow:
-    inset -1px -1px var(--hilite),
-    inset 1px 1px var(--dark),
-    inset -2px -2px var(--light),
-    inset 2px 2px var(--shadow);
+button:active, button:checked, toggle-group > toggle:checked {
+  background-color: var(--face);
+  box-shadow: inset 1px 1px var(--shadow), inset 2px 2px var(--shadow);
 }
-button.flat:not(:hover):not(:checked):not(:active),
-headerbar button.flat:not(:hover):not(:checked):not(:active) {
+button:active > *, button:checked > *, toggle-group > toggle:checked > * {
+  transform: translate(1px, 1px);
+}
+/* Toolbar buttons show their bevel only when pointed at. */
+button.flat:not(:hover):not(:checked):not(:active) {
   background-color: transparent;
+  border-color: transparent;
   box-shadow: none;
 }
 headerbar button.flat:not(:hover):not(:checked):not(:active) {
   color: #ffffff;
 }
-windowcontrols > button > image {
-  background: none;
-  border-radius: 0;
-  box-shadow: none;
-}
+/* The default button, which Enter presses, has a heavier outline. */
 button.suggested-action {
-  background-color: var(--accent-bg-color);
-  color: var(--accent-fg-color);
-  font-weight: bold;
+  background-color: var(--face);
+  color: var(--ink);
+  border-width: 2px;
 }
 button.destructive-action {
-  background-color: var(--destructive-bg-color);
-  color: var(--destructive-fg-color);
+  background-color: var(--face);
+  color: var(--destructive-color);
 }
-button:disabled {
+button:disabled, button:disabled label {
   color: var(--shadow);
+  text-shadow: 1px 1px var(--hilite);
 }
 toggle-group {
   background: none;
@@ -156,6 +166,63 @@ toggle-group {
 }
 toggle-group > toggle:checked {
   color: var(--ink);
+}
+
+/* The window's buttons: the control-menu box at the left, and square
+ * minimise and maximise buttons with triangles at the right. GTK has
+ * no triangle icons, so they are drawn. */
+windowcontrols > button {
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+}
+windowcontrols > button > image {
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+  min-width: 16px;
+  min-height: 16px;
+  padding: 0;
+}
+windowcontrols > button.minimize > image,
+windowcontrols > button.maximize > image {
+  -gtk-icon-filter: opacity(0);
+  background-repeat: no-repeat;
+}
+windowcontrols > button.minimize > image {
+  background-image: conic-gradient(from -40.6deg at 50% 100%,
+    var(--ink) 0 81.2deg, transparent 0);
+  background-size: 12px 7px;
+  background-position: center;
+}
+windowcontrols > button.maximize > image {
+  background-image: conic-gradient(from 139.4deg at 50% 0,
+    var(--ink) 0 81.2deg, transparent 0);
+  background-size: 12px 7px;
+  background-position: center;
+}
+window.maximized windowcontrols > button.maximize > image {
+  background-image:
+    conic-gradient(from 139.4deg at 50% 0, var(--ink) 0 81.2deg, transparent 0),
+    conic-gradient(from -40.6deg at 50% 100%, var(--ink) 0 81.2deg, transparent 0);
+  background-size: 12px 7px, 12px 7px;
+  background-position: center 0, center 9px;
+}
+/* The app's icon gives way to the control-menu box's bar. */
+windowcontrols > .icon {
+  -gtk-icon-filter: opacity(0);
+  min-width: 24px;
+  min-height: 24px;
+  margin: 0 4px;
+  background-color: var(--face);
+  border: 1px solid var(--dark);
+  background-image:
+    linear-gradient(var(--dark), var(--dark)),
+    linear-gradient(var(--hilite), var(--hilite));
+  background-size: 13px 1px, 13px 3px;
+  background-position: center 13px, center 10px;
+  background-repeat: no-repeat;
+  box-shadow: inset 1px 1px var(--hilite), inset -1px -1px var(--shadow);
 }
 
 /* Sunken white wells for typing into and for lists. */
@@ -178,6 +245,9 @@ row spinbutton {
   background: none;
   box-shadow: none;
 }
+row spinbutton > button {
+  border-radius: 2px;
+}
 list.boxed-list, .card {
   background-color: var(--well);
   padding: 2px;
@@ -187,20 +257,65 @@ list.boxed-list > row {
 }
 gridview > child:selected, columnview > listview > row:selected,
 .navigation-sidebar > row:selected, list > row:selected {
-  background-color: var(--accent-bg-color);
-  color: var(--accent-fg-color);
+  background-color: var(--select);
+  color: var(--select-fg);
 }
 
-/* The sidebar is a white list beside the window, as in a file manager. */
+/* The sidebar is a white list beside the window, as in File Manager. */
 .navigation-sidebar {
   background-color: var(--well);
 }
 
-/* Bars along the top and bottom of a page sit raised, like status bars. */
+/* Settings come in group boxes: an etched frame with the group's name
+ * breaking into its top line. The name's grey halo hides the line
+ * behind it. */
+preferencesgroup > box {
+  background-image:
+    linear-gradient(var(--shadow), var(--shadow)),
+    linear-gradient(var(--hilite), var(--hilite)),
+    linear-gradient(var(--shadow), var(--shadow)),
+    linear-gradient(var(--hilite), var(--hilite)),
+    linear-gradient(var(--shadow), var(--shadow)),
+    linear-gradient(var(--hilite), var(--hilite)),
+    linear-gradient(var(--shadow), var(--shadow)),
+    linear-gradient(var(--hilite), var(--hilite));
+  background-size:
+    100% 1px, 100% 1px,
+    1px 100%, 1px 100%,
+    1px 100%, 1px 100%,
+    100% 1px, 100% 1px;
+  background-position:
+    0 9px, 1px 10px,
+    0 9px, 1px 10px,
+    calc(100% - 1px) 9px, 100% 10px,
+    0 calc(100% - 1px), 0 100%;
+  background-repeat: no-repeat;
+}
+preferencesgroup > box > box {
+  margin-left: 10px;
+  margin-right: 10px;
+}
+preferencesgroup > box > box:last-child {
+  margin-bottom: 10px;
+}
+preferencesgroup .labels > .heading {
+  margin-left: 6px;
+  color: var(--ink);
+  text-shadow:
+    -3px 0 var(--face), 3px 0 var(--face), 0 -2px var(--face), 0 2px var(--face),
+    -2px -2px var(--face), 2px -2px var(--face), -2px 2px var(--face), 2px 2px var(--face),
+    -5px 0 var(--face), 5px 0 var(--face);
+}
+
+/* The status bar: raised, its figures set into sunken panels. */
 actionbar > revealer > box, searchbar > revealer > box {
   background-color: var(--face);
   box-shadow: inset 0 1px var(--hilite), inset 0 -1px var(--shadow);
   border: none;
+}
+actionbar > revealer > box > box > label {
+  padding: 1px 8px;
+  box-shadow: inset 1px 1px var(--shadow), inset -1px -1px var(--hilite);
 }
 banner > revealer > widget {
   background-color: #ffffe1;
@@ -208,38 +323,58 @@ banner > revealer > widget {
   border-bottom: 1px solid var(--dark);
 }
 
-/* Pop-up menus and dialogs: grey, bevelled, with a hard edge. */
-popover > contents, dialog.floating sheet {
+/* Menus: flat white panels with a black edge, the item under the
+ * pointer in navy. No pointer back at the button. */
+popover > contents {
+  background-color: var(--well);
+  color: var(--ink);
+  border: 1px solid var(--dark);
+  box-shadow: none;
+}
+popover > arrow {
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+popover, popover modelbutton, popover label {
+  font-weight: bold;
+}
+popover modelbutton {
+  border-radius: 0;
+}
+popover modelbutton:hover, popover modelbutton:selected {
+  background-color: var(--select);
+  color: var(--select-fg);
+}
+dialog.floating sheet {
   background-color: var(--face);
   color: var(--ink);
   border: 1px solid var(--dark);
   box-shadow:
     inset 1px 1px var(--hilite),
     inset -1px -1px var(--shadow),
-    2px 2px 0 rgba(0, 0, 0, 0.5);
-}
-popover > arrow {
-  background-color: var(--face);
-  border: 1px solid var(--dark);
-}
-popover modelbutton:hover, popover modelbutton:selected {
-  background-color: var(--accent-bg-color);
-  color: var(--accent-fg-color);
+    0 0 0 3px var(--face),
+    0 0 0 4px var(--dark);
 }
 
-/* The start page sits on the old teal desktop. */
+/* The start page sits on a teal desktop tiled with the "Boxes"
+ * pattern. */
 statuspage {
   background-color: var(--desk);
+  background-image:
+    linear-gradient(to right, var(--desk-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--desk-line) 1px, transparent 1px),
+    linear-gradient(to right, var(--desk-glint) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--desk-glint) 1px, transparent 1px);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 0, 1px 1px, 1px 1px;
   color: #ffffff;
 }
 statuspage button.pill {
   color: var(--ink);
 }
-statuspage button.pill.suggested-action {
-  color: var(--accent-fg-color);
-}
 
-/* Square check boxes and a chunky switch. */
+/* Check boxes are crossed when ticked; option buttons are round. */
 checkbutton > check {
   background-color: var(--well);
   box-shadow:
@@ -249,6 +384,22 @@ checkbutton > check {
     inset -2px -2px var(--light);
   color: var(--ink);
 }
+checkbutton > check:checked {
+  background-color: var(--well);
+  color: var(--ink);
+  -gtk-icon-source: -gtk-icontheme("window-close-symbolic");
+}
+checkbutton > radio {
+  border-radius: 100%;
+  background-color: var(--well);
+  box-shadow: inset 1px 1px var(--shadow), inset -1px -1px var(--hilite);
+  border: 1px solid var(--dark);
+  color: var(--ink);
+}
+checkbutton > radio:checked {
+  background-color: var(--well);
+  color: var(--ink);
+}
 switch {
   background-color: var(--light);
   border: 2px solid;
@@ -256,13 +407,59 @@ switch {
   box-shadow: none;
 }
 switch:checked {
-  background-color: var(--accent-bg-color);
+  background-color: var(--select);
 }
 switch > slider {
   background-color: var(--face);
   border: 2px solid;
   border-color: var(--hilite) var(--dark) var(--dark) var(--hilite);
   box-shadow: none;
+}
+
+/* Scroll bars stay in view, with a dithered trough and a square,
+ * bevelled thumb. */
+scrollbar {
+  background-color: var(--face);
+  background-image:
+    linear-gradient(45deg, var(--well) 25%, transparent 25% 75%, var(--well) 75%),
+    linear-gradient(45deg, var(--well) 25%, transparent 25% 75%, var(--well) 75%);
+  background-size: 2px 2px;
+  background-position: 0 0, 1px 1px;
+  border: none;
+}
+scrollbar.vertical {
+  border-left: 1px solid var(--dark);
+}
+scrollbar.horizontal {
+  border-top: 1px solid var(--dark);
+}
+scrollbar slider {
+  background-color: var(--face);
+  border: 1px solid var(--dark);
+  box-shadow: inset 1px 1px var(--hilite), inset -1px -1px var(--shadow);
+  min-width: 14px;
+  min-height: 14px;
+  margin: 0;
+}
+scrollbar.vertical slider {
+  min-height: 28px;
+}
+scrollbar.horizontal slider {
+  min-width: 28px;
+}
+
+progressbar > trough {
+  background-color: var(--well);
+  box-shadow: inset 1px 1px var(--shadow), inset -1px -1px var(--hilite);
+}
+progressbar > trough > progress {
+  background-color: var(--select);
+}
+
+/* Disabled words are embossed. */
+label:disabled {
+  color: var(--shadow);
+  text-shadow: 1px 1px var(--hilite);
 }
 
 tooltip {
@@ -278,7 +475,15 @@ tooltip {
   border: 1px solid #ffffff;
 }
 
-/* A clear, modern focus ring, so keyboard use stays easy to follow. */
+/* Keyboard focus is a dotted rectangle round the control, as it
+ * always was. */
 *:focus-visible {
-  outline-color: var(--accent-color);
+  outline-color: var(--ink);
+}
+button:focus-visible, toggle-group > toggle:focus-visible,
+checkbutton:focus-visible, row:focus-visible, modelbutton:focus-visible,
+gridview > child:focus-visible, columnview > listview > row:focus-visible,
+dropdown:focus-visible, switch:focus-visible {
+  outline: 1px dotted var(--ink);
+  outline-offset: -4px;
 }
