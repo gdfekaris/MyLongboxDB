@@ -24,6 +24,7 @@ pub struct BookWidgets {
     /// Deco Pulp's touches: the issue number boxed in the corner as on
     /// old covers, a starburst for a key issue, and the shine of a bag.
     corner: gtk::Label,
+    slab: Slab,
     key: gtk::Overlay,
     sheen: gtk::Box,
     series: gtk::Label,
@@ -83,6 +84,7 @@ impl RelmGridItem for Book {
             .valign(gtk::Align::Start)
             .css_classes(["cover-corner"])
             .build();
+        let slab = Slab::new();
         let key = starburst(&gettext("Key"));
         key.set_halign(gtk::Align::End);
         key.set_valign(gtk::Align::End);
@@ -97,6 +99,7 @@ impl RelmGridItem for Book {
         overlay.add_overlay(&badge);
         overlay.add_overlay(&signed);
         overlay.add_overlay(&corner);
+        overlay.add_overlay(&slab.root);
         overlay.add_overlay(&key);
 
         let label = |classes: &[&str]| {
@@ -140,6 +143,7 @@ impl RelmGridItem for Book {
                 badge,
                 signed,
                 corner,
+                slab,
                 key,
                 sheen,
                 series,
@@ -155,18 +159,19 @@ impl RelmGridItem for Book {
         widgets.photo.set_paintable(texture.as_ref());
         widgets.photo.set_visible(texture.is_some());
         widgets.missing.set_visible(texture.is_none());
-        let badge = badge(row);
-        widgets.badge.set_visible(!badge.is_empty());
-        widgets.badge.set_label(&badge);
-        // A style may tint the badge by how high the grade is.
-        for class in ["grade-high", "grade-mid", "grade-low"] {
-            widgets.badge.remove_css_class(class);
-        }
-        if let Some(class) = grade_class(row) {
-            widgets.badge.add_css_class(class);
-        }
-        widgets.signed.set_visible(row.signed);
         let pulp = style::current() == Style::Pulp;
+        // Deco Pulp sets a grade out as a slab label, stacked so that it
+        // leaves room for the issue number beside it.
+        let slabbed = if pulp {
+            widgets.slab.show(row)
+        } else {
+            widgets.slab.root.set_visible(false);
+            false
+        };
+        let badge = badge(row);
+        widgets.badge.set_visible(!slabbed && !badge.is_empty());
+        widgets.badge.set_label(&badge);
+        widgets.signed.set_visible(row.signed);
         let corner = number(row);
         widgets.corner.set_visible(pulp && !corner.is_empty());
         widgets.corner.set_label(&corner);
@@ -182,6 +187,69 @@ impl RelmGridItem for Book {
         widgets.needs.set_visible(!needs.is_empty());
         widgets.needs.set_label(&needs);
         root.set_tooltip_text(Some(&row.label()));
+    }
+}
+
+/// A grade stacked as on a grading slab's label: the grader and the
+/// grade's letters small, around the number.
+struct Slab {
+    root: gtk::Box,
+    grader: gtk::Label,
+    number: gtk::Label,
+    name: gtk::Label,
+}
+
+impl Slab {
+    fn new() -> Self {
+        let line = |class: &str| {
+            gtk::Label::builder()
+                .css_classes([class])
+                .justify(gtk::Justification::Center)
+                .build()
+        };
+        let (grader, number, name) = (line("slab-grader"), line("slab-number"), line("slab-name"));
+        let root = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .halign(gtk::Align::End)
+            .valign(gtk::Align::Start)
+            .margin_top(6)
+            .margin_end(6)
+            .css_classes(["cover-slab"])
+            .build();
+        root.append(&grader);
+        root.append(&number);
+        root.append(&name);
+        Self {
+            root,
+            grader,
+            number,
+            name,
+        }
+    }
+
+    /// Shows the grade of `row`, and says whether it has one to show.
+    fn show(&self, row: &CopyRow) -> bool {
+        let grade = row
+            .grade
+            .filter(|_| row.category != Category::CollectedEdition);
+        self.root.set_visible(grade.is_some());
+        let Some(grade) = grade else {
+            return false;
+        };
+        let (grader, number, name) = format::grade_parts(grade, row.grade_type);
+        self.grader.set_visible(grader.is_some());
+        self.grader.set_label(grader.unwrap_or_default());
+        self.number.set_label(&number);
+        self.name.set_visible(name.is_some());
+        self.name.set_label(name.unwrap_or_default());
+        // A style may tint the label by how high the grade is.
+        for class in ["grade-high", "grade-mid", "grade-low"] {
+            self.root.remove_css_class(class);
+        }
+        if let Some(class) = grade_class(row) {
+            self.root.add_css_class(class);
+        }
+        true
     }
 }
 

@@ -185,17 +185,31 @@ pub fn grade(grade: Option<Grade>, grade_type: Option<GradeType>) -> String {
     let Some(grade) = grade else {
         return String::new();
     };
-    let shown = match grade.name() {
-        Some(name) if display_settings().grade_names => format!("{grade} {name}"),
-        _ => grade.to_string(),
+    let (grader, number, name) = grade_parts(grade, grade_type);
+    let shown = match name {
+        Some(name) => format!("{number} {name}"),
+        None => number,
     };
-    let grade = shown;
-    match grade_type {
-        Some(GradeType::Cgc) => format!("CGC {grade}"),
-        Some(GradeType::Cbcs) => format!("CBCS {grade}"),
-        Some(GradeType::Pgx) => format!("PGX {grade}"),
-        Some(GradeType::Raw) | None => grade.to_string(),
+    match grader {
+        Some(grader) => format!("{grader} {shown}"),
+        None => shown,
     }
+}
+
+/// A grade as a grading slab's label sets it out: who graded it, if a
+/// company did; the number; and its letters, when they are shown.
+pub fn grade_parts(
+    grade: Grade,
+    grade_type: Option<GradeType>,
+) -> (Option<&'static str>, String, Option<&'static str>) {
+    let grader = match grade_type {
+        Some(GradeType::Cgc) => Some("CGC"),
+        Some(GradeType::Cbcs) => Some("CBCS"),
+        Some(GradeType::Pgx) => Some("PGX"),
+        Some(GradeType::Raw) | None => None,
+    };
+    let name = grade.name().filter(|_| display_settings().grade_names);
+    (grader, grade.to_string(), name)
 }
 
 pub fn condition(condition: BookCondition) -> &'static str {
