@@ -109,10 +109,18 @@ modules:
         data/icons/hicolor/${size}x${size}/apps/io.github.gdfekaris.MyLongboxDB.png
         -t /app/share/icons/hicolor/${size}x${size}/apps/ || exit 1; done
       # Typefaces for the Deco Pulp and Retro Desktop styles, with their
-      # licences. The runtime's fontconfig looks in /app/share/fonts.
-      - install -Dm644 data/fonts/*.ttf -t /app/share/fonts/mylongboxdb/
+      # licences. Installed files all carry the same timestamp, so
+      # fontconfig would keep trusting a cache of an older font folder.
+      # The folder is named after its fonts' checksum and named in the
+      # app's own fontconfig file, so every change is a folder fontconfig
+      # has not seen and scans afresh.
+      - |
+        set -e
+        fonts=/app/share/fonts/mylongboxdb-$(cat data/fonts/*.ttf | sha256sum | cut -c1-16)
+        install -Dm644 data/fonts/*.ttf -t "$fonts"/
+        install -d /app/etc/fonts
+        printf '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n<fontconfig>\n  <dir>%s</dir>\n</fontconfig>\n' "$fonts" > /app/etc/fonts/local.conf
       - install -Dm644 data/fonts/*-OFL.txt -t /app/share/licenses/io.github.gdfekaris.MyLongboxDB/fonts/
-      - fc-cache -f /app/share/fonts
       # Each translation listed in po/LINGUAS, checked and compiled.
       - for lang in $(grep -v '^#' po/LINGUAS); do install -d /app/share/locale/$lang/LC_MESSAGES
         && msgfmt --check -o /app/share/locale/$lang/LC_MESSAGES/mylongboxdb.mo po/$lang.po
