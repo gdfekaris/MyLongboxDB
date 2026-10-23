@@ -215,11 +215,17 @@ headerbar {
   box-shadow: none;
   padding: 0;
 }
-/* One height for every bar, so the sidebar's frame and the content's
- * line up. */
+/* One height for every bar, and no gap above a bar that shares its
+ * toolbar with others (as the content's does, with the search bar and
+ * banners), so the sidebar's frame and the content's line up bulb for
+ * bulb. */
 headerbar > windowhandle {
   margin: 8px 10px 9px;
-  min-height: 42px;
+  min-height: 46px;
+}
+toolbarview > .top-bar .collapse-spacing {
+  padding-top: 0;
+  padding-bottom: 0;
 }
 .sidebar-pane headerbar {
   background-size: 10px 6px, 10px 6px, 6px 10px, 0 0, 0 0;
