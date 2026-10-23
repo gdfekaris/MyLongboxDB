@@ -1,0 +1,284 @@
+/* Retro Desktop: the grey bevelled controls, navy title bars and white
+ * list boxes of early-1990s desktops. Type stays smooth and full size,
+ * and keyboard focus keeps a clear ring, so it reads like today. */
+
+:root {
+  --face: #c0c0c0;
+  --hilite: #ffffff;
+  --light: #dfdfdf;
+  --shadow: #808080;
+  --dark: #0a0a0a;
+  --title-a: #000080;
+  --title-b: #1084d0;
+  --desk: #008080;
+  --ink: #000000;
+  --well: #ffffff;
+
+  --window-bg-color: var(--face);
+  --window-fg-color: var(--ink);
+  --view-bg-color: var(--well);
+  --view-fg-color: var(--ink);
+  --card-bg-color: var(--well);
+  --card-fg-color: var(--ink);
+  --dialog-bg-color: var(--face);
+  --dialog-fg-color: var(--ink);
+  --popover-bg-color: var(--face);
+  --popover-fg-color: var(--ink);
+  --sidebar-bg-color: var(--well);
+  --sidebar-fg-color: var(--ink);
+  --sidebar-backdrop-color: var(--well);
+  --sidebar-border-color: var(--shadow);
+  --headerbar-bg-color: var(--title-a);
+  --headerbar-fg-color: #ffffff;
+  --headerbar-backdrop-color: #808080;
+  --headerbar-border-color: var(--dark);
+  --accent-bg-color: #000080;
+  --accent-fg-color: #ffffff;
+  --accent-color: #000080;
+  --destructive-bg-color: #a00000;
+  --destructive-fg-color: #ffffff;
+  --destructive-color: #a00000;
+  --success-color: #006000;
+  --warning-color: #805000;
+  --error-color: #a00000;
+  --thumbnail-bg-color: var(--face);
+  --window-radius: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --face: #3c3c3c;
+    --hilite: #6e6e6e;
+    --light: #505050;
+    --shadow: #1e1e1e;
+    --dark: #000000;
+    --title-a: #000060;
+    --title-b: #007878;
+    --desk: #004848;
+    --ink: #f2f2f2;
+    --well: #262626;
+
+    --headerbar-backdrop-color: #2a2a2a;
+    --accent-bg-color: #00a0a0;
+    --accent-fg-color: #000000;
+    --accent-color: #40d0d0;
+    --destructive-bg-color: #c03030;
+    --destructive-color: #ff7070;
+    --success-color: #60d060;
+    --warning-color: #f0c040;
+    --error-color: #ff7070;
+  }
+}
+
+window {
+  font-family: "Liberation Sans", "Arial", sans-serif;
+}
+
+/* Square corners throughout, as on the old desktops. */
+window, button, entry, spinbutton, popover > contents, .card, list.boxed-list,
+list.boxed-list > row, row, switch, switch > slider, checkbutton > check,
+dropdown > button, combobox > button, .cover-badge, banner > revealer > widget,
+dialog.floating sheet, toast, scale > trough, scale > trough > slider,
+progressbar > trough, progressbar > trough > progress, menubutton > button,
+tooltip, tooltip > *, .osd, toggle-group, toggle-group > toggle, frame,
+textview {
+  border-radius: 0;
+}
+
+/* Title bars: a navy fade with bold white titles. */
+headerbar {
+  background-image: linear-gradient(to right, var(--title-a), var(--title-b));
+  color: #ffffff;
+  box-shadow: none;
+  border-bottom: 1px solid var(--dark);
+}
+headerbar .title {
+  font-weight: bold;
+}
+headerbar:backdrop {
+  background-image: linear-gradient(to right, #808080, #b0b0b0);
+}
+
+/* Raised, bevelled buttons, pressed in when held or on. Flat buttons
+ * show their bevel only when pointed at, like old toolbars. */
+button, headerbar button, toggle-group > toggle {
+  background-color: var(--face);
+  background-image: none;
+  color: var(--ink);
+  border: none;
+  box-shadow:
+    inset -1px -1px var(--dark),
+    inset 1px 1px var(--hilite),
+    inset -2px -2px var(--shadow),
+    inset 2px 2px var(--light);
+}
+button:hover, toggle-group > toggle:hover {
+  background-color: color-mix(in srgb, var(--face) 92%, var(--hilite));
+}
+button:active, button:checked, toggle-group > toggle:checked,
+headerbar button:active, headerbar button:checked {
+  background-color: color-mix(in srgb, var(--face) 85%, var(--dark));
+  box-shadow:
+    inset -1px -1px var(--hilite),
+    inset 1px 1px var(--dark),
+    inset -2px -2px var(--light),
+    inset 2px 2px var(--shadow);
+}
+button.flat:not(:hover):not(:checked):not(:active),
+headerbar button.flat:not(:hover):not(:checked):not(:active) {
+  background-color: transparent;
+  box-shadow: none;
+}
+headerbar button.flat:not(:hover):not(:checked):not(:active) {
+  color: #ffffff;
+}
+windowcontrols > button > image {
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+button.suggested-action {
+  background-color: var(--accent-bg-color);
+  color: var(--accent-fg-color);
+  font-weight: bold;
+}
+button.destructive-action {
+  background-color: var(--destructive-bg-color);
+  color: var(--destructive-fg-color);
+}
+button:disabled {
+  color: var(--shadow);
+}
+toggle-group {
+  background: none;
+  box-shadow: none;
+  padding: 0;
+}
+toggle-group > toggle:checked {
+  color: var(--ink);
+}
+
+/* Sunken white wells for typing into and for lists. */
+entry, spinbutton, searchbar entry, list.boxed-list, .card,
+gridview, columnview, textview {
+  border: none;
+  box-shadow:
+    inset 1px 1px var(--shadow),
+    inset -1px -1px var(--hilite),
+    inset 2px 2px var(--dark),
+    inset -2px -2px var(--light);
+}
+entry, spinbutton, searchbar entry {
+  background-color: var(--well);
+  color: var(--ink);
+}
+/* Number boxes inside a list row would draw a second well in the
+ * first; they keep the row's. */
+row spinbutton {
+  background: none;
+  box-shadow: none;
+}
+list.boxed-list, .card {
+  background-color: var(--well);
+  padding: 2px;
+}
+list.boxed-list > row {
+  box-shadow: none;
+}
+gridview > child:selected, columnview > listview > row:selected,
+.navigation-sidebar > row:selected, list > row:selected {
+  background-color: var(--accent-bg-color);
+  color: var(--accent-fg-color);
+}
+
+/* The sidebar is a white list beside the window, as in a file manager. */
+.navigation-sidebar {
+  background-color: var(--well);
+}
+
+/* Bars along the top and bottom of a page sit raised, like status bars. */
+actionbar > revealer > box, searchbar > revealer > box {
+  background-color: var(--face);
+  box-shadow: inset 0 1px var(--hilite), inset 0 -1px var(--shadow);
+  border: none;
+}
+banner > revealer > widget {
+  background-color: #ffffe1;
+  color: #000000;
+  border-bottom: 1px solid var(--dark);
+}
+
+/* Pop-up menus and dialogs: grey, bevelled, with a hard edge. */
+popover > contents, dialog.floating sheet {
+  background-color: var(--face);
+  color: var(--ink);
+  border: 1px solid var(--dark);
+  box-shadow:
+    inset 1px 1px var(--hilite),
+    inset -1px -1px var(--shadow),
+    2px 2px 0 rgba(0, 0, 0, 0.5);
+}
+popover > arrow {
+  background-color: var(--face);
+  border: 1px solid var(--dark);
+}
+popover modelbutton:hover, popover modelbutton:selected {
+  background-color: var(--accent-bg-color);
+  color: var(--accent-fg-color);
+}
+
+/* The start page sits on the old teal desktop. */
+statuspage {
+  background-color: var(--desk);
+  color: #ffffff;
+}
+statuspage button.pill {
+  color: var(--ink);
+}
+statuspage button.pill.suggested-action {
+  color: var(--accent-fg-color);
+}
+
+/* Square check boxes and a chunky switch. */
+checkbutton > check {
+  background-color: var(--well);
+  box-shadow:
+    inset 1px 1px var(--shadow),
+    inset -1px -1px var(--hilite),
+    inset 2px 2px var(--dark),
+    inset -2px -2px var(--light);
+  color: var(--ink);
+}
+switch {
+  background-color: var(--light);
+  border: 2px solid;
+  border-color: var(--shadow) var(--hilite) var(--hilite) var(--shadow);
+  box-shadow: none;
+}
+switch:checked {
+  background-color: var(--accent-bg-color);
+}
+switch > slider {
+  background-color: var(--face);
+  border: 2px solid;
+  border-color: var(--hilite) var(--dark) var(--dark) var(--hilite);
+  box-shadow: none;
+}
+
+tooltip {
+  background-color: #ffffe1;
+  color: #000000;
+  border: 1px solid #000000;
+  box-shadow: none;
+}
+
+.cover-badge {
+  background-color: var(--title-a);
+  color: #ffffff;
+  border: 1px solid #ffffff;
+}
+
+/* A clear, modern focus ring, so keyboard use stays easy to follow. */
+*:focus-visible {
+  outline-color: var(--accent-color);
+}

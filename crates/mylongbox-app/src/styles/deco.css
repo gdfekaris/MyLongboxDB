@@ -1,0 +1,245 @@
+/* Comic Deco: a comic shop's inked panels, halftone dots and bright
+ * primaries, set in the gold rules, double lines and geometric capitals
+ * of Art Deco. Body text stays in a plain sans for reading; the
+ * geometric face is kept to titles, headings and buttons. */
+
+:root {
+  --paper: #f5ecd7;
+  --panel: #fffaf0;
+  --ink: #16120e;
+  --gold: #b8892b;
+  --gold-hi: #e3c16f;
+  --red: #c8102e;
+  --blue: #14427a;
+  --rail: #16120e;
+  --rail-fg: #f5ecd7;
+  --dots: rgba(22, 18, 14, 0.07);
+  --drop: #16120e;
+
+  --window-bg-color: var(--paper);
+  --window-fg-color: var(--ink);
+  --view-bg-color: var(--panel);
+  --view-fg-color: var(--ink);
+  --card-bg-color: var(--panel);
+  --card-fg-color: var(--ink);
+  --dialog-bg-color: var(--paper);
+  --dialog-fg-color: var(--ink);
+  --popover-bg-color: var(--panel);
+  --popover-fg-color: var(--ink);
+  --sidebar-bg-color: var(--rail);
+  --sidebar-fg-color: var(--rail-fg);
+  --sidebar-backdrop-color: var(--rail);
+  --sidebar-border-color: var(--gold);
+  --headerbar-bg-color: var(--rail);
+  --headerbar-fg-color: var(--rail-fg);
+  --headerbar-backdrop-color: var(--rail);
+  --headerbar-border-color: var(--gold);
+  --accent-bg-color: var(--red);
+  --accent-fg-color: #ffffff;
+  --accent-color: #a50d26;
+  --destructive-bg-color: var(--blue);
+  --destructive-fg-color: #ffffff;
+  --destructive-color: var(--blue);
+  --success-color: #1d6b38;
+  --warning-color: #8a5a00;
+  --error-color: #a50d26;
+  --thumbnail-bg-color: var(--paper);
+  --window-radius: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #12161f;
+    --panel: #1b2230;
+    --ink: #f3e9d2;
+    --gold: #c9a24a;
+    --gold-hi: #e8c875;
+    --red: #e0384f;
+    --blue: #4f8fd8;
+    --rail: #0a0c11;
+    --rail-fg: #f3e9d2;
+    --dots: rgba(201, 162, 74, 0.06);
+    --drop: #6b5320;
+
+    --accent-color: #ff6b7f;
+    --destructive-color: #7fb2ef;
+    --success-color: #6fcf8f;
+    --warning-color: #f0c060;
+    --error-color: #ff6b7f;
+  }
+}
+
+window {
+  font-family: "Adwaita Sans", "Cantarell", sans-serif;
+}
+
+/* Halftone dots on the page behind the panels. */
+window.background, dialog.floating sheet, statuspage {
+  background-image: radial-gradient(circle, var(--dots) 1px, transparent 1.6px);
+  background-size: 7px 7px;
+}
+
+/* Titles in the geometric face. Book names under covers stay in the
+ * reading face, as they are many and often long. */
+.title-1, .title-2, .title-3, .title-4, headerbar .title,
+preferencesgroup .labels > .heading, statuspage .title,
+button.pill, button.suggested-action {
+  font-family: "TeX Gyre Adventor", "URW Gothic", sans-serif;
+  font-weight: bold;
+}
+headerbar .title {
+  color: var(--gold-hi);
+}
+/* Section headings and big buttons in capitals, spaced like a theatre
+ * marquee. Window titles stay as written: the bar sizes them before
+ * they are raised, which cuts them short. */
+preferencesgroup .labels > .heading, statuspage .title,
+button.pill, button.suggested-action {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+preferencesgroup .labels > .heading {
+  color: var(--accent-color);
+}
+
+/* The bar across the top: black with a gold double rule beneath. */
+headerbar {
+  background-color: var(--rail);
+  color: var(--rail-fg);
+  box-shadow: none;
+  border-bottom: 4px double var(--gold);
+}
+headerbar button.flat:hover, headerbar button:checked {
+  background-color: color-mix(in srgb, var(--gold) 30%, transparent);
+  color: var(--gold-hi);
+}
+
+/* The sidebar is the black and gold of a Deco lobby. */
+.navigation-sidebar {
+  background-color: var(--rail);
+  color: var(--rail-fg);
+}
+.navigation-sidebar > row:selected {
+  background-color: var(--gold);
+  color: #16120e;
+  font-weight: bold;
+}
+.navigation-sidebar > row:hover:not(:selected) {
+  background-color: color-mix(in srgb, var(--gold) 20%, transparent);
+}
+
+/* Cards, lists and covers are comic panels: inked edges and a hard
+ * offset shadow. */
+list.boxed-list, .card, columnview {
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+  box-shadow: 4px 4px 0 var(--drop);
+}
+gridview > child {
+  border-radius: 2px;
+}
+gridview > child:selected {
+  background-color: color-mix(in srgb, var(--red) 25%, transparent);
+  outline: 3px solid var(--red);
+  outline-offset: -3px;
+}
+list.boxed-list > row:selected, columnview > listview > row:selected {
+  background-color: color-mix(in srgb, var(--red) 18%, transparent);
+}
+
+/* Buttons: inked outlines, pressed flat when held. */
+button:not(.flat), toggle-group {
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  box-shadow: 2px 2px 0 var(--drop);
+}
+headerbar button:not(.flat), headerbar toggle-group {
+  border-color: var(--gold);
+  box-shadow: none;
+}
+button:not(.flat):active, button:not(.flat):checked {
+  box-shadow: none;
+}
+button.suggested-action {
+  background-color: var(--red);
+  color: #ffffff;
+}
+button.destructive-action {
+  background-color: var(--blue);
+  color: #ffffff;
+}
+button.pill {
+  border-radius: 999px;
+}
+toggle-group {
+  padding: 0;
+}
+toggle-group > toggle:checked {
+  background-color: var(--gold);
+  color: #16120e;
+  box-shadow: none;
+}
+
+entry, spinbutton {
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+  background-color: var(--panel);
+}
+headerbar entry {
+  border-color: var(--gold);
+}
+/* Number boxes inside a list row keep the row's frame. */
+row spinbutton {
+  border: none;
+  background: none;
+}
+
+/* Pop-ups and dialogs get a gold double frame. */
+popover > contents, dialog.floating sheet {
+  border: 4px double var(--gold);
+  border-radius: 4px;
+  box-shadow: 5px 5px 0 var(--drop);
+}
+
+/* Bars at the foot of a page carry a single gold rule. */
+actionbar > revealer > box {
+  border-top: 2px solid var(--gold);
+  box-shadow: none;
+}
+banner > revealer > widget {
+  background-color: var(--blue);
+  color: #ffffff;
+  border-bottom: 2px solid var(--gold);
+}
+
+/* Value changes and other signs in the accent take bold primaries. */
+.accent {
+  color: var(--accent-color);
+}
+
+switch:checked {
+  background-color: var(--red);
+}
+switch {
+  border: 2px solid var(--ink);
+}
+
+scale > trough > highlight, progressbar > trough > progress {
+  background-color: var(--red);
+}
+
+tooltip {
+  background-color: var(--rail);
+  color: var(--rail-fg);
+  border: 1px solid var(--gold);
+}
+
+/* Grade and binding badges on covers read like price flashes. */
+.cover-badge {
+  background-color: var(--red);
+  color: #ffffff;
+  border: 2px solid #16120e;
+  border-radius: 3px;
+  font-family: "TeX Gyre Adventor", sans-serif;
+  letter-spacing: 0.04em;
+}

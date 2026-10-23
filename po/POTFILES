@@ -20,6 +20,7 @@ crates/mylongbox-app/src/series_dialog.rs
 crates/mylongbox-app/src/shortcuts.rs
 crates/mylongbox-app/src/sorting.rs
 crates/mylongbox-app/src/stats_page.rs
+crates/mylongbox-app/src/style.rs
 crates/mylongbox-app/src/trash_page.rs
 crates/mylongbox-app/src/viewer.rs
 crates/mylongbox-app/src/window.rs

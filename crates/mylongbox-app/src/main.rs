@@ -26,6 +26,7 @@ mod settings;
 mod shortcuts;
 mod sorting;
 mod stats_page;
+mod style;
 mod trash_page;
 mod viewer;
 mod window;

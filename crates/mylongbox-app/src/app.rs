@@ -25,7 +25,7 @@ use crate::sorting::SortBy;
 use crate::window::MainWindow;
 use crate::{
     about, bulk_dialog, covers, customize, format, gaps_page, import_dialog, photo_editor, prefs,
-    prompt, series_dialog, shortcuts, sorting, stats_page, trash_page, viewer, work,
+    prompt, series_dialog, shortcuts, sorting, stats_page, style, trash_page, viewer, work,
 };
 
 /// What a sidebar section shows.
@@ -818,6 +818,11 @@ impl Component for App {
             busy: work::Busy::default(),
             quitting: quitting.clone(),
         };
+        style::apply(
+            &WidgetExt::display(&root),
+            model.settings.style,
+            model.settings.scheme,
+        );
 
         let startup = match &model.store {
             Ok(store) => store
@@ -1393,6 +1398,10 @@ impl Component for App {
                 // would rebuild the book list each time for nothing.
                 let shown = (self.settings.currency, self.settings.grade_names)
                     != (settings.currency, settings.grade_names);
+                if (self.settings.style, self.settings.scheme) != (settings.style, settings.scheme)
+                {
+                    style::apply(&WidgetExt::display(root), settings.style, settings.scheme);
+                }
                 self.settings = settings;
                 if let Err(why) = settings.save(&settings::path()) {
                     root.toast(&gettext_f(

@@ -7,6 +7,8 @@ use gtk::glib;
 use mylongbox_core::Currency;
 use mylongbox_media::{LONG_EDGES, Output, QUALITIES};
 
+use crate::style::{Scheme, Style};
+
 const GROUP: &str = "display";
 const IMAGES: &str = "images";
 const BACKUP: &str = "backup";
@@ -21,6 +23,9 @@ pub struct Settings {
     pub photos: Output,
     /// Whether a copy of the collection is kept before risky changes.
     pub safety_copies: bool,
+    /// How the app looks.
+    pub style: Style,
+    pub scheme: Scheme,
 }
 
 impl Default for Settings {
@@ -30,6 +35,8 @@ impl Default for Settings {
             grade_names: false,
             photos: Output::default(),
             safety_copies: true,
+            style: Style::default(),
+            scheme: Scheme::default(),
         }
     }
 }
@@ -81,6 +88,16 @@ impl Settings {
                     .unwrap_or(Output::default().quality),
             },
             safety_copies: file.boolean(BACKUP, "safety-copies").unwrap_or(true),
+            style: file
+                .string(GROUP, "style")
+                .ok()
+                .and_then(|key| Style::from_key(&key))
+                .unwrap_or_default(),
+            scheme: file
+                .string(GROUP, "scheme")
+                .ok()
+                .and_then(|key| Scheme::from_key(&key))
+                .unwrap_or_default(),
         }
     }
 
@@ -92,6 +109,8 @@ impl Settings {
         let _ = file.remove_key(BACKUP, "folder");
         file.set_string(GROUP, "currency", self.currency.map_or("", |c| c.code()));
         file.set_boolean(GROUP, "grade-names", self.grade_names);
+        file.set_string(GROUP, "style", self.style.key());
+        file.set_string(GROUP, "scheme", self.scheme.key());
         file.set_integer(
             IMAGES,
             "long-edge",
@@ -124,6 +143,8 @@ mod tests {
                 quality: 90,
             },
             safety_copies: false,
+            style: Style::Deco,
+            scheme: Scheme::Dark,
         };
         wanted.save(&path).unwrap();
         assert_eq!(Settings::load(&path), wanted);
@@ -147,7 +168,7 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(
             &path,
-            "[display]\ncurrency=PESOS\ngrade-names=maybe\n\
+            "[display]\ncurrency=PESOS\ngrade-names=maybe\nstyle=neon\nscheme=auto\n\
              [images]\nlong-edge=99999\nquality=7\n[backup]\nsafety-copies=perhaps\n",
         )
         .unwrap();

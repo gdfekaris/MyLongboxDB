@@ -1,5 +1,5 @@
-//! The Preferences window: how amounts and grades are shown, the
-//! collections kept by the app, backups and upkeep, and the
+//! The Preferences window: how the app looks, how amounts and grades are
+//! shown, the collections kept by the app, backups and upkeep, and the
 //! exchange-rate table.
 
 use std::cell::Cell;
@@ -13,6 +13,7 @@ use mylongbox_media::{LONG_EDGES, QUALITIES};
 use crate::format;
 use crate::i18n::{gettext, gettext_f, gettext_noop};
 use crate::settings::Settings;
+use crate::style::{STYLES, Scheme};
 
 const CURRENCIES: [(&str, Option<Currency>); 4] = [
     (gettext_noop("As entered"), None),
@@ -60,6 +61,7 @@ pub fn dialog(state: &State<'_>, hooks: Hooks) -> adw::PreferencesDialog {
     // Each group changes its own part of the settings and reports them
     // whole.
     let settings = Rc::new(Cell::new(state.settings));
+    general.add(&appearance_group(&settings, &hooks));
     general.add(&display_group(&settings, &hooks));
     general.add(&images_group(&settings, &hooks));
     general.add(&collections_group(state, &hooks, &dialog));
@@ -86,6 +88,69 @@ pub fn dialog(state: &State<'_>, hooks: Hooks) -> adw::PreferencesDialog {
         dialog.set_visible_page(&rates);
     }
     dialog
+}
+
+fn appearance_group(current: &Rc<Cell<Settings>>, hooks: &Rc<Hooks>) -> adw::PreferencesGroup {
+    let settings = current.get();
+    let group = adw::PreferencesGroup::builder()
+        .title(gettext("Appearance"))
+        .build();
+    let style = adw::ComboRow::builder()
+        .title(gettext("Style"))
+        .model(&gtk::StringList::new(
+            &STYLES
+                .map(|(name, _)| gettext(name))
+                .each_ref()
+                .map(String::as_str),
+        ))
+        .build();
+    let index = STYLES
+        .iter()
+        .position(|(_, s)| *s == settings.style)
+        .unwrap_or(0);
+    style.set_selected(u32::try_from(index).unwrap_or(0));
+    let schemes = adw::ToggleGroup::builder()
+        .valign(gtk::Align::Center)
+        .build();
+    for (name, scheme) in [
+        // Translators: the light color scheme.
+        (gettext("Light"), Scheme::Light),
+        // Translators: the dark color scheme.
+        (gettext("Dark"), Scheme::Dark),
+    ] {
+        schemes.add(
+            adw::Toggle::builder()
+                .name(scheme.key())
+                .label(name)
+                .build(),
+        );
+    }
+    schemes.set_active_name(Some(settings.scheme.key()));
+    let scheme = adw::ActionRow::builder().title(gettext("Colors")).build();
+    scheme.add_suffix(&schemes);
+    let changed = {
+        let (style, schemes, hooks) = (style.clone(), schemes.clone(), hooks.clone());
+        let current = current.clone();
+        Rc::new(move || {
+            let index = usize::try_from(style.selected()).unwrap_or(0);
+            let settings = Settings {
+                style: STYLES.get(index).map_or_else(Default::default, |s| s.1),
+                scheme: schemes
+                    .active_name()
+                    .and_then(|key| Scheme::from_key(&key))
+                    .unwrap_or_default(),
+                ..current.get()
+            };
+            current.set(settings);
+            (hooks.settings_changed)(settings);
+        })
+    };
+    let c = changed.clone();
+    style.connect_selected_notify(move |_| c());
+    schemes.connect_active_name_notify(move |_| changed());
+    group.add(&style);
+    group.add(&scheme);
+    group
 }
 
 fn display_group(current: &Rc<Cell<Settings>>, hooks: &Rc<Hooks>) -> adw::PreferencesGroup {
