@@ -3,7 +3,7 @@
  * clipped corners, white wells to type into, navy for what is active
  * or chosen, bold type throughout, dotted focus rectangles, etched
  * group boxes, dithered troughs and patterned desktops. The title bar
- * keeps its navy fade, and the sidebar and gallery sit on brushed
+ * keeps its navy fade, and the sidebar and scroll bars are brushed
  * chrome, touches from later in the decade. Type keeps its
  * pixel grid but stays full size, so it reads as well as anything
  * today. */
@@ -28,6 +28,10 @@
   --chrome-shade: #9a9a9a;
   --chrome-line: rgba(255, 255, 255, 0.18);
   --chrome-gap: rgba(255, 255, 255, 0);
+  --workspace: #808080;
+  --workspace-ink: #ffffff;
+  --workspace-dim: #e0e0e0;
+  --workspace-warn: #ffff00;
 
   --window-bg-color: var(--face);
   --window-fg-color: var(--ink);
@@ -80,6 +84,10 @@
     --chrome: #383838;
     --chrome-shade: #262626;
     --chrome-line: rgba(255, 255, 255, 0.05);
+    --workspace: #555555;
+    --workspace-ink: #f2f2f2;
+    --workspace-dim: #d0d0d0;
+    --workspace-warn: #ffd860;
 
     --headerbar-backdrop-color: #2a2a2a;
     --accent-color: #40d0d0;
@@ -271,16 +279,35 @@ gridview > child:selected, columnview > listview > row:selected,
   color: var(--select-fg);
 }
 
-/* The sidebar and the gallery are brushed chrome: a sheen lit from the
- * left, crossed by fine lines. The lines fade to clear white, since
- * fading to transparent black would darken them. */
-.navigation-sidebar, .sidebar-pane, gridview, columnview {
+/* The sidebar, the list and the scroll bars are brushed chrome: a
+ * sheen lit from the left, crossed by fine lines. The lines fade to
+ * clear white, since fading to transparent black would darken them. */
+.navigation-sidebar, .sidebar-pane, columnview, scrollbar {
   background-color: var(--chrome);
   background-image:
     repeating-linear-gradient(to bottom,
       var(--chrome-line) 0 1px, var(--chrome-gap) 1px 3px),
     linear-gradient(to right,
       var(--chrome-lit), var(--chrome) 45%, var(--chrome-shade));
+}
+
+/* The gallery lies on the workspace grey that held a program's
+ * document windows, charcoal in the dark, as on NeXT's screens. Its
+ * captions are light to read on it. */
+gridview {
+  background-color: var(--workspace);
+  background-image: none;
+  color: var(--workspace-ink);
+}
+gridview .dim-label {
+  color: var(--workspace-dim);
+  opacity: 1;
+}
+gridview .warning {
+  color: var(--workspace-warn);
+}
+gridview > child:selected .dim-label, gridview > child:selected .warning {
+  color: inherit;
 }
 
 /* Settings come in group boxes: an etched frame with the group's name
@@ -433,15 +460,9 @@ switch > slider {
   box-shadow: none;
 }
 
-/* Scroll bars stay in view, with a dithered trough and a square,
+/* Scroll bars stay in view, with a chrome trough and a square,
  * bevelled thumb. */
 scrollbar {
-  background-color: var(--face);
-  background-image:
-    linear-gradient(45deg, var(--well) 25%, transparent 25% 75%, var(--well) 75%),
-    linear-gradient(45deg, var(--well) 25%, transparent 25% 75%, var(--well) 75%);
-  background-size: 2px 2px;
-  background-position: 0 0, 1px 1px;
   border: none;
 }
 scrollbar.vertical {
