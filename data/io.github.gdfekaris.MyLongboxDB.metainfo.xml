@@ -79,6 +79,17 @@
   </supports>
 
   <releases>
+    <release version="0.1.6" date="2026-10-23">
+      <description>
+        <p>Two new looks, an Artist credit, and arrow keys in the photo editor.</p>
+        <ul>
+          <li>Choose a style in Preferences: Standard, Retro Desktop, after the desktops of the early 1990s, or Deco Pulp, a 1930s newsstand in an Art Deco tower, each in light or dark</li>
+          <li>Credit an artist when who drew what is unclear, in the form, filters, and CSV files</li>
+          <li>Straighten and crop a photo with the arrow keys, a pixel at a time or ten with Shift</li>
+          <li>Collections opened in this version are upgraded and can no longer be opened in 0.1.5 or earlier</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.5" date="2026-10-20">
       <description>
         <p>Every-issue characters and teams, pedigrees, edition dates, and editing a saved photo.</p>
