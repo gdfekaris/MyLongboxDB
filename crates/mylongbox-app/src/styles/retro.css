@@ -28,10 +28,10 @@
   --chrome-shade: #9a9a9a;
   --chrome-line: rgba(255, 255, 255, 0.18);
   --chrome-gap: rgba(255, 255, 255, 0);
-  --workspace: #808080;
-  --workspace-ink: #ffffff;
-  --workspace-dim: #e0e0e0;
-  --workspace-warn: #ffff00;
+  --workspace: #c0c0c0;
+  --workspace-ink: #000000;
+  --workspace-dim: #404040;
+  --workspace-warn: #800000;
 
   --window-bg-color: var(--face);
   --window-fg-color: var(--ink);
@@ -291,9 +291,9 @@ gridview > child:selected, columnview > listview > row:selected,
       var(--chrome-lit), var(--chrome) 45%, var(--chrome-shade));
 }
 
-/* The gallery lies on the workspace grey that held a program's
- * document windows, charcoal in the dark, as on NeXT's screens. Its
- * captions are light to read on it. */
+/* The gallery lies on VGA's light grey, the grey of the period's
+ * button faces and dialogs, and in the dark on charcoal, as on NeXT's
+ * screens. Its dimmed captions are darkened to stay legible on it. */
 gridview {
   background-color: var(--workspace);
   background-image: none;
