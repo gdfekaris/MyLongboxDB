@@ -3,7 +3,8 @@
  * clipped corners, white wells to type into, navy for what is active
  * or chosen, bold type throughout, dotted focus rectangles, etched
  * group boxes, dithered troughs and patterned desktops. The title bar
- * keeps its navy fade, a touch from later in the decade. Type keeps its
+ * keeps its navy fade, and the sidebar and gallery sit on brushed
+ * chrome, touches from later in the decade. Type keeps its
  * pixel grid but stays full size, so it reads as well as anything
  * today. */
 
@@ -22,6 +23,11 @@
   --well: #ffffff;
   --select: #000080;
   --select-fg: #ffffff;
+  --chrome-lit: #e8e8e8;
+  --chrome: #b4b4b4;
+  --chrome-shade: #9a9a9a;
+  --chrome-line: rgba(255, 255, 255, 0.18);
+  --chrome-gap: rgba(255, 255, 255, 0);
 
   --window-bg-color: var(--face);
   --window-fg-color: var(--ink);
@@ -70,6 +76,10 @@
     --well: #262626;
     --select: #00a0a0;
     --select-fg: #000000;
+    --chrome-lit: #5a5a5a;
+    --chrome: #383838;
+    --chrome-shade: #262626;
+    --chrome-line: rgba(255, 255, 255, 0.05);
 
     --headerbar-backdrop-color: #2a2a2a;
     --accent-color: #40d0d0;
@@ -261,9 +271,16 @@ gridview > child:selected, columnview > listview > row:selected,
   color: var(--select-fg);
 }
 
-/* The sidebar is a white list beside the window, as in File Manager. */
-.navigation-sidebar {
-  background-color: var(--well);
+/* The sidebar and the gallery are brushed chrome: a sheen lit from the
+ * left, crossed by fine lines. The lines fade to clear white, since
+ * fading to transparent black would darken them. */
+.navigation-sidebar, .sidebar-pane, gridview, columnview {
+  background-color: var(--chrome);
+  background-image:
+    repeating-linear-gradient(to bottom,
+      var(--chrome-line) 0 1px, var(--chrome-gap) 1px 3px),
+    linear-gradient(to right,
+      var(--chrome-lit), var(--chrome) 45%, var(--chrome-shade));
 }
 
 /* Settings come in group boxes: an etched frame with the group's name
