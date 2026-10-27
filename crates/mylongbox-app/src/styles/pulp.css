@@ -522,7 +522,9 @@ gridview > child:selected {
   background-color: color-mix(in srgb, var(--turquoise) 22%, transparent);
   box-shadow: inset 0 0 0 3px var(--turquoise);
 }
+/* The title clears the frame's shadow, even when it is lifted. */
 gridview > child .caption-heading {
+  margin-top: 8px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-size: 0.82em;
