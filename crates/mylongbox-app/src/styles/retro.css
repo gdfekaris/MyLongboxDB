@@ -320,8 +320,7 @@ gridview > child:selected .dim-label, gridview > child:selected .warning {
 }
 
 /* Settings come in group boxes: an etched frame with the group's name
- * breaking into its top line. The name's grey halo hides the line
- * behind it. */
+ * inside it, at the top. */
 preferencesgroup > box {
   background-image:
     linear-gradient(var(--shadow), var(--shadow)),
@@ -338,9 +337,9 @@ preferencesgroup > box {
     1px 100%, 1px 100%,
     100% 1px, 100% 1px;
   background-position:
-    0 9px, 1px 10px,
-    0 9px, 1px 10px,
-    calc(100% - 1px) 9px, 100% 10px,
+    0 0, 1px 1px,
+    0 0, 1px 1px,
+    calc(100% - 1px) 0, 100% 1px,
     0 calc(100% - 1px), 0 100%;
   background-repeat: no-repeat;
 }
@@ -348,30 +347,14 @@ preferencesgroup > box > box {
   margin-left: 10px;
   margin-right: 10px;
 }
+preferencesgroup > box > box:first-child {
+  margin-top: 10px;
+}
 preferencesgroup > box > box:last-child {
   margin-bottom: 10px;
 }
-/* A group without a name has nothing to break into the line, so what
- * it holds starts below it. */
-preferencesgroup > box > box:first-child:not(.header) {
-  margin-top: 16px;
-}
-/* Buttons beside a group's name sit inside the box, under the line,
- * while the name stays on it: the name keeps to the top of a header
- * tall enough for the buttons dropped below it. */
-preferencesgroup > box > .header > .labels:not(:last-child) {
-  min-height: 48px;
-}
-preferencesgroup > box > .header > .labels ~ * {
-  margin-top: 14px;
-}
 preferencesgroup .labels > .heading {
-  margin-left: 6px;
   color: var(--ink);
-  text-shadow:
-    -3px 0 var(--face), 3px 0 var(--face), 0 -2px var(--face), 0 2px var(--face),
-    -2px -2px var(--face), 2px -2px var(--face), -2px 2px var(--face), 2px 2px var(--face),
-    -5px 0 var(--face), 5px 0 var(--face);
 }
 
 /* The status bar: raised, its figures set into sunken panels. */
