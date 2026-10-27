@@ -15,7 +15,7 @@ use adw::prelude::*;
 use gtk::{gio, glib};
 use mylongbox_core::{
     CSV_COLUMNS, Database, ImportOutcome, ImportReport, ImportRun, ImportSettings, ImportSource,
-    auto_mapping,
+    auto_mapping, split_list,
 };
 use mylongbox_media::Output;
 
@@ -55,6 +55,8 @@ const LIST_COLUMNS: &[&str] = &[
     "Story Arcs",
     "Variant Cover Artists",
     "Tags",
+    "Series Characters",
+    "Series Teams",
 ];
 
 /// A few of a column's values, to show what it holds.
@@ -68,17 +70,11 @@ pub fn examples(rows: &[Vec<String>], column: usize) -> String {
             }
         }
     }
-    let shortened: Vec<String> = seen
-        .iter()
-        .map(|v| match v.char_indices().nth(30) {
-            Some((at, _)) => format!("{}\u{2026}", &v[..at]),
-            None => (*v).to_owned(),
-        })
-        .collect();
-    if shortened.is_empty() {
+    let short: Vec<String> = seen.iter().map(|v| shortened(v, 30)).collect();
+    if short.is_empty() {
         gettext("Empty in the first rows")
     } else {
-        shortened.join(" \u{b7} ")
+        short.join(" \u{b7} ")
     }
 }
 
@@ -86,25 +82,82 @@ pub fn examples(rows: &[Vec<String>], column: usize) -> String {
 /// MyLongboxDB's own files, and otherwise whichever of the offered
 /// separators its list columns use most.
 pub fn guess_separator(rows: &[Vec<String>], mapping: &[Option<&'static str>]) -> char {
-    let lists: Vec<usize> = mapping
-        .iter()
-        .enumerate()
-        .filter(|(_, m)| m.is_some_and(|f| LIST_COLUMNS.contains(&f)))
-        .map(|(i, _)| i)
-        .collect();
-    let used = |separator: char| {
-        rows.iter()
-            .flat_map(|r| lists.iter().filter_map(|i| r.get(*i)))
-            .filter(|cell| cell.contains(separator))
-            .count()
-    };
     SEPARATORS
         .iter()
-        .map(|(_, s)| (*s, used(*s)))
+        .map(|(_, s)| (*s, uses(rows, mapping, *s)))
         .rev()
         .max_by_key(|(_, n)| *n)
         .filter(|(_, n)| *n > 0)
         .map_or(';', |(s, _)| s)
+}
+
+/// The non-empty cells of the columns chosen to hold lists of names.
+fn list_cells<'a>(
+    rows: &'a [Vec<String>],
+    mapping: &'a [Option<&'static str>],
+) -> impl Iterator<Item = &'a str> {
+    rows.iter()
+        .flat_map(move |r| {
+            mapping
+                .iter()
+                .zip(r)
+                .filter(|(m, _)| m.is_some_and(|f| LIST_COLUMNS.contains(&f)))
+                .map(|(_, cell)| cell.trim())
+        })
+        .filter(|cell| !cell.is_empty())
+}
+
+/// How many list cells hold `separator`.
+fn uses(rows: &[Vec<String>], mapping: &[Option<&'static str>], separator: char) -> usize {
+    list_cells(rows, mapping)
+        .filter(|cell| cell.contains(separator))
+        .count()
+}
+
+/// A list cell from the first rows and the names `separator` splits it
+/// into, so the choice can be seen before anything is imported. A cell
+/// holding one of the offered separators is shown first, as it shows the
+/// most.
+pub fn separator_example(
+    rows: &[Vec<String>],
+    mapping: &[Option<&'static str>],
+    separator: char,
+) -> Option<(String, Vec<String>)> {
+    let offered = |cell: &&str| SEPARATORS.iter().any(|(_, s)| cell.contains(*s));
+    let cell = list_cells(rows, mapping)
+        .find(offered)
+        .or_else(|| list_cells(rows, mapping).next())?;
+    Some((cell.to_owned(), split_list(cell, separator)))
+}
+
+/// Another offered separator the file's lists use, when the one chosen
+/// is in none of them, so each of those lists would be read as one name.
+pub fn separator_mismatch(
+    rows: &[Vec<String>],
+    mapping: &[Option<&'static str>],
+    separator: char,
+) -> Option<char> {
+    if uses(rows, mapping, separator) > 0 {
+        return None;
+    }
+    let used = guess_separator(rows, mapping);
+    (used != separator && uses(rows, mapping, used) > 0).then_some(used)
+}
+
+/// A separator as the list of choices names it.
+fn separator_name(separator: char) -> String {
+    SEPARATORS
+        .iter()
+        .find(|(_, s)| *s == separator)
+        .map_or_else(|| separator.to_string(), |(name, _)| gettext(name))
+}
+
+/// Text shortened to `chars` characters, marking where it was cut.
+fn shortened(text: &str, chars: usize) -> String {
+    match text.char_indices().nth(chars) {
+        Some((at, _)) => format!("{}\u{2026}", &text[..at]),
+        None => text.to_owned(),
+    }
 }
 
 /// Why the columns as chosen cannot be imported, if they cannot.
@@ -316,6 +369,10 @@ struct Wizard {
     columns: Vec<adw::ComboRow>,
     columns_group: adw::PreferencesGroup,
     separator: adw::ComboRow,
+    /// How the chosen separator reads a list from the file.
+    example: adw::ActionRow,
+    /// The first rows, to show how the chosen separator reads them.
+    samples: Vec<Vec<String>>,
     skip: adw::SwitchRow,
     progress: gtk::ProgressBar,
     progress_label: gtk::Label,
@@ -341,17 +398,65 @@ impl Wizard {
             .collect()
     }
 
+    fn separator(&self) -> char {
+        SEPARATORS
+            .get(usize::try_from(self.separator.selected()).unwrap_or(0))
+            .map_or(';', |s| s.1)
+    }
+
+    /// Another separator the file's lists use, when the chosen one is
+    /// in none of them.
+    fn mismatch(&self) -> Option<char> {
+        separator_mismatch(&self.samples, &self.mapping(), self.separator())
+    }
+
+    /// Shows, under the separator, how it reads a list from the file,
+    /// and warns when it would read each list as one name.
+    fn update_separator(&self) {
+        let separator = self.separator();
+        let example = separator_example(&self.samples, &self.mapping(), separator);
+        let mismatch = self.mismatch();
+        let text = match (example, mismatch) {
+            (None, _) => gettext("No list of names in the first rows"),
+            (Some((cell, _)), Some(used)) => gettext_f(
+                "\u{201c}{cell}\u{201d} would be read as one name. The file\u{2019}s lists are separated by {used}.",
+                &[
+                    ("cell", &shortened(&cell, 40)),
+                    ("used", &separator_name(used)),
+                ],
+            ),
+            (Some((cell, names)), None) => {
+                let shown: Vec<String> = names.iter().map(|n| shortened(n, 30)).collect();
+                ngettext_f(
+                    "\u{201c}{cell}\u{201d} is read as {count} name: {names}",
+                    "\u{201c}{cell}\u{201d} is read as {count} names: {names}",
+                    names.len(),
+                    &[
+                        ("cell", &shortened(&cell, 40)),
+                        ("count", &names.len().to_string()),
+                        ("names", &shown.join(" \u{b7} ")),
+                    ],
+                )
+            }
+        };
+        self.example.set_title(&text);
+        if mismatch.is_some() {
+            self.example.remove_css_class("dim-label");
+            self.example.add_css_class("warning");
+        } else {
+            self.example.remove_css_class("warning");
+            self.example.add_css_class("dim-label");
+        }
+    }
+
     fn settings(&self) -> Option<ImportSettings> {
         let mapping = self.mapping();
         if mapping_problem(&mapping).is_some() {
             return None;
         }
-        let separator = SEPARATORS
-            .get(usize::try_from(self.separator.selected()).unwrap_or(0))
-            .map_or(';', |s| s.1);
         Some(ImportSettings {
             mapping,
-            separator,
+            separator: self.separator(),
             today: format::today()?,
             skip_likely_duplicates: self.skip.is_active(),
         })
@@ -401,6 +506,7 @@ impl Wizard {
             gettext("Choose what each column holds. Columns left out are not imported.")
         });
         self.columns_group.set_description(Some(&description));
+        self.update_separator();
         self.next.set_sensitive(match self.stage.get() {
             Stage::Columns => problem.is_none(),
             Stage::Checked(n) => n > 0,
@@ -426,6 +532,24 @@ impl Wizard {
 
     fn show_report(&self, report: &ImportReport, done: bool) {
         let page = adw::PreferencesPage::new();
+        if !done && let Some(used) = self.mismatch() {
+            let group = adw::PreferencesGroup::new();
+            let row = adw::ActionRow::builder()
+                .title(gettext("Lists Will Not Be Split Into Names"))
+                .subtitle(gettext_f(
+                    "Names in a cell are set to be separated by {chosen}, but the file\u{2019}s lists use {used}, so each list would be added as one long name. Go back to change it.",
+                    &[
+                        ("chosen", &separator_name(self.separator())),
+                        ("used", &separator_name(used)),
+                    ],
+                ))
+                .subtitle_lines(0)
+                .css_classes(["warning"])
+                .build();
+            row.add_prefix(&gtk::Image::from_icon_name("dialog-warning-symbolic"));
+            group.add(&row);
+            page.add(&group);
+        }
         let parts = report_parts(report, done);
         if parts.is_empty() {
             let group = adw::PreferencesGroup::new();
@@ -648,8 +772,7 @@ pub fn open(
         })
         .build();
     let separator = adw::ComboRow::builder()
-        .title(gettext("Names in a Cell Are Separated By"))
-        .subtitle(gettext("As in \u{201c}Len Wein; Bernie Wrightson\u{201d}"))
+        .title(gettext("Names in This File Are Separated By"))
         .model(&gtk::StringList::new(
             &SEPARATORS
                 .map(|s| gettext(s.0))
@@ -666,7 +789,14 @@ pub fn open(
             "Books whose issue, variant, printing, and distribution you already own",
         ))
         .build();
+    // Names come from the file.
+    let example = adw::ActionRow::builder()
+        .use_markup(false)
+        .title_lines(0)
+        .css_classes(["dim-label"])
+        .build();
     file.add(&separator);
+    file.add(&example);
     file.add(&skip);
 
     let columns_group = adw::PreferencesGroup::builder()
@@ -774,6 +904,8 @@ pub fn open(
         columns,
         columns_group,
         separator,
+        example,
+        samples,
         skip,
         progress,
         progress_label,
@@ -788,6 +920,14 @@ pub fn open(
         row.connect_selected_notify(move |_| {
             if let Some(w) = weak.upgrade() {
                 w.update_next();
+            }
+        });
+    }
+    {
+        let weak = Rc::downgrade(&wizard);
+        wizard.separator.connect_selected_notify(move |_| {
+            if let Some(w) = weak.upgrade() {
+                w.update_separator();
             }
         });
     }
@@ -874,6 +1014,38 @@ mod tests {
         // Only the series has commas, and it is not a list.
         let none = rows(&[&["Thor, the", "Len Wein", ""]]);
         assert_eq!(guess_separator(&none, &mapping), ';');
+    }
+
+    #[test]
+    fn the_example_shows_how_a_list_is_split() {
+        let mapping = [Some("Series"), Some("Pencillers"), Some("Characters")];
+        let cast = rows(&[
+            &["Thor, the", "Jack Kirby", ""],
+            &["Thor", "", "Thor; Loki; Odin"],
+        ]);
+        let (cell, names) = separator_example(&cast, &mapping, ';').unwrap();
+        assert_eq!(cell, "Thor; Loki; Odin", "a cell with a separator first");
+        assert_eq!(names, ["Thor", "Loki", "Odin"]);
+        let (_, names) = separator_example(&cast, &mapping, ',').unwrap();
+        assert_eq!(names, ["Thor; Loki; Odin"]);
+        let plain = rows(&[&["Thor", "Jack Kirby", ""]]);
+        let (cell, _) = separator_example(&plain, &mapping, ';').unwrap();
+        assert_eq!(cell, "Jack Kirby");
+        assert_eq!(separator_example(&plain, &[Some("Series")], ';'), None);
+    }
+
+    #[test]
+    fn a_separator_the_lists_never_use_is_caught() {
+        let mapping = [Some("Series"), Some("Characters"), Some("Series Teams")];
+        let semicolons = rows(&[&["Thor, the", "Thor; Loki", "Avengers; Asgardians"]]);
+        assert_eq!(separator_mismatch(&semicolons, &mapping, ','), Some(';'));
+        assert_eq!(separator_mismatch(&semicolons, &mapping, ';'), None);
+        // One name per cell: any choice reads them the same.
+        let single = rows(&[&["Thor", "Thor", ""]]);
+        assert_eq!(separator_mismatch(&single, &mapping, ','), None);
+        // A choice some list uses is the user's to make.
+        let mixed = rows(&[&["Thor", "Thor; Loki", "Avengers, Asgardians"]]);
+        assert_eq!(separator_mismatch(&mixed, &mapping, ','), None);
     }
 
     #[test]

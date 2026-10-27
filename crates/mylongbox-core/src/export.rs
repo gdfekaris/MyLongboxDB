@@ -201,7 +201,7 @@ fn unescape(item: &str) -> String {
 }
 
 /// A list cell's items, undoing [`join`]; empty items are dropped.
-pub(crate) fn split(text: &str, separator: char) -> Vec<String> {
+pub fn split(text: &str, separator: char) -> Vec<String> {
     split_escaped(text, separator)
         .iter()
         .map(|i| unescape(i))

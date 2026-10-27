@@ -86,7 +86,7 @@ pub use db::{APPLICATION_ID, Database};
 pub use detail::{CopyDetail, EditionDetail, IssueDetail};
 pub use entry::{BookEntry, Prefill, SavedBook, SeriesChoice};
 pub use error::{Error, Result};
-pub use export::COLUMNS as CSV_COLUMNS;
+pub use export::{COLUMNS as CSV_COLUMNS, split as split_list};
 pub use filter::{
     Choice, Compare, DateCondition, DateField, Filter, FilterSet, Flag, ListCondition, ListField,
     MoneyField, NumberField, OwnedAs, Presence, TextCondition, TextField,
