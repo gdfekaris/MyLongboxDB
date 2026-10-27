@@ -177,6 +177,35 @@ pub fn report_parts(report: &ImportReport, done: bool) -> Vec<Part> {
         };
         parts.push(part(title, Vec::new()));
     }
+    // Listed so a series made by mistake, such as a lookalike of one the
+    // collection has, is seen before the books go in.
+    let started: Vec<(String, String)> = report
+        .rows
+        .iter()
+        .filter(|r| r.new_series)
+        .map(|r| {
+            let line = gettext_f(
+                "Line {line}: {book}",
+                &[("line", &r.line.to_string()), ("book", &r.label)],
+            );
+            let what = if done {
+                gettext("Started a new series")
+            } else {
+                gettext("Starts a new series")
+            };
+            (line, what)
+        })
+        .collect();
+    if !started.is_empty() {
+        let n = started.len();
+        let title = ngettext_f(
+            "{count} new series",
+            "{count} new series",
+            n,
+            &[("count", &grouped(n))],
+        );
+        parts.push(part(title, started));
+    }
     let duplicates = listed(&|o| match o {
         ImportOutcome::LikelyDuplicate { note, added } => Some(match (added, done) {
             (true, true) => gettext_f("Added, though {reason}", &[("reason", note)]),
@@ -871,8 +900,9 @@ mod tests {
                 .map(|(i, outcome)| mylongbox_core::RowReport {
                     line: i + 2,
                     label: format!("Thor #{i}"),
+                    // The first book added starts its series.
+                    new_series: i == 0 && outcome == ImportOutcome::Added,
                     outcome,
-                    new_series: false,
                 })
                 .collect(),
             photo_problems,
@@ -902,6 +932,7 @@ mod tests {
             titles,
             [
                 "3 books to add",
+                "1 new series",
                 "1 likely duplicate",
                 "1 book already in the collection",
                 "1 row cannot be added",
@@ -910,13 +941,17 @@ mod tests {
         assert!(parts[0].rows.is_empty());
         assert_eq!(
             parts[1].rows,
+            [("Line 2: Thor #0".into(), "Starts a new series".into())]
+        );
+        assert_eq!(
+            parts[2].rows,
             [(
                 "Line 4: Thor #2".into(),
                 format!("To be added, though {note}")
             )]
         );
         assert_eq!(
-            parts[3].rows[0].1,
+            parts[4].rows[0].1,
             "Grade: \u{201c}11\u{201d} cannot be read"
         );
         assert_eq!(report_parts(&r, true)[0].title, "3 books added");
