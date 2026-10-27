@@ -53,14 +53,20 @@ impl RelmGridItem for Book {
             .hexpand(true)
             .vexpand(true)
             .build();
+        // The photo is laid over an empty box so that its own size, often
+        // wider than the tile, never widens the card.
+        let fill = gtk::Overlay::builder()
+            .child(&gtk::Box::builder().hexpand(true).vexpand(true).build())
+            .build();
+        fill.add_overlay(&photo);
+        fill.add_overlay(&missing);
         let cover = gtk::Box::builder()
             .width_request(COVER_WIDTH)
             .height_request(COVER_HEIGHT)
             .overflow(gtk::Overflow::Hidden)
             .css_classes(["card"])
             .build();
-        cover.append(&photo);
-        cover.append(&missing);
+        cover.append(&fill);
         let badge = gtk::Label::builder()
             .halign(gtk::Align::End)
             .valign(gtk::Align::Start)
@@ -177,6 +183,13 @@ impl RelmGridItem for Book {
         widgets.corner.set_label(&corner);
         widgets.key.set_visible(pulp && row.is_key);
         widgets.sheen.set_visible(pulp && texture.is_some());
+        // A wide grid cell would stretch the framed cover toward a square;
+        // Deco Pulp keeps it the shape of a comic, centred in the cell.
+        root.set_halign(if pulp {
+            gtk::Align::Center
+        } else {
+            gtk::Align::Fill
+        });
         widgets.series.set_label(&row.series);
         widgets.issue.set_label(&issue_line(row));
         let needs = if self.1 {
