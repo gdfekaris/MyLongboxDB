@@ -342,6 +342,20 @@ preferencesgroup > box > box {
 preferencesgroup > box > box:last-child {
   margin-bottom: 10px;
 }
+/* A group without a name has nothing to break into the line, so what
+ * it holds starts below it. */
+preferencesgroup > box > box:first-child:not(.header) {
+  margin-top: 16px;
+}
+/* Buttons beside a group's name sit inside the box, under the line,
+ * while the name stays on it: the name keeps to the top of a header
+ * tall enough for the buttons dropped below it. */
+preferencesgroup > box > .header > .labels:not(:last-child) {
+  min-height: 48px;
+}
+preferencesgroup > box > .header > .labels ~ * {
+  margin-top: 14px;
+}
 preferencesgroup .labels > .heading {
   margin-left: 6px;
   color: var(--ink);
