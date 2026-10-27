@@ -227,3 +227,73 @@ fn only_names_nothing_uses_are_removed() {
     let group = db.trash_groups().unwrap()[0].id;
     db.restore(group).unwrap();
 }
+
+fn lookalike(db: &Database, volume: Option<u32>, n: &str) -> SeriesId {
+    let mut fields = SeriesFields::new("Fantastic Four", Category::Comic);
+    fields.start_year = Some(1961);
+    fields.volume = volume;
+    let id = db.create_series(&fields).unwrap();
+    db.create_issue(id, &IssueFields::new(Some(IssueNumber::new(n).unwrap())))
+        .unwrap();
+    id
+}
+
+#[test]
+fn lookalike_series_are_told_apart_by_volume_and_merge_either_way() {
+    let db = db();
+    let blank = lookalike(&db, None, "29");
+    let vol_1 = lookalike(&db, Some(1), "3");
+    assert_eq!(
+        db.shelf_suggestions(Shelf::Series(blank), "fantastic")
+            .unwrap(),
+        ["Fantastic Four (1961 series, Vol. 1)"]
+    );
+    assert_eq!(
+        db.shelf_suggestions(Shelf::Series(vol_1), "fantastic")
+            .unwrap(),
+        ["Fantastic Four (1961 series, no volume)"]
+    );
+    // The label both share means the other one, never the series itself.
+    let kept = db
+        .merge_shelf(Shelf::Series(blank), "Fantastic Four (1961 series)")
+        .unwrap();
+    assert_eq!(kept, Shelf::Series(vol_1));
+    assert_eq!(db.issues_in_series(vol_1).unwrap().len(), 2);
+
+    let db = Database::open_in_memory().unwrap();
+    let blank = lookalike(&db, None, "29");
+    let vol_1 = lookalike(&db, Some(1), "3");
+    let kept = db
+        .merge_shelf(
+            Shelf::Series(vol_1),
+            "fantastic four (1961 series, no volume)",
+        )
+        .unwrap();
+    assert_eq!(kept, Shelf::Series(blank));
+}
+
+#[test]
+fn a_label_that_names_several_series_is_refused() {
+    let db = db();
+    let from = lookalike(&db, None, "1");
+    lookalike(&db, Some(1), "2");
+    lookalike(&db, Some(2), "3");
+    let refused = db.merge_shelf(Shelf::Series(from), "Fantastic Four (1961 series)");
+    assert!(
+        matches!(&refused, Err(Error::Invalid(why)) if why.contains("more than one series")),
+        "{refused:?}"
+    );
+    assert_eq!(db.list_series().unwrap().len(), 3);
+    let kept = db
+        .merge_shelf(Shelf::Series(from), "Fantastic Four (1961 series, Vol. 2)")
+        .unwrap();
+    assert_eq!(
+        db.issues_in_series(match kept {
+            Shelf::Series(id) => id,
+            _ => unreachable!(),
+        })
+        .unwrap()
+        .len(),
+        2
+    );
+}
