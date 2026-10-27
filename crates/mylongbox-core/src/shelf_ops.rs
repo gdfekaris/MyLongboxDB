@@ -1,16 +1,16 @@
 //! Renaming, merging, and deleting the entry behind a shelf, whatever
 //! list it belongs to, for the management menu on a shelf's page.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::browse::{Shelf, ShelfList};
-use crate::catalog::{query_all, same_series_label, series_label};
+use crate::catalog::{LabelMatch, match_series_label, query_all};
 use crate::db::Database;
 use crate::error::{Error, Result};
 use crate::lookup::LookupId;
 use crate::merge_series::SeriesMerge;
 use crate::model::{
-    BoxId, Category, CharacterId, CreatorId, PublisherId, SeriesId, StoryArcId, TeamId, TrashId,
+    BoxId, CharacterId, CreatorId, PublisherId, SeriesId, StoryArcId, TeamId, TrashId,
 };
 
 /// Runs `$body` with `$id` bound to the shelf's typed id, for every shelf
@@ -83,33 +83,18 @@ impl Database {
     ) -> Result<(SeriesId, SeriesMerge)> {
         let category = self.series(from)?.fields.category;
         let typed = into.trim();
-        let others: Vec<MergeLabel> = self
-            .merge_labels(category)?
-            .into_iter()
-            .filter(|s| s.id != from)
-            .collect();
-        // The label as listed first, then as series are usually
-        // written, which may name lookalikes together.
-        let listed: Vec<&MergeLabel> = others
+        let labels = self.series_labels()?;
+        let others = labels
             .iter()
-            .filter(|s| s.label.to_lowercase() == typed.to_lowercase())
-            .collect();
-        let found = if listed.len() == 1 {
-            listed
-        } else {
-            others
-                .iter()
-                .filter(|s| same_series_label(typed, &s.usual))
-                .collect()
-        };
-        let into = match found.as_slice() {
-            [one] => one.id,
-            [] => {
+            .filter(|s| s.id != from && s.category == category);
+        let into = match match_series_label(others, typed) {
+            LabelMatch::One(id) => id,
+            LabelMatch::None => {
                 return Err(Error::Invalid(format!(
                     "no series of the same kind is listed as \u{201c}{typed}\u{201d}"
                 )));
             }
-            _ => {
+            LabelMatch::Several => {
                 return Err(Error::Invalid(format!(
                     "more than one series is listed as \u{201c}{typed}\u{201d}; \
                      choose one from the suggestions"
@@ -215,13 +200,10 @@ impl Database {
         .into_iter()
         .collect();
         Ok(self
-            .list_series()?
+            .series_labels()?
             .into_iter()
             .filter(|s| empty.contains(&s.id))
-            .map(|s| {
-                let label = series_label(&s.fields.name, s.fields.start_year, s.fields.volume);
-                (s.id, label)
-            })
+            .map(|s| (s.id, s.label))
             .collect())
     }
 
@@ -264,57 +246,19 @@ impl Database {
                 let category = self.series(own)?.fields.category;
                 let text = text.to_lowercase();
                 Ok(self
-                    .merge_labels(category)?
+                    .series_labels()?
                     .into_iter()
-                    .filter(|s| s.id != own && s.label.to_lowercase().contains(&text))
+                    .filter(|s| {
+                        s.id != own
+                            && s.category == category
+                            && s.label.to_lowercase().contains(&text)
+                    })
                     .map(|s| s.label)
                     .take(9)
                     .collect())
             }
             _ => not_an_entry(),
         }
-    }
-
-    /// The live series of `category` as Merge Into lists them. A series
-    /// is usually labelled by its start year alone, so lookalikes that
-    /// differ only in volume also name it: `Fantastic Four (1961 series,
-    /// Vol. 1)` and `Fantastic Four (1961 series, no volume)`.
-    fn merge_labels(&self, category: Category) -> Result<Vec<MergeLabel>> {
-        let series: Vec<_> = self
-            .list_series()?
-            .into_iter()
-            .filter(|s| s.fields.category == category)
-            .collect();
-        let usual: Vec<String> = series
-            .iter()
-            .map(|s| series_label(&s.fields.name, s.fields.start_year, s.fields.volume))
-            .collect();
-        let mut sharing: HashMap<String, usize> = HashMap::new();
-        for label in &usual {
-            *sharing.entry(label.to_lowercase()).or_default() += 1;
-        }
-        Ok(series
-            .iter()
-            .zip(usual)
-            .map(|(s, usual)| {
-                let shared = sharing[&usual.to_lowercase()] > 1;
-                let f = &s.fields;
-                let label = match f.start_year {
-                    Some(year) if shared => {
-                        let volume = f
-                            .volume
-                            .map_or_else(|| "no volume".to_owned(), |v| format!("Vol. {v}"));
-                        format!("{} ({year} series, {volume})", f.name)
-                    }
-                    _ => usual.clone(),
-                };
-                MergeLabel {
-                    id: s.id,
-                    label,
-                    usual,
-                }
-            })
-            .collect())
     }
 
     /// Whether the list behind a shelf keeps alternate names.
@@ -324,11 +268,4 @@ impl Database {
             Shelf::Creator(_) | Shelf::Character(_) | Shelf::Team(_) | Shelf::StoryArc(_)
         )
     }
-}
-
-/// A series as Merge Into lists it, and as it is usually labelled.
-struct MergeLabel {
-    id: SeriesId,
-    label: String,
-    usual: String,
 }

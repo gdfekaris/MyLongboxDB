@@ -73,7 +73,10 @@ mod values;
 
 pub use browse::{CopyRow, Need, Shelf, ShelfEntry, ShelfList};
 pub use bulk::BulkChange;
-pub use catalog::{parse_series_label, same_series_label, series_label};
+pub use catalog::{
+    LabelMatch, SeriesLabel, match_series_label, parse_series_label, same_series_label,
+    series_label,
+};
 pub use collects::{CollectedIn, CollectedIssue, Ownership, PreviewEntry};
 pub use collects_text::{
     CollectsEntry, MAX_ENTRIES, MAX_RANGE, SeriesRef, format_collects, parse_collects,

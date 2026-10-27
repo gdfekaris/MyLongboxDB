@@ -8,9 +8,9 @@ use adw::prelude::*;
 use gtk::glib;
 use mylongbox_core::{
     Amount, Binding, BookCondition, BookEntry, BoxId, Category, CharacterId, CopyId, CreatorId,
-    Currency, Database, Distribution, Grade, GradeType, Isbn, IssueNumber, LookupId,
-    MagazineFormat, PageQuality, PublisherId, Role, SeriesChoice, SeriesId, SignatureFields,
-    SignaturePlacement, StoryArcId, TagId, TeamId, Verification,
+    Currency, Database, Distribution, Grade, GradeType, Isbn, IssueNumber, LabelMatch, LookupId,
+    MagazineFormat, PageQuality, PublisherId, Role, SeriesChoice, SeriesId, SeriesLabel,
+    SignatureFields, SignaturePlacement, StoryArcId, TagId, TeamId, Verification,
 };
 
 use crate::i18n::{gettext, gettext_f, gettext_noop, ngettext_f, pgettext};
@@ -65,6 +65,9 @@ pub struct Form {
     series: adw::EntryRow,
     /// The listed series whose label the series row holds, if any.
     picked_series: Rc<RefCell<Option<SeriesId>>>,
+    /// Whether the series row names lookalikes together, so neither is
+    /// picked and no new series is offered.
+    series_unclear: Rc<Cell<bool>>,
     start_year: adw::EntryRow,
     volume: adw::EntryRow,
     publisher: adw::EntryRow,
@@ -238,6 +241,7 @@ impl Form {
         let issue = section(&prefs, &gettext("Issue"), None, true);
         let series = entry_row(&gettext("Series"));
         let picked_series: Rc<RefCell<Option<SeriesId>>> = Rc::default();
+        let series_unclear: Rc<Cell<bool>> = Rc::default();
         let start_year = entry_row(&gettext("Start Year of New Series"));
         let volume = entry_row(&gettext("Volume of New Series"));
         let publisher = entry_row(&gettext("Publisher of New Series"));
@@ -305,6 +309,7 @@ impl Form {
             // not one already listed.
             let db = db.clone();
             let picked = picked_series.clone();
+            let unclear = series_unclear.clone();
             // A book line numbers its volumes itself, so a series-level
             // volume would only confuse.
             let new_rows: Vec<adw::EntryRow> = if category == Category::CollectedEdition {
@@ -322,11 +327,13 @@ impl Form {
             let update = {
                 let labels = labels.clone();
                 move |text: &str| {
-                    let found = labels()
-                        .into_iter()
-                        .find(|(label, _)| mylongbox_core::same_series_label(text, label));
-                    *picked.borrow_mut() = found.as_ref().map(|(_, id)| *id);
-                    let new = found.is_none() && !text.trim().is_empty();
+                    let found = mylongbox_core::match_series_label(&labels(), text);
+                    *picked.borrow_mut() = match found {
+                        LabelMatch::One(id) => Some(id),
+                        LabelMatch::None | LabelMatch::Several => None,
+                    };
+                    unclear.set(found == LabelMatch::Several);
+                    let new = found == LabelMatch::None && !text.trim().is_empty();
                     for row in &new_rows {
                         row.set_visible(new);
                     }
@@ -346,7 +353,7 @@ impl Form {
                     let text = text.to_lowercase();
                     labels()
                         .into_iter()
-                        .map(|(label, _)| label)
+                        .map(|s| s.label)
                         .filter(|label| label.to_lowercase().contains(&text))
                         .collect()
                 },
@@ -619,6 +626,7 @@ impl Form {
             dirty,
             series,
             picked_series,
+            series_unclear,
             start_year,
             volume,
             publisher,
@@ -773,11 +781,8 @@ impl Form {
             && let Some(db) = db.upgrade()
             && let Ok(series) = db.series(id)
         {
-            self.series.set_text(&mylongbox_core::series_label(
-                &series.fields.name,
-                series.fields.start_year,
-                series.fields.volume,
-            ));
+            self.series
+                .set_text(&db.shown_series_label(&series).unwrap_or_default());
         }
         let i = &e.issue;
         self.number
@@ -873,6 +878,14 @@ impl Form {
         let series_text = self.series.text().trim().to_owned();
         if series_text.is_empty() {
             return invalid(&self.series, &gettext("Enter a series"));
+        }
+        if self.series_unclear.get() {
+            return invalid(
+                &self.series,
+                &gettext(
+                    "More than one series is listed this way; choose one from the suggestions",
+                ),
+            );
         }
         let series = match *self.picked_series.borrow() {
             Some(id) => SeriesChoice::Existing(id),
@@ -1115,19 +1128,14 @@ fn contents_series(name: &str, start_year: Option<u16>) -> String {
     }
 }
 
-fn series_labels(db: &Weak<Database>, category: Category) -> Vec<(String, SeriesId)> {
+fn series_labels(db: &Weak<Database>, category: Category) -> Vec<SeriesLabel> {
     let Some(db) = db.upgrade() else {
         return Vec::new();
     };
-    db.list_series()
+    db.series_labels()
         .unwrap_or_default()
         .into_iter()
-        .filter(|s| s.fields.category == category)
-        .map(|s| {
-            let f = &s.fields;
-            let label = mylongbox_core::series_label(&f.name, f.start_year, f.volume);
-            (label, s.id)
-        })
+        .filter(|s| s.category == category)
         .collect()
 }
 

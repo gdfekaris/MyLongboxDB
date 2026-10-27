@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::catalog::{issue_label, live};
+use crate::catalog::live;
 use crate::collects_text::{CollectsEntry, SeriesRef, format_collects, parse_collects};
 use crate::db::Database;
 use crate::error::{Error, Result};
@@ -178,7 +178,7 @@ impl Database {
                 let issue = self.issue(collection)?;
                 Ok(CollectedIn {
                     collection,
-                    label: issue_label(&self.series(issue.series)?, &issue),
+                    label: self.issue_label(&self.series(issue.series)?, &issue)?,
                     owned,
                 })
             })

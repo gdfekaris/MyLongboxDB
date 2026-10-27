@@ -1,7 +1,7 @@
 //! Everything the detail page shows about one issue: its series, credits,
 //! contents, and every edition and copy the owner has of it.
 
-use crate::catalog::{issue_label, live};
+use crate::catalog::live;
 use crate::collects::{CollectedIn, CollectedIssue, Ownership};
 use crate::db::Database;
 use crate::error::Result;
@@ -87,7 +87,7 @@ impl Database {
             })
             .collect::<Result<_>>()?;
         let detail = IssueDetail {
-            label: issue_label(&series, &issue),
+            label: self.issue_label(&series, &issue)?,
             publisher,
             credits: self.credits(id)?,
             characters: self.characters(id)?,

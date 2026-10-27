@@ -3,7 +3,7 @@
 
 use rusqlite::{Row, ToSql};
 
-use crate::catalog::{amount_at, cover_date_at, query_all, series_label};
+use crate::catalog::{amount_at, cover_date_at, query_all, shown_label};
 use crate::date::Date;
 use crate::db::Database;
 use crate::error::Result;
@@ -352,6 +352,23 @@ macro_rules! copy_order {
     };
 }
 
+/// Whether another live series shares the name and start year of the
+/// series aliased `$s`, so the label it usually goes by would name both;
+/// such lookalikes are labelled with their volume too.
+macro_rules! lookalike {
+    ($s:literal) => {
+        concat!(
+            "EXISTS (SELECT 1 FROM series o WHERE o.id <> ",
+            $s,
+            ".id AND o.name = ",
+            $s,
+            ".name COLLATE NOCASE AND o.start_year = ",
+            $s,
+            ".start_year AND o.trash_id IS NULL)"
+        )
+    };
+}
+
 /// Natural order: by series, then issue number (so 2 comes before 10),
 /// then each issue's editions and copies in their own order.
 macro_rules! natural_order {
@@ -387,7 +404,9 @@ macro_rules! copy_rows {
                  c.added_at,
                  EXISTS (SELECT 1 FROM cover_photo p WHERE p.copy_id = c.id AND p.side = 'front'),
                  EXISTS (SELECT 1 FROM cover_photo p WHERE p.copy_id = c.id AND p.side = 'back'),
-                 s.volume
+                 s.volume, ",
+            lookalike!("s"),
+            "
              FROM ",
             live_copies!(),
             " AND ",
@@ -481,7 +500,9 @@ impl Database {
                 conn,
                 concat!(
                     "SELECT x.id, x.name, coalesce(p.name, ''), count(m.copy), x.start_year,
-                         x.volume
+                         x.volume, ",
+                    lookalike!("x"),
+                    "
                      FROM series x LEFT JOIN publisher p ON p.id = x.publisher_id
                      LEFT JOIN (",
                     shelf_pairs!(series),
@@ -493,7 +514,7 @@ impl Database {
                 (),
                 |row| {
                     let mut e = entry(row, |id| Shelf::Series(SeriesId(id)))?;
-                    e.name = series_label(&e.name, row.get(4)?, row.get(5)?);
+                    e.name = shown_label(&e.name, row.get(4)?, row.get(5)?, row.get(6)?);
                     Ok(e)
                 },
             ),
@@ -531,7 +552,12 @@ pub(crate) fn copy_row(row: &Row<'_>) -> rusqlite::Result<CopyRow> {
         copy: row.get(0)?,
         issue: row.get(1)?,
         category: row.get(2)?,
-        series: series_label(&row.get::<_, String>(3)?, row.get(4)?, row.get(28)?),
+        series: shown_label(
+            &row.get::<_, String>(3)?,
+            row.get(4)?,
+            row.get(28)?,
+            row.get(29)?,
+        ),
         number: row.get(5)?,
         title: row.get(6)?,
         variant: row.get(7)?,

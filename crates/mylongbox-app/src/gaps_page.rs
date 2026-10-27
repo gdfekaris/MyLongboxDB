@@ -101,10 +101,9 @@ pub fn page(gaps: &[SeriesGaps], count_collected: bool, hooks: &Hooks) -> adw::P
         runs.add(&none);
     }
     for g in gaps {
-        let label = mylongbox_core::series_label(&g.name, g.start_year, g.volume);
         let row = adw::ActionRow::new();
         row.set_use_markup(false);
-        row.set_title(&label);
+        row.set_title(&g.label);
         row.set_subtitle(&gettext_f(
             "Missing {numbers}\n{owned}",
             &[
@@ -116,6 +115,7 @@ pub fn page(gaps: &[SeriesGaps], count_collected: bool, hooks: &Hooks) -> adw::P
         row.set_activatable(true);
         row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
         let (hook, series) = (hooks.open.clone(), g.series);
+        let label = g.label.clone();
         row.connect_activated(move |_| hook(series, label.clone()));
         runs.add(&row);
     }
@@ -151,6 +151,7 @@ mod tests {
             name: "X".into(),
             start_year: None,
             volume: None,
+            label: "X".into(),
             category: Category::CollectedEdition,
             owned: 3,
             first: 1,

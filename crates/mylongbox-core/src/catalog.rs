@@ -479,7 +479,7 @@ impl Database {
         let tx = self.tx()?;
         let series = self.series(id)?;
         live(series.trash)?;
-        let trash = new_trash_group(&tx, &label_of(&series))?;
+        let trash = new_trash_group(&tx, &self.shown_series_label(&series)?)?;
         tx.execute(
             "UPDATE copy SET trash_id = ?1 WHERE trash_id IS NULL AND edition_id IN (
                  SELECT edition.id FROM edition JOIN issue ON issue.id = edition.issue_id
@@ -508,7 +508,7 @@ impl Database {
         let tx = self.tx()?;
         let issue = self.issue(id)?;
         live(issue.trash)?;
-        let label = issue_label(&self.series(issue.series)?, &issue);
+        let label = self.issue_label(&self.series(issue.series)?, &issue)?;
         let trash = new_trash_group(&tx, &label)?;
         tx.execute(
             "UPDATE copy SET trash_id = ?1 WHERE trash_id IS NULL AND edition_id IN (
@@ -693,12 +693,60 @@ impl Database {
         };
         let label = |id| -> Result<String> {
             let issue = self.issue(id)?;
-            Ok(issue_label(&self.series(issue.series)?, &issue))
+            self.issue_label(&self.series(issue.series)?, &issue)
         };
         Ok(Error::StillReprinted {
             issue: label(issue)?,
             collection: label(collection)?,
         })
+    }
+
+    // Labels ---------------------------------------------------------------
+
+    /// A series' label as the app shows it; see [`shown_label`].
+    pub fn shown_series_label(&self, series: &Series) -> Result<String> {
+        let f = &series.fields;
+        let lookalike: bool = self.conn.query_row(
+            concat!("SELECT ", lookalike!("s"), " FROM series s WHERE s.id = ?1"),
+            [series.id],
+            |row| row.get(0),
+        )?;
+        Ok(shown_label(&f.name, f.start_year, f.volume, lookalike))
+    }
+
+    /// e.g. `Amazing Spider-Man (1963 series) #121`, or a standalone
+    /// book's own title.
+    pub(crate) fn issue_label(&self, series: &Series, issue: &Issue) -> Result<String> {
+        let series = self.shown_series_label(series)?;
+        Ok(match (&issue.fields.number, issue.fields.title.as_str()) {
+            (Some(number), _) => format!("{series} #{number}"),
+            (None, "") => series,
+            (None, title) => format!("{series}: {title}"),
+        })
+    }
+
+    /// Every series not in Trash as the app lists it, by name.
+    pub fn series_labels(&self) -> Result<Vec<SeriesLabel>> {
+        query_all(
+            &self.conn,
+            concat!(
+                "SELECT s.id, s.category, s.name, s.start_year, s.volume, ",
+                lookalike!("s"),
+                " FROM series s WHERE s.trash_id IS NULL
+                 ORDER BY s.name COLLATE NOCASE, s.start_year, s.volume, s.id"
+            ),
+            (),
+            |row| {
+                let (name, start_year, volume): (String, _, _) =
+                    (row.get(2)?, row.get(3)?, row.get(4)?);
+                Ok(SeriesLabel {
+                    id: row.get(0)?,
+                    category: row.get(1)?,
+                    label: shown_label(&name, start_year, volume, row.get(5)?),
+                    usual: series_label(&name, start_year, volume),
+                })
+            },
+        )
     }
 
     // Helpers --------------------------------------------------------------
@@ -722,7 +770,7 @@ impl Database {
     /// standard cover.
     fn issue_and_variant(&self, edition: &Edition) -> Result<String> {
         let issue = self.issue(edition.issue)?;
-        let label = issue_label(&self.series(issue.series)?, &issue);
+        let label = self.issue_label(&self.series(issue.series)?, &issue)?;
         Ok(if edition.fields.variant.is_empty() {
             label
         } else {
@@ -752,11 +800,6 @@ pub(crate) fn new_trash_group(conn: &Connection, label: &str) -> Result<TrashId>
     Ok(TrashId(conn.last_insert_rowid()))
 }
 
-fn label_of(series: &Series) -> String {
-    let f = &series.fields;
-    series_label(&f.name, f.start_year, f.volume)
-}
-
 /// A series' name with what tells apart relaunches that share it: its
 /// start year, as in `Amazing Spider-Man (1963 series)`, or failing
 /// that its volume, as in `Black Panther (Vol. 3)`.
@@ -768,7 +811,73 @@ pub fn series_label(name: &str, start_year: Option<u16>, volume: Option<u32>) ->
     }
 }
 
-/// Reads a series as [`series_label`] writes it, or with the year alone
+/// A series' label as the app shows it: [`series_label`], unless another
+/// series shares its name and start year (`lookalike`), when the volume
+/// tells them apart too: `Fantastic Four (1961 series, Vol. 1)` and
+/// `Fantastic Four (1961 series, no volume)`.
+pub(crate) fn shown_label(
+    name: &str,
+    start_year: Option<u16>,
+    volume: Option<u32>,
+    lookalike: bool,
+) -> String {
+    match start_year {
+        Some(year) if lookalike => {
+            let volume = volume.map_or_else(|| "no volume".to_owned(), |v| format!("Vol. {v}"));
+            format!("{name} ({year} series, {volume})")
+        }
+        _ => series_label(name, start_year, volume),
+    }
+}
+
+/// A live series as the app lists it, for finding one by its label.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SeriesLabel {
+    pub id: SeriesId,
+    pub category: Category,
+    /// As [`shown_label`] writes it.
+    pub label: String,
+    /// As [`series_label`] writes it, which lookalikes share.
+    usual: String,
+}
+
+/// Which series typed text names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LabelMatch {
+    One(SeriesId),
+    None,
+    /// The text names lookalikes together.
+    Several,
+}
+
+/// The series of `labels` that `text` names: by the label it is shown
+/// with, or failing that as series are usually written, which a
+/// lookalike's own label never needs.
+pub fn match_series_label<'a>(
+    labels: impl IntoIterator<Item = &'a SeriesLabel>,
+    text: &str,
+) -> LabelMatch {
+    let labels: Vec<&SeriesLabel> = labels.into_iter().collect();
+    let text = text.trim();
+    let shown: Vec<&&SeriesLabel> = labels
+        .iter()
+        .filter(|s| s.label.eq_ignore_ascii_case(text))
+        .collect();
+    if let [one] = shown.as_slice() {
+        return LabelMatch::One(one.id);
+    }
+    let usual: Vec<&&SeriesLabel> = labels
+        .iter()
+        .filter(|s| same_series_label(text, &s.usual))
+        .collect();
+    match usual.as_slice() {
+        [] => LabelMatch::None,
+        [one] => LabelMatch::One(one.id),
+        _ => LabelMatch::Several,
+    }
+}
+
+/// Reads a series as [`shown_label`] writes it, or with the year alone
 /// in brackets as earlier versions wrote it: the name, then the start
 /// year or volume the brackets name, if any.
 pub fn parse_series_label(text: &str) -> (String, Option<u16>, Option<u32>) {
@@ -778,18 +887,26 @@ pub fn parse_series_label(text: &str) -> (String, Option<u16>, Option<u32>) {
     {
         let name = text[..open].trim().to_owned();
         let inside = inside.trim();
+        // A lookalike's volume follows its year.
+        let (inside, volume) = match inside.rsplit_once(',') {
+            Some((year, volume)) if volume.trim().eq_ignore_ascii_case("no volume") => {
+                (year.trim(), None)
+            }
+            Some((year, volume)) => match volume_of(volume) {
+                Some(volume) => (year.trim(), Some(volume)),
+                None => (inside, None),
+            },
+            None => (inside, None),
+        };
         let year = inside.strip_suffix(" series").unwrap_or(inside).trim();
         if year.len() == 4
             && let Ok(year) = year.parse::<u16>()
             && year > 0
         {
-            return (name, Some(year), None);
+            return (name, Some(year), volume);
         }
-        if let Some(volume) = inside
-            .strip_prefix("Vol.")
-            .or_else(|| inside.strip_prefix("vol."))
-            .and_then(|v| v.trim().parse::<u32>().ok())
-            .filter(|v| *v > 0)
+        if volume.is_none()
+            && let Some(volume) = volume_of(inside)
         {
             return (name, None, Some(volume));
         }
@@ -797,20 +914,20 @@ pub fn parse_series_label(text: &str) -> (String, Option<u16>, Option<u32>) {
     (text.to_owned(), None, None)
 }
 
+/// `Vol. 3` as 3.
+fn volume_of(text: &str) -> Option<u32> {
+    let text = text.trim();
+    text.strip_prefix("Vol.")
+        .or_else(|| text.strip_prefix("vol."))
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .filter(|v| *v > 0)
+}
+
 /// Whether `text` names the series labelled `label`, written either
 /// way [`parse_series_label`] reads, ignoring case.
 pub fn same_series_label(text: &str, label: &str) -> bool {
     let (name, year, volume) = parse_series_label(text);
     series_label(&name, year, volume).eq_ignore_ascii_case(label)
-}
-
-pub(crate) fn issue_label(series: &Series, issue: &Issue) -> String {
-    let series = label_of(series);
-    match (&issue.fields.number, issue.fields.title.as_str()) {
-        (Some(number), _) => format!("{series} #{number}"),
-        (None, "") => series,
-        (None, title) => format!("{series}: {title}"),
-    }
 }
 
 fn query_one<P, T>(

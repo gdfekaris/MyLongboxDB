@@ -745,3 +745,128 @@ fn series_are_labelled_by_year_then_volume() {
     ));
     assert!(!same_series_label("X-Men (1991)", "X-Men (1963 series)"));
 }
+
+/// A comic series with one owned copy of `n`.
+fn owned_series(
+    db: &Database,
+    name: &str,
+    year: Option<u16>,
+    volume: Option<u32>,
+    n: &str,
+) -> SeriesId {
+    let mut f = SeriesFields::new(name, Category::Comic);
+    f.start_year = year;
+    f.volume = volume;
+    let series = db.create_series(&f).unwrap();
+    let issue = db
+        .create_issue(series, &IssueFields::new(number(n)))
+        .unwrap();
+    let edition = db.create_edition(issue, &EditionFields::default()).unwrap();
+    db.create_copy(edition, &CopyFields::default()).unwrap();
+    series
+}
+
+#[test]
+fn lookalike_series_are_shown_with_their_volume_everywhere() {
+    use crate::{Shelf, ShelfList};
+    let db = db();
+    let blank = owned_series(&db, "Fantastic Four", Some(1961), None, "29");
+    let vol_1 = owned_series(&db, "fantastic four", Some(1961), Some(1), "3");
+    // A volume alone does not add to a label no other series shares.
+    owned_series(&db, "Thor", Some(1966), Some(1), "337");
+    let blank_label = "Fantastic Four (1961 series, no volume)";
+    let vol_1_label = "fantastic four (1961 series, Vol. 1)";
+
+    let shown: Vec<String> = db
+        .series_labels()
+        .unwrap()
+        .into_iter()
+        .map(|s| s.label)
+        .collect();
+    assert_eq!(shown, [blank_label, vol_1_label, "Thor (1966 series)"]);
+    let listed: Vec<String> = db
+        .shelf_list(ShelfList::Series)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.name)
+        .collect();
+    assert_eq!(listed, shown);
+    let books: Vec<String> = db
+        .browse(Shelf::Everything)
+        .unwrap()
+        .iter()
+        .map(|r| r.label())
+        .collect();
+    assert!(books.contains(&format!("{blank_label} #29")), "{books:?}");
+    assert!(books.contains(&format!("{vol_1_label} #3")), "{books:?}");
+    assert!(books.contains(&"Thor (1966 series) #337".to_owned()));
+    let issue = db.issues_in_series(vol_1).unwrap()[0].id;
+    assert_eq!(
+        db.issue_detail(issue).unwrap().label,
+        format!("{vol_1_label} #3")
+    );
+
+    // Trash names what was deleted as it was shown; then the other one
+    // has no lookalike left and goes back to its usual label.
+    db.trash_series(blank).unwrap();
+    assert_eq!(db.trash_groups().unwrap()[0].label, blank_label);
+    assert_eq!(
+        db.issue_detail(issue).unwrap().label,
+        "fantastic four (1961 series) #3"
+    );
+}
+
+#[test]
+fn lookalikes_are_found_by_their_own_labels() {
+    use crate::{LabelMatch, match_series_label, parse_series_label};
+    let db = db();
+    let blank = owned_series(&db, "Fantastic Four", Some(1961), None, "1");
+    let vol_1 = owned_series(&db, "Fantastic Four", Some(1961), Some(1), "1");
+    let thor = owned_series(&db, "Thor", Some(1966), Some(1), "1");
+    let labels = db.series_labels().unwrap();
+    let find = |text| match_series_label(&labels, text);
+    assert_eq!(
+        find("Fantastic Four (1961 series, Vol. 1)"),
+        LabelMatch::One(vol_1)
+    );
+    assert_eq!(
+        find("fantastic four (1961 series, no volume)"),
+        LabelMatch::One(blank)
+    );
+    // As usually written, the label names both.
+    assert_eq!(find("Fantastic Four (1961 series)"), LabelMatch::Several);
+    assert_eq!(find("Fantastic Four (1961)"), LabelMatch::Several);
+    assert_eq!(find("Thor (1966)"), LabelMatch::One(thor));
+    assert_eq!(find("Thor (1967)"), LabelMatch::None);
+
+    // A lookalike's label reads back as the series it names, so typing
+    // one that is not there yet says what to make.
+    assert_eq!(
+        parse_series_label("Fantastic Four (1961 series, Vol. 2)"),
+        ("Fantastic Four".to_owned(), Some(1961), Some(2))
+    );
+    assert_eq!(
+        parse_series_label("Fantastic Four (1961 series, No Volume)"),
+        ("Fantastic Four".to_owned(), Some(1961), None)
+    );
+    // Commas elsewhere in a name are left alone.
+    assert_eq!(
+        parse_series_label("Love, Death (2019 series)"),
+        ("Love, Death".to_owned(), Some(2019), None)
+    );
+}
+
+#[test]
+fn gaps_tell_lookalikes_apart() {
+    let db = db();
+    owned_series(&db, "Fantastic Four", Some(1961), None, "1");
+    let vol_1 = owned_series(&db, "Fantastic Four", Some(1961), Some(1), "1");
+    let issue = db
+        .create_issue(vol_1, &IssueFields::new(number("3")))
+        .unwrap();
+    let edition = db.create_edition(issue, &EditionFields::default()).unwrap();
+    db.create_copy(edition, &CopyFields::default()).unwrap();
+    let gaps = db.gaps(false).unwrap();
+    assert_eq!(gaps.len(), 1);
+    assert_eq!(gaps[0].label, "Fantastic Four (1961 series, Vol. 1)");
+}

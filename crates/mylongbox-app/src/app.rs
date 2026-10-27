@@ -708,12 +708,10 @@ impl Component for App {
                 move || changed.input(AppMsg::FiltersChanged),
                 Rc::new(move |label: &str| {
                     let db = db.borrow().upgrade()?;
-                    let label = label.trim().to_lowercase();
-                    db.list_series().ok()?.into_iter().find_map(|s| {
-                        let f = &s.fields;
-                        let listed = mylongbox_core::series_label(&f.name, f.start_year, f.volume);
-                        mylongbox_core::same_series_label(&label, &listed).then_some(s.id)
-                    })
+                    match mylongbox_core::match_series_label(&db.series_labels().ok()?, label) {
+                        mylongbox_core::LabelMatch::One(id) => Some(id),
+                        _ => None,
+                    }
                 }),
                 move || save.input(AppMsg::SaveShelf),
             )
@@ -3214,19 +3212,10 @@ impl App {
             return;
         };
         let series: Vec<(SeriesId, String)> = self
-            .with_db(|db| db.list_series())
+            .with_db(|db| db.series_labels())
             .unwrap_or_default()
             .into_iter()
-            .map(|s| {
-                (
-                    s.id,
-                    mylongbox_core::series_label(
-                        &s.fields.name,
-                        s.fields.start_year,
-                        s.fields.volume,
-                    ),
-                )
-            })
+            .map(|s| (s.id, s.label))
             .collect();
         let label = |id: SeriesId| {
             series

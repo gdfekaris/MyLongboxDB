@@ -5,6 +5,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use crate::catalog::query_all;
+use crate::catalog::shown_label;
 use crate::db::Database;
 use crate::error::Result;
 use crate::model::{Category, SeriesId};
@@ -16,6 +17,8 @@ pub struct SeriesGaps {
     pub name: String,
     pub start_year: Option<u16>,
     pub volume: Option<u32>,
+    /// As the app shows the series, telling lookalikes apart.
+    pub label: String,
     pub category: Category,
     /// How many of the numbers in the run are owned.
     pub owned: u32,
@@ -108,25 +111,35 @@ impl Database {
         }
         let series = query_all(
             &self.conn,
-            "SELECT id, name, start_year, category, known_issue_count, volume FROM series
-             WHERE trash_id IS NULL
-             ORDER BY name COLLATE NOCASE, start_year, id",
+            concat!(
+                "SELECT id, name, start_year, category, known_issue_count, volume, ",
+                lookalike!("s"),
+                " FROM series s WHERE trash_id IS NULL
+                 ORDER BY name COLLATE NOCASE, start_year, id"
+            ),
             [],
             |row| {
-                Ok((
-                    row.get::<_, SeriesId>(0)?,
+                let (name, start_year, volume) = (
                     row.get::<_, String>(1)?,
                     row.get::<_, Option<u16>>(2)?,
+                    row.get::<_, Option<u32>>(5)?,
+                );
+                let label = shown_label(&name, start_year, volume, row.get(6)?);
+                Ok((
+                    row.get::<_, SeriesId>(0)?,
+                    name,
+                    start_year,
                     row.get::<_, Category>(3)?,
                     row.get::<_, Option<u32>>(4)?,
-                    row.get::<_, Option<u32>>(5)?,
+                    volume,
+                    label,
                 ))
             },
         )?;
         tx.commit()?;
         Ok(series
             .into_iter()
-            .filter_map(|(id, name, start_year, category, known, volume)| {
+            .filter_map(|(id, name, start_year, category, known, volume, label)| {
                 let numbers = owned.get(&id)?;
                 let (lowest, highest) = (*numbers.first()?, *numbers.last()?);
                 let (first, last) = match known {
@@ -143,6 +156,7 @@ impl Database {
                     name,
                     start_year,
                     volume,
+                    label,
                     category,
                     owned,
                     first,
