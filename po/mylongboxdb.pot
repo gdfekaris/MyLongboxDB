@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-27 10:19-0700\n"
+"POT-Creation-Date: 2026-10-27 13:22-0700\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -128,7 +128,7 @@ msgstr ""
 msgid "Books you record a signature on appear here."
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:155 crates/mylongbox-app/src/books.rs:446
+#: crates/mylongbox-app/src/app.rs:155 crates/mylongbox-app/src/books.rs:459
 #: crates/mylongbox-app/src/filter_fields.rs:60
 #: crates/mylongbox-app/src/filter_fields.rs:373
 #: crates/mylongbox-app/src/form.rs:242
@@ -349,7 +349,7 @@ msgid "The Collection Is Damaged"
 msgstr ""
 
 #: crates/mylongbox-app/src/app.rs:1021 crates/mylongbox-app/src/app.rs:4100
-#: crates/mylongbox-app/src/import_dialog.rs:287
+#: crates/mylongbox-app/src/import_dialog.rs:340
 #: crates/mylongbox-app/src/prompt.rs:171
 msgid "_Close"
 msgstr ""
@@ -930,9 +930,9 @@ msgstr ""
 msgid "My Shelves"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:3385 crates/mylongbox-app/src/books.rs:612
+#: crates/mylongbox-app/src/app.rs:3385 crates/mylongbox-app/src/books.rs:625
 #: crates/mylongbox-app/src/format.rs:71
-#: crates/mylongbox-app/src/import_dialog.rs:646
+#: crates/mylongbox-app/src/import_dialog.rs:770
 #: crates/mylongbox-app/src/stats_page.rs:258
 #, rust-format
 msgid "{count} book"
@@ -1096,7 +1096,7 @@ msgstr ""
 msgid "Merged: {moved}, {combined}"
 msgstr ""
 
-#: crates/mylongbox-app/src/app.rs:3739 crates/mylongbox-app/src/books.rs:541
+#: crates/mylongbox-app/src/app.rs:3739 crates/mylongbox-app/src/books.rs:554
 #: data/ui/window.blp:331
 msgid "_Rename…"
 msgstr ""
@@ -1135,9 +1135,9 @@ msgstr ""
 #: crates/mylongbox-app/src/app.rs:4120
 #: crates/mylongbox-app/src/bulk_dialog.rs:166
 #: crates/mylongbox-app/src/form.rs:563
-#: crates/mylongbox-app/src/import_dialog.rs:366
-#: crates/mylongbox-app/src/import_dialog.rs:371
-#: crates/mylongbox-app/src/import_dialog.rs:744
+#: crates/mylongbox-app/src/import_dialog.rs:471
+#: crates/mylongbox-app/src/import_dialog.rs:476
+#: crates/mylongbox-app/src/import_dialog.rs:874
 #: crates/mylongbox-app/src/photo_editor.rs:565
 #: crates/mylongbox-app/src/prefs.rs:660 crates/mylongbox-app/src/prompt.rs:48
 #: crates/mylongbox-app/src/series_dialog.rs:434
@@ -1225,7 +1225,7 @@ msgid "CSV files and full exports"
 msgstr ""
 
 #: crates/mylongbox-app/src/app.rs:3911
-#: crates/mylongbox-app/src/import_dialog.rs:759
+#: crates/mylongbox-app/src/import_dialog.rs:889
 msgid "Import Books"
 msgstr ""
 
@@ -1254,7 +1254,7 @@ msgid "Export a Copy"
 msgstr ""
 
 #. Translators: how much a copy is worth.
-#: crates/mylongbox-app/src/app.rs:4016 crates/mylongbox-app/src/books.rs:459
+#: crates/mylongbox-app/src/app.rs:4016 crates/mylongbox-app/src/books.rs:472
 #: crates/mylongbox-app/src/stats_page.rs:287
 msgid "Value"
 msgstr ""
@@ -1312,101 +1312,101 @@ msgstr ""
 msgid "No Cover Image"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:72 crates/mylongbox-app/src/books.rs:370
+#: crates/mylongbox-app/src/books.rs:78 crates/mylongbox-app/src/books.rs:383
 #: crates/mylongbox-app/src/filter_fields.rs:134
 #: crates/mylongbox-app/src/issue_page.rs:705
 #: crates/mylongbox-app/src/stats_page.rs:379
 msgid "Signed"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:88
+#: crates/mylongbox-app/src/books.rs:94
 msgid "Key"
 msgstr ""
 
 #. Translators: these name what a book still lacks, listed
 #. after "Needs", as in "Needs back photo, value".
-#: crates/mylongbox-app/src/books.rs:329
+#: crates/mylongbox-app/src/books.rs:342
 msgid "front photo"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:330
+#: crates/mylongbox-app/src/books.rs:343
 msgid "back photo"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:331
+#: crates/mylongbox-app/src/books.rs:344
 msgid "condition"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:332
+#: crates/mylongbox-app/src/books.rs:345
 msgid "grade"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:333
+#: crates/mylongbox-app/src/books.rs:346
 msgid "box"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:334
+#: crates/mylongbox-app/src/books.rs:347
 msgid "value"
 msgstr ""
 
 #. Translators: {missing} is a list such as "back photo, value".
-#: crates/mylongbox-app/src/books.rs:341
+#: crates/mylongbox-app/src/books.rs:354
 #, rust-format
 msgid "Needs {missing}"
 msgstr ""
 
 #. Translators: the heading of the issue number column, short for
 #. "number".
-#: crates/mylongbox-app/src/books.rs:449
+#: crates/mylongbox-app/src/books.rs:462
 msgid "No."
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:450
+#: crates/mylongbox-app/src/books.rs:463
 msgid "Title"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:451
+#: crates/mylongbox-app/src/books.rs:464
 #: crates/mylongbox-app/src/filter_fields.rs:121
 msgid "Variant"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:454
+#: crates/mylongbox-app/src/books.rs:467
 #: crates/mylongbox-app/src/filter_fields.rs:88
 msgid "Cover Date"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:457
+#: crates/mylongbox-app/src/books.rs:470
 #: crates/mylongbox-app/src/filter_fields.rs:74
 msgid "Grade"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:458
+#: crates/mylongbox-app/src/books.rs:471
 #: crates/mylongbox-app/src/issue_page.rs:806
 msgid "Location"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:539
+#: crates/mylongbox-app/src/books.rs:552
 #: crates/mylongbox-app/src/issue_page.rs:1052 data/ui/window.blp:325
 msgid "_Edit Series…"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:543 data/ui/window.blp:336
+#: crates/mylongbox-app/src/books.rs:556 data/ui/window.blp:336
 msgid "_Alternate Names…"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:545 data/ui/window.blp:341
+#: crates/mylongbox-app/src/books.rs:558 data/ui/window.blp:341
 msgid "_Merge Into…"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:546 data/ui/window.blp:348
+#: crates/mylongbox-app/src/books.rs:559 data/ui/window.blp:348
 msgid "_Delete…"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:576 data/ui/window.blp:146
+#: crates/mylongbox-app/src/books.rs:589 data/ui/window.blp:146
 msgid "Manage This Entry"
 msgstr ""
 
-#: crates/mylongbox-app/src/books.rs:610
+#: crates/mylongbox-app/src/books.rs:623
 msgid "None owned"
 msgstr ""
 
@@ -1484,7 +1484,7 @@ msgid "the photo could not be read safely: {reason}"
 msgstr ""
 
 #: crates/mylongbox-app/src/covers.rs:180
-#: crates/mylongbox-app/src/import_dialog.rs:588
+#: crates/mylongbox-app/src/import_dialog.rs:712
 msgid "the photo could not be read"
 msgstr ""
 
@@ -2786,176 +2786,205 @@ msgstr ""
 msgid "Slashes ( / )"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:79
+#: crates/mylongbox-app/src/import_dialog.rs:75
 msgid "Empty in the first rows"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:115
+#: crates/mylongbox-app/src/import_dialog.rs:168
 #, rust-format
 msgid "“{field}” is chosen for more than one column"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:120
+#: crates/mylongbox-app/src/import_dialog.rs:173
 msgid "Choose the column that names each book’s series"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:156
-#: crates/mylongbox-app/src/import_dialog.rs:188
+#: crates/mylongbox-app/src/import_dialog.rs:209
+#: crates/mylongbox-app/src/import_dialog.rs:241
 #, rust-format
 msgid "Line {line}: {book}"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:169
+#: crates/mylongbox-app/src/import_dialog.rs:222
 #, rust-format
 msgid "{count} book added"
 msgid_plural "{count} books added"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:172
+#: crates/mylongbox-app/src/import_dialog.rs:225
 #, rust-format
 msgid "{count} book to add"
 msgid_plural "{count} books to add"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:192
+#: crates/mylongbox-app/src/import_dialog.rs:245
 msgid "Started a new series"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:194
+#: crates/mylongbox-app/src/import_dialog.rs:247
 msgid "Starts a new series"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:202
+#: crates/mylongbox-app/src/import_dialog.rs:255
 #, rust-format
 msgid "{count} new series"
 msgid_plural "{count} new series"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:211
+#: crates/mylongbox-app/src/import_dialog.rs:264
 #, rust-format
 msgid "Added, though {reason}"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:212
+#: crates/mylongbox-app/src/import_dialog.rs:265
 #, rust-format
 msgid "To be added, though {reason}"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:213
+#: crates/mylongbox-app/src/import_dialog.rs:266
 #, rust-format
 msgid "Left out, as {reason}"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:220
+#: crates/mylongbox-app/src/import_dialog.rs:273
 #, rust-format
 msgid "{count} likely duplicate"
 msgid_plural "{count} likely duplicates"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:229
+#: crates/mylongbox-app/src/import_dialog.rs:282
 msgid "This copy is already in the collection"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:234
+#: crates/mylongbox-app/src/import_dialog.rs:287
 #, rust-format
 msgid "{count} book already in the collection"
 msgid_plural "{count} books already in the collection"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:248
+#: crates/mylongbox-app/src/import_dialog.rs:301
 #, rust-format
 msgid "{count} row cannot be added"
 msgid_plural "{count} rows cannot be added"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:266
+#: crates/mylongbox-app/src/import_dialog.rs:319
 #, rust-format
 msgid "{count} photo could not be added"
 msgid_plural "{count} photos could not be added"
 msgstr[0] ""
 msgstr[1] ""
 
+#: crates/mylongbox-app/src/import_dialog.rs:420
+msgid "No list of names in the first rows"
+msgstr ""
+
+#: crates/mylongbox-app/src/import_dialog.rs:422
+#, rust-format
+msgid ""
+"“{cell}” would be read as one name. The file’s lists are separated by {used}."
+msgstr ""
+
+#: crates/mylongbox-app/src/import_dialog.rs:431
+#, rust-format
+msgid "“{cell}” is read as {count} name: {names}"
+msgid_plural "“{cell}” is read as {count} names: {names}"
+msgstr[0] ""
+msgstr[1] ""
+
 #. Translators: checks every row of the file without
 #. saving anything.
 #. Translators: checks the collection for damage.
-#: crates/mylongbox-app/src/import_dialog.rs:369
+#: crates/mylongbox-app/src/import_dialog.rs:474
 #: crates/mylongbox-app/src/prefs.rs:485
 msgid "_Check"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:372
-#: crates/mylongbox-app/src/import_dialog.rs:375
+#: crates/mylongbox-app/src/import_dialog.rs:477
+#: crates/mylongbox-app/src/import_dialog.rs:480
 #: crates/mylongbox-app/src/viewer.rs:250
 msgid "_Back"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:372
+#: crates/mylongbox-app/src/import_dialog.rs:477
 msgid "_Import"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:377
+#: crates/mylongbox-app/src/import_dialog.rs:482
 #, rust-format
 msgid "_Import {count} Book"
 msgid_plural "_Import {count} Books"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:383
+#: crates/mylongbox-app/src/import_dialog.rs:488
 msgid "_Done"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:401
+#: crates/mylongbox-app/src/import_dialog.rs:506
 msgid "Choose what each column holds. Columns left out are not imported."
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:415
+#: crates/mylongbox-app/src/import_dialog.rs:521
 #, rust-format
 msgid "Checking row {done} of {total}…"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:416
+#: crates/mylongbox-app/src/import_dialog.rs:522
 #, rust-format
 msgid "Adding row {done} of {total}…"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:417
+#: crates/mylongbox-app/src/import_dialog.rs:523
 #, rust-format
 msgid "Adding photo {done} of {total}…"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:434
+#: crates/mylongbox-app/src/import_dialog.rs:538
+msgid "Lists Will Not Be Split Into Names"
+msgstr ""
+
+#: crates/mylongbox-app/src/import_dialog.rs:540
+#, rust-format
+msgid ""
+"Names in a cell are set to be separated by {chosen}, but the file’s lists "
+"use {used}, so each list would be added as one long name. Go back to change "
+"it."
+msgstr ""
+
+#: crates/mylongbox-app/src/import_dialog.rs:558
 msgid "The file has no books"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:443
+#: crates/mylongbox-app/src/import_dialog.rs:567
 msgid "Show Each Row"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:458
+#: crates/mylongbox-app/src/import_dialog.rs:582
 #, rust-format
 msgid "And {count} more"
 msgid_plural "And {count} more"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:485
-#: crates/mylongbox-app/src/import_dialog.rs:509
-#: crates/mylongbox-app/src/import_dialog.rs:520
 #: crates/mylongbox-app/src/import_dialog.rs:609
+#: crates/mylongbox-app/src/import_dialog.rs:633
+#: crates/mylongbox-app/src/import_dialog.rs:644
+#: crates/mylongbox-app/src/import_dialog.rs:733
 msgid "Nothing Was Imported"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:560
+#: crates/mylongbox-app/src/import_dialog.rs:684
 msgid "The Check Failed"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:640
+#: crates/mylongbox-app/src/import_dialog.rs:764
 #, rust-format
 msgid "{count} book from MyLongboxDB, so every column is matched already."
 msgid_plural ""
@@ -2963,35 +2992,31 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:651
-msgid "Names in a Cell Are Separated By"
+#: crates/mylongbox-app/src/import_dialog.rs:775
+msgid "Names in This File Are Separated By"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:652
-msgid "As in “Len Wein; Bernie Wrightson”"
-msgstr ""
-
-#: crates/mylongbox-app/src/import_dialog.rs:664
+#: crates/mylongbox-app/src/import_dialog.rs:787
 msgid "Leave Out Likely Duplicates"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:666
+#: crates/mylongbox-app/src/import_dialog.rs:789
 msgid "Books whose issue, variant, printing, and distribution you already own"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:673
+#: crates/mylongbox-app/src/import_dialog.rs:803
 msgid "Columns"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:677
+#: crates/mylongbox-app/src/import_dialog.rs:807
 msgid "Leave Out"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:689
+#: crates/mylongbox-app/src/import_dialog.rs:819
 msgid "(no heading)"
 msgstr ""
 
-#: crates/mylongbox-app/src/import_dialog.rs:728
+#: crates/mylongbox-app/src/import_dialog.rs:858
 msgid ""
 "Nothing is saved until the end, so cancelling leaves the collection as it "
 "was."
