@@ -1,7 +1,7 @@
 //! Tests of folding one series into another.
 
 use crate::model::*;
-use crate::{Database, Error, IssueNumber, SeriesMerge};
+use crate::{Amount, Currency, Database, Error, IssueNumber, SeriesMerge};
 
 fn db() -> Database {
     Database::open_in_memory().unwrap()
@@ -270,4 +270,143 @@ fn those_in_every_issue_join_the_series_merged_into() {
         .collect();
     assert_eq!(names, ["Mary Jane", "Spider-Man"]);
     assert_eq!(db.series_teams(into).unwrap()[0].id, team);
+}
+
+#[test]
+fn matching_editions_of_combined_issues_become_one() {
+    let db = db();
+    let real = series(&db, "Thor", Category::Comic);
+    let typo = series(&db, "Thor ", Category::Comic);
+    let real_337 = issue(&db, real, "337");
+    let typo_337 = issue(&db, typo, "337");
+    let real_standard = db
+        .create_edition(real_337, &EditionFields::default())
+        .unwrap();
+    let mine = db
+        .create_copy(real_standard, &CopyFields::default())
+        .unwrap();
+    // The same edition in the other series, with what the first lacks,
+    // and a cover artist.
+    let typo_standard = db
+        .create_edition(
+            typo_337,
+            &EditionFields {
+                variant: "".into(),
+                barcode: Some("75960601772003711".into()),
+                cover_price: Some(Amount::new(Currency::Usd, 60)),
+                ..EditionFields::default()
+            },
+        )
+        .unwrap();
+    let theirs = db
+        .create_copy(typo_standard, &CopyFields::default())
+        .unwrap();
+    let simonson = db.create_lookup::<CreatorId>("Walt Simonson").unwrap();
+    db.set_cover_artists(typo_standard, &[simonson]).unwrap();
+    // Different variants, printings, and distributions stay apart.
+    own(&db, typo_337, "Cover B");
+    let second = db
+        .create_edition(
+            typo_337,
+            &EditionFields {
+                printing: Some(2),
+                ..EditionFields::default()
+            },
+        )
+        .unwrap();
+    let newsstand = db
+        .create_edition(
+            typo_337,
+            &EditionFields {
+                distribution: Some(Distribution::Newsstand),
+                ..EditionFields::default()
+            },
+        )
+        .unwrap();
+
+    db.merge_series(typo, real).unwrap();
+    let editions = db.editions_of_issue(real_337).unwrap();
+    assert_eq!(editions.len(), 4);
+    assert!(matches!(db.edition(typo_standard), Err(Error::NotFound)));
+    let kept = db.edition(real_standard).unwrap();
+    assert_eq!(kept.fields.barcode.as_deref(), Some("75960601772003711"));
+    assert_eq!(
+        kept.fields.cover_price,
+        Some(Amount::new(Currency::Usd, 60))
+    );
+    let copies: Vec<CopyId> = db
+        .copies_of_edition(real_standard)
+        .unwrap()
+        .iter()
+        .map(|c| c.id)
+        .collect();
+    assert_eq!(copies, [mine, theirs]);
+    let artists = db.cover_artists(real_standard).unwrap();
+    assert_eq!(artists.len(), 1);
+    assert_eq!(artists[0].id, simonson);
+    for apart in [second, newsstand] {
+        assert_eq!(db.edition(apart).unwrap().issue, real_337);
+    }
+}
+
+#[test]
+fn editions_whose_details_differ_stay_apart() {
+    let db = db();
+    let real = series(&db, "Hulk", Category::Comic);
+    let typo = series(&db, "Hulk ", Category::Comic);
+    let price = |cents| EditionFields {
+        cover_price: Some(Amount::new(Currency::Usd, cents)),
+        ..EditionFields::default()
+    };
+    let real_1 = issue(&db, real, "1");
+    let cents_12 = db.create_edition(real_1, &price(12)).unwrap();
+    // A price variant entered without a variant name.
+    let cents_15 = db
+        .create_edition(issue(&db, typo, "1"), &price(15))
+        .unwrap();
+    db.merge_series(typo, real).unwrap();
+    let editions: Vec<EditionId> = db
+        .editions_of_issue(real_1)
+        .unwrap()
+        .iter()
+        .map(|e| e.id)
+        .collect();
+    assert_eq!(editions, [cents_12, cents_15]);
+    assert_eq!(
+        db.edition(cents_15).unwrap().fields.cover_price,
+        Some(Amount::new(Currency::Usd, 15))
+    );
+
+    // So do a hardcover and a softcover of the same book.
+    let real = series(&db, "Watchmen", Category::CollectedEdition);
+    let typo = series(&db, "Watchmen ", Category::CollectedEdition);
+    let bound = |binding| EditionFields {
+        binding: Some(binding),
+        ..EditionFields::default()
+    };
+    let real_1 = issue(&db, real, "1");
+    db.create_edition(real_1, &bound(Binding::Hardcover))
+        .unwrap();
+    db.create_edition(issue(&db, typo, "1"), &bound(Binding::Softcover))
+        .unwrap();
+    db.merge_series(typo, real).unwrap();
+    assert_eq!(db.editions_of_issue(real_1).unwrap().len(), 2);
+}
+
+#[test]
+fn an_edition_in_trash_moves_without_combining() {
+    let db = db();
+    let real = series(&db, "Hulk", Category::Comic);
+    let typo = series(&db, "Hulk ", Category::Comic);
+    let real_1 = issue(&db, real, "1");
+    own(&db, real_1, "");
+    let typo_1 = issue(&db, typo, "1");
+    let binned = db
+        .create_edition(typo_1, &EditionFields::default())
+        .unwrap();
+    let trash = db.trash_edition(binned).unwrap();
+    db.merge_series(typo, real).unwrap();
+    assert_eq!(db.edition(binned).unwrap().issue, real_1);
+    db.restore(trash).unwrap();
+    assert_eq!(db.editions_of_issue(real_1).unwrap().len(), 2);
 }
