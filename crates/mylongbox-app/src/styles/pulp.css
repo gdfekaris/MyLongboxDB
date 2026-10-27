@@ -391,6 +391,11 @@ headerbar toggle-group {
 headerbar toggle-group > toggle {
   margin: 0 2px 2px;
 }
+/* A toggle that names its choice, as the photo viewer's sides do, is a
+ * wider key with room round its word; one with an icon stays round. */
+headerbar toggle-group > toggle > label {
+  padding: 0 14px;
+}
 
 /* The sidebar is a lobby's elevator panel: fluted along its edge, its
  * floors in spaced capitals, the one shown marked by a gold needle. */
