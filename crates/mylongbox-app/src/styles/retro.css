@@ -105,6 +105,15 @@ window {
   font-family: "DotGothic16", "Liberation Sans", sans-serif;
   font-weight: bold;
 }
+/* DotGothic16 draws each letter from a grid of 16 squares to the em.
+ * Set much below the body size, as captions are, a square can come
+ * out smaller than a screen pixel, and with the desktop's text scaled
+ * up a whole row of them, the tops of the letters, rounds away. A
+ * little larger than usual, captions keep every row at common scales
+ * and stay smaller than the body. */
+.caption, .caption-heading {
+  font-size: 0.875em;
+}
 
 /* Square corners throughout. Buttons are the exception: their outline
  * clips its corner pixels, as Windows 3.1 drew them. */
