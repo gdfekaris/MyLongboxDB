@@ -79,6 +79,20 @@
   </supports>
 
   <releases>
+    <release version="0.1.7" date="2026-10-27">
+      <description>
+        <p>Safer imports and merges, lookalike series told apart, and fixes to the new looks.</p>
+        <ul>
+          <li>Importing a book whose Volume is blank, or whose series in the collection has none, files it in the series of the same name and start year instead of starting a second one, and the check before an import lists any series it would start</li>
+          <li>Series that share a name and start year show their volume everywhere, so they can be told apart and merged either way</li>
+          <li>Merging series combines matching editions and keeps cover months, keeps a safety copy first, and says how many issues moved</li>
+          <li>Deleting a book goes back to your place in the gallery</li>
+          <li>Deco Pulp has a halftone comic scroll bar, and its photo viewer buttons fit their words</li>
+          <li>Retro Desktop's group boxes hold their contents, and its captions keep their tops with large text</li>
+          <li>The HEIC photo decoder is updated with security fixes</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.6" date="2026-10-23">
       <description>
         <p>Two new looks, an Artist credit, and arrow keys in the photo editor.</p>

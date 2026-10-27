@@ -23,7 +23,7 @@ libheif-rs = { version = "3.0.0", default-features = false, features = ["v1_20"]
 [dev-dependencies]
 # The app decodes photos on confined threads; tests show every decoder
 # still works there.
-mylongbox-sandbox = { path = "../mylongbox-sandbox", version = "0.1.6" }
+mylongbox-sandbox = { path = "../mylongbox-sandbox", version = "0.1.7" }
 
 [features]
 heic = ["dep:libheif-rs"]
