@@ -79,6 +79,17 @@
   </supports>
 
   <releases>
+    <release version="0.1.8" date="2026-10-27">
+      <description>
+        <p>A clearer CSV import and more fixes to the new looks.</p>
+        <ul>
+          <li>Importing books from CSV shows how the file's lists of names will be split, and warns when the chosen separator would read each list as one long name</li>
+          <li>Deco Pulp's gallery covers keep the shape of a comic at any window width, with more room above their titles</li>
+          <li>Deco Pulp's scroll bar turns turquoise under the pointer, and is gold at night</li>
+          <li>Retro Desktop's group names sit inside their boxes</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.7" date="2026-10-27">
       <description>
         <p>Safer imports and merges, lookalike series told apart, and fixes to the new looks.</p>
