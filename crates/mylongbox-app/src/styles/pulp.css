@@ -55,6 +55,9 @@
   --bar-clear: rgba(31, 138, 138, 0);
   --tower: rgba(31, 138, 138, 0.09);
   --glow: transparent;
+  --tab: var(--pow);
+  --tab-dots: rgba(255, 255, 255, 0.5);
+  --tab-hot: var(--zap);
 
   --window-bg-color: var(--page);
   --window-fg-color: var(--text);
@@ -122,6 +125,8 @@
     --bar-clear: rgba(13, 15, 22, 0);
     --tower: rgba(31, 138, 138, 0.16);
     --glow: rgba(232, 199, 102, 0.45);
+    --tab: var(--coral);
+    --tab-dots: rgba(20, 22, 31, 0.35);
 
     --accent-bg-color: var(--turquoise);
     --accent-fg-color: #ffffff;
@@ -675,6 +680,50 @@ toggle-group > toggle {
 toggle-group > toggle:checked {
   background-color: var(--gold);
   color: var(--ink);
+  box-shadow: none;
+}
+
+/* Scroll bars stay in view: a gutter screened in cyan dots, ruled off
+ * in ink, and a tab printed red in halftone, as a POW panel is, with
+ * the same hard shadow as the stamps. It lights yellow under the
+ * pointer and presses onto its shadow when held. */
+scrollbar {
+  background-color: var(--panel);
+  background-image: radial-gradient(circle, var(--dots-cyan) 1.2px, transparent 1.8px);
+  background-size: 5px 5px;
+  border: none;
+}
+scrollbar.vertical {
+  border-left: 2px solid var(--line);
+}
+scrollbar.horizontal {
+  border-top: 2px solid var(--line);
+}
+/* Room for the tab's shadow inside the gutter. */
+scrollbar > range > trough {
+  padding: 3px 5px 5px 3px;
+}
+scrollbar slider {
+  background-color: var(--tab);
+  background-image: radial-gradient(circle, var(--tab-dots) 1.1px, transparent 1.7px);
+  background-size: 5px 5px;
+  border: 2px solid var(--line);
+  border-radius: 3px;
+  box-shadow: 2px 2px 0 var(--drop);
+  min-width: 10px;
+  min-height: 10px;
+  margin: 0;
+}
+scrollbar.vertical slider {
+  min-height: 44px;
+}
+scrollbar.horizontal slider {
+  min-width: 44px;
+}
+scrollbar slider:hover {
+  background-color: var(--tab-hot);
+}
+scrollbar slider:active {
   box-shadow: none;
 }
 

@@ -92,10 +92,11 @@ thread_local! {
     static DESKTOP: RefCell<Option<(Option<glib::GString>, bool)>> = const { RefCell::new(None) };
 }
 
-/// Retro Desktop's window furniture, beyond its stylesheet: the
-/// control-menu box at the left of the title bar, and scroll bars that
-/// stay in view rather than appearing over the content. Any other style
-/// gets the desktop's own back.
+/// Window furniture beyond the stylesheets: Retro Desktop's control-menu
+/// box at the left of the title bar, and, for Retro Desktop and Deco
+/// Pulp, scroll bars that stay in view rather than appearing over the
+/// content, so they can be drawn in the style. Any other style gets the
+/// desktop's own back.
 fn furnish(style: Style) {
     let Some(settings) = gtk::Settings::default() else {
         return;
@@ -111,11 +112,13 @@ fn furnish(style: Style) {
             .clone();
         if style == Style::Retro {
             settings.set_gtk_decoration_layout(Some("icon:minimize,maximize,close"));
-            settings.set_gtk_overlay_scrolling(false);
         } else {
             settings.set_gtk_decoration_layout(layout.as_deref());
-            settings.set_gtk_overlay_scrolling(overlay);
         }
+        settings.set_gtk_overlay_scrolling(match style {
+            Style::Retro | Style::Pulp => false,
+            Style::Standard => overlay,
+        });
     });
 }
 
