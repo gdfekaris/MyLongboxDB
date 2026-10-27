@@ -7,7 +7,8 @@ use gtk::{gio, glib};
 use mylongbox_core::{
     Amount, BulkChange, Category, CollectionInfo, CollectionStore, CopyId, CopyRow, CoverPhoto,
     Currency, Database, Date, EditionId, FilterSet, ImportSource, IssueId, Prefill, SavedShelf,
-    SavedShelfId, SeriesFields, SeriesId, Shelf, ShelfEntry, ShelfList, Side, TrashId, ValueEntry,
+    SavedShelfId, SeriesFields, SeriesId, SeriesMerge, Shelf, ShelfEntry, ShelfList, Side, TrashId,
+    ValueEntry,
 };
 use mylongbox_media::Edit;
 use relm4::typed_view::column::TypedColumnView;
@@ -409,6 +410,9 @@ pub enum AppMsg {
     ConfirmDeleteEntry,
     DoRename(String),
     DoMerge(String),
+    /// Merges the entry behind the shelf into the one named, once a
+    /// safety copy is kept.
+    MergeNow(Shelf, String),
     DoDeleteEntry,
     /// Ask for a name to add to the list of names shown.
     NewName,
@@ -1676,14 +1680,29 @@ impl Component for App {
                     move |into| s.input(AppMsg::DoMerge(into)),
                 );
             }
+            // A merge cannot be undone, and a series' may change many books.
             AppMsg::DoMerge(into) => {
                 let Some(shelf) = self.managed.as_ref().map(|e| e.shelf) else {
                     return;
                 };
-                match self.with_db(|db| db.merge_shelf(shelf, &into)) {
-                    Ok(kept) => {
+                self.guarded(
+                    gettext("before merging"),
+                    AppMsg::MergeNow(shelf, into),
+                    root,
+                    &sender,
+                );
+            }
+            AppMsg::MergeNow(shelf, into) => {
+                let merged = self.with_db(|db| match shelf {
+                    Shelf::Series(from) => db
+                        .merge_series_named(from, &into)
+                        .map(|(kept, done)| (Shelf::Series(kept), Some(done))),
+                    _ => db.merge_shelf(shelf, &into).map(|kept| (kept, None)),
+                });
+                match merged {
+                    Ok((kept, done)) => {
                         self.after_manage(Some(kept), root);
-                        root.toast(&gettext("Merged"));
+                        root.toast(&merged_message(done));
                     }
                     Err(why) => {
                         root.toast(&gettext_f("Could not merge: {reason}", &[("reason", &why)]))
@@ -3672,6 +3691,38 @@ fn new_name_heading(list: ShelfList) -> String {
     }
 }
 
+/// Says what a merge did: for series, how many issues moved across and
+/// how many joined one already there.
+fn merged_message(done: Option<SeriesMerge>) -> String {
+    let Some(done) = done else {
+        return gettext("Merged");
+    };
+    let count = |n: u32| n.to_string();
+    let moved = ngettext_f(
+        "{count} issue moved",
+        "{count} issues moved",
+        done.moved as usize,
+        &[("count", &count(done.moved))],
+    );
+    let combined = ngettext_f(
+        "{count} issue combined",
+        "{count} issues combined",
+        done.combined as usize,
+        &[("count", &count(done.combined))],
+    );
+    match (done.moved, done.combined) {
+        (0, 0) => gettext("Merged"),
+        (_, 0) => gettext_f("Merged: {moved}", &[("moved", &moved)]),
+        (0, _) => gettext_f("Merged: {combined}", &[("combined", &combined)]),
+        // Translators: {moved} is like "3 issues moved" and {combined}
+        // like "2 issues combined".
+        _ => gettext_f(
+            "Merged: {moved}, {combined}",
+            &[("moved", &moved), ("combined", &combined)],
+        ),
+    }
+}
+
 fn add_action(root: &MainWindow, name: &str, sender: &ComponentSender<App>, msg: fn() -> AppMsg) {
     let action = gio::SimpleAction::new(name, None);
     let sender = sender.clone();
@@ -4112,5 +4163,23 @@ fn capitalized(text: &str) -> String {
     match chars.next() {
         Some(first) => first.to_uppercase().chain(chars).collect(),
         None => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_merge_says_what_it_did() {
+        let done = |moved, combined| Some(SeriesMerge { moved, combined });
+        assert_eq!(merged_message(None), "Merged");
+        assert_eq!(merged_message(done(0, 0)), "Merged");
+        assert_eq!(merged_message(done(1, 0)), "Merged: 1 issue moved");
+        assert_eq!(merged_message(done(0, 2)), "Merged: 2 issues combined");
+        assert_eq!(
+            merged_message(done(3, 1)),
+            "Merged: 3 issues moved, 1 issue combined"
+        );
     }
 }
