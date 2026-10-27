@@ -870,3 +870,20 @@ fn gaps_tell_lookalikes_apart() {
     assert_eq!(gaps.len(), 1);
     assert_eq!(gaps[0].label, "Fantastic Four (1961 series, Vol. 1)");
 }
+
+#[test]
+fn an_issue_page_knows_when_its_label_names_the_volume() {
+    let db = db();
+    let in_label = |series| {
+        let issue = db.issues_in_series(series).unwrap()[0].id;
+        db.issue_detail(issue).unwrap().volume_in_label
+    };
+    let thor = owned_series(&db, "Thor", Some(1966), Some(1), "337");
+    let panther = owned_series(&db, "Black Panther", None, Some(3), "1");
+    let blank = owned_series(&db, "Fantastic Four", Some(1961), None, "29");
+    let vol_1 = owned_series(&db, "Fantastic Four", Some(1961), Some(1), "3");
+    assert!(!in_label(thor));
+    assert!(in_label(panther));
+    assert!(!in_label(blank));
+    assert!(in_label(vol_1));
+}

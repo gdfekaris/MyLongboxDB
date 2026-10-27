@@ -350,6 +350,7 @@ fn summary(d: &IssueDetail, current: Option<CopyId>, links: &Links) -> adw::Pref
     };
     let volume = s
         .volume
+        .filter(|_| !d.volume_in_label)
         // Translators: a series' volume number, as in "Vol. 2".
         .map(|v| gettext_f("Vol. {number}", &[("number", &v.to_string())]))
         .unwrap_or_default();

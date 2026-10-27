@@ -706,12 +706,18 @@ impl Database {
     /// A series' label as the app shows it; see [`shown_label`].
     pub fn shown_series_label(&self, series: &Series) -> Result<String> {
         let f = &series.fields;
-        let lookalike: bool = self.conn.query_row(
-            concat!("SELECT ", lookalike!("s"), " FROM series s WHERE s.id = ?1"),
-            [series.id],
-            |row| row.get(0),
-        )?;
+        let lookalike = self.is_lookalike(series.id)?;
         Ok(shown_label(&f.name, f.start_year, f.volume, lookalike))
+    }
+
+    /// Whether another live series shares this one's name and start
+    /// year; see [`shown_label`].
+    pub(crate) fn is_lookalike(&self, series: SeriesId) -> Result<bool> {
+        Ok(self.conn.query_row(
+            concat!("SELECT ", lookalike!("s"), " FROM series s WHERE s.id = ?1"),
+            [series],
+            |row| row.get(0),
+        )?)
     }
 
     /// e.g. `Amazing Spider-Man (1963 series) #121`, or a standalone
@@ -828,6 +834,16 @@ pub(crate) fn shown_label(
         }
         _ => series_label(name, start_year, volume),
     }
+}
+
+/// Whether [`shown_label`] names the series' volume: when it has no
+/// start year to go by, or shares that year with a lookalike.
+pub(crate) fn label_names_volume(
+    start_year: Option<u16>,
+    volume: Option<u32>,
+    lookalike: bool,
+) -> bool {
+    volume.is_some() && (start_year.is_none() || lookalike)
 }
 
 /// A live series as the app lists it, for finding one by its label.

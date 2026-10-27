@@ -1,7 +1,7 @@
 //! Everything the detail page shows about one issue: its series, credits,
 //! contents, and every edition and copy the owner has of it.
 
-use crate::catalog::live;
+use crate::catalog::{label_names_volume, live};
 use crate::collects::{CollectedIn, CollectedIssue, Ownership};
 use crate::db::Database;
 use crate::error::Result;
@@ -39,6 +39,9 @@ pub struct IssueDetail {
     pub series: Series,
     /// e.g. `Amazing Spider-Man (1963 series) #121`.
     pub label: String,
+    /// Whether `label` already names the series' volume, as in `Black
+    /// Panther (Vol. 3) #1`, so it need not be said again.
+    pub volume_in_label: bool,
     pub publisher: Option<String>,
     pub credits: Vec<Credit>,
     pub characters: Vec<Appearance<CharacterId>>,
@@ -88,6 +91,11 @@ impl Database {
             .collect::<Result<_>>()?;
         let detail = IssueDetail {
             label: self.issue_label(&series, &issue)?,
+            volume_in_label: label_names_volume(
+                series.fields.start_year,
+                series.fields.volume,
+                self.is_lookalike(series.id)?,
+            ),
             publisher,
             credits: self.credits(id)?,
             characters: self.characters(id)?,
