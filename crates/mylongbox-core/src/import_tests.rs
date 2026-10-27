@@ -872,3 +872,353 @@ fn series_characters_and_teams_are_added_to_the_series() {
         ["Loki", "Odin", "Thor"]
     );
 }
+
+/// A live series made the way the add form makes one.
+fn series(
+    db: &Database,
+    name: &str,
+    category: Category,
+    start_year: Option<u16>,
+    volume: Option<u32>,
+) -> SeriesId {
+    let mut fields = SeriesFields::new(name, category);
+    fields.start_year = start_year;
+    fields.volume = volume;
+    db.create_series(&fields).unwrap()
+}
+
+/// Each live series as (name, start year, volume, issues).
+fn series_list(db: &Database) -> Vec<(String, Option<u16>, Option<u32>, usize)> {
+    db.list_series()
+        .unwrap()
+        .into_iter()
+        .map(|s| {
+            let issues = db.issues_in_series(s.id).unwrap().len();
+            (s.fields.name, s.fields.start_year, s.fields.volume, issues)
+        })
+        .collect()
+}
+
+fn ff(volume: Option<u32>, issues: usize) -> (String, Option<u16>, Option<u32>, usize) {
+    ("Fantastic Four".into(), Some(1961), volume, issues)
+}
+
+#[test]
+fn a_blank_volume_in_the_row_joins_the_series_of_that_name_and_year() {
+    let db = Database::open_in_memory().unwrap();
+    series(&db, "Fantastic Four", Category::Comic, Some(1961), Some(1));
+    let report = import(
+        &db,
+        "Series,Start Year,Volume,Issue Number\n\
+         Fantastic Four,1961,,29\n\
+         fantastic  four,1961,,57\n",
+    );
+    assert_eq!(outcomes(&report), [&Outcome::Added, &Outcome::Added]);
+    // The series keeps the volume it had.
+    assert_eq!(series_list(&db), [ff(Some(1), 2)]);
+    assert!(report.rows.iter().all(|r| !r.new_series));
+}
+
+#[test]
+fn a_volume_in_the_row_joins_the_series_that_has_none() {
+    let db = Database::open_in_memory().unwrap();
+    series(&db, "Fantastic Four", Category::Comic, Some(1961), None);
+    let report = import(
+        &db,
+        "Series,Start Year,Volume,Issue Number\n\
+         Fantastic Four,1961,1,29\n",
+    );
+    assert_eq!(outcomes(&report), [&Outcome::Added]);
+    // The series is not given the row's volume.
+    assert_eq!(series_list(&db), [ff(None, 1)]);
+}
+
+#[test]
+fn a_series_matching_the_volume_exactly_is_chosen_first() {
+    let db = Database::open_in_memory().unwrap();
+    series(&db, "Fantastic Four", Category::Comic, Some(1961), Some(1));
+    series(&db, "Fantastic Four", Category::Comic, Some(1961), None);
+    let report = import(
+        &db,
+        "Series,Start Year,Volume,Issue Number\n\
+         Fantastic Four,1961,1,29\n\
+         Fantastic Four,1961,1,30\n\
+         Fantastic Four,1961,,57\n",
+    );
+    assert_eq!(report.added(), 3);
+    assert_eq!(series_list(&db), [ff(None, 1), ff(Some(1), 2)]);
+}
+
+#[test]
+fn lookalike_series_a_file_keeps_apart_stay_apart() {
+    // An export of a collection with "Fantastic Four (1961)" twice, once
+    // without a volume, into one that has only vol 1: the row without a
+    // volume would otherwise join vol 1, whichever comes first.
+    let text = "Series ID,Series,Start Year,Volume,Issue Number\n\
+                11111111-1111-4111-8111-111111111111,Fantastic Four,1961,,2\n\
+                22222222-2222-4222-8222-222222222222,Fantastic Four,1961,1,1\n";
+    let db = Database::open_in_memory().unwrap();
+    series(&db, "Fantastic Four", Category::Comic, Some(1961), Some(1));
+    let report = import(&db, text);
+    assert_eq!(report.added(), 2);
+    assert_eq!(series_list(&db), [ff(None, 1), ff(Some(1), 1)]);
+    // A file naming each series only once still joins loosely.
+    let db = Database::open_in_memory().unwrap();
+    series(&db, "Fantastic Four", Category::Comic, Some(1961), Some(1));
+    import(
+        &db,
+        text.lines().take(2).collect::<Vec<_>>().join("\n").as_str(),
+    );
+    assert_eq!(series_list(&db), [ff(Some(1), 1)]);
+}
+
+#[test]
+fn series_of_different_stated_volumes_stay_apart() {
+    let db = Database::open_in_memory().unwrap();
+    series(&db, "Superman", Category::Comic, Some(1987), Some(2));
+    let report = import(
+        &db,
+        "Series,Start Year,Volume,Issue Number\n\
+         Superman,1987,3,1\n\
+         Superman,1987,3,2\n",
+    );
+    assert_eq!(report.added(), 2);
+    assert_eq!(
+        series_list(&db),
+        [
+            ("Superman".into(), Some(1987), Some(2), 0),
+            ("Superman".into(), Some(1987), Some(3), 2),
+        ]
+    );
+    // Only the row that made the series says so.
+    let made: Vec<bool> = report.rows.iter().map(|r| r.new_series).collect();
+    assert_eq!(made, [true, false]);
+}
+
+#[test]
+fn a_row_that_could_join_several_series_is_a_problem() {
+    let db = Database::open_in_memory().unwrap();
+    series(&db, "X", Category::Comic, Some(1990), Some(1));
+    series(&db, "X", Category::Comic, Some(1990), Some(2));
+    // Old duplicates with no volume: the first is joined, as an exact
+    // match joins the first of several.
+    let y = series(&db, "Y", Category::Comic, None, None);
+    series(&db, "Y", Category::Comic, None, None);
+    let report = import(
+        &db,
+        "Series,Start Year,Volume,Issue Number\n\
+         X,1990,,1\n\
+         Y,,4,1\n\
+         X,1990,2,1\n",
+    );
+    assert_eq!(
+        outcomes(&report),
+        [
+            &Outcome::Problem(
+                "several series match \u{201c}X (1990 series)\u{201d}: Vol. 1 and Vol. 2; \
+                 give the row a Volume to choose one"
+                    .into()
+            ),
+            &Outcome::Added,
+            &Outcome::Added,
+        ]
+    );
+    assert_eq!(db.list_series().unwrap().len(), 4);
+    assert_eq!(db.issues_in_series(y).unwrap().len(), 1);
+}
+
+#[test]
+fn the_start_year_must_still_match() {
+    let db = Database::open_in_memory().unwrap();
+    series(&db, "Flash", Category::Comic, Some(1959), Some(1));
+    series(&db, "Y", Category::Comic, None, Some(2));
+    let report = import(
+        &db,
+        "Series,Start Year,Volume,Issue Number\n\
+         Flash,2016,,1\n\
+         Y,,,1\n",
+    );
+    assert_eq!(report.added(), 2);
+    assert_eq!(
+        series_list(&db),
+        [
+            ("Flash".into(), Some(1959), Some(1), 0),
+            ("Flash".into(), Some(2016), None, 1),
+            ("Y".into(), None, Some(2), 1),
+        ]
+    );
+    let made: Vec<bool> = report.rows.iter().map(|r| r.new_series).collect();
+    assert_eq!(made, [true, false]);
+}
+
+#[test]
+fn a_series_in_trash_is_not_joined() {
+    let db = Database::open_in_memory().unwrap();
+    let z = series(&db, "Z", Category::Comic, Some(1970), Some(1));
+    db.trash_series(z).unwrap();
+    let report = import(
+        &db,
+        "Series,Start Year,Volume,Issue Number\n\
+         Z,1970,,1\n",
+    );
+    assert_eq!(report.added(), 1);
+    assert_eq!(series_list(&db), [("Z".into(), Some(1970), None, 1)]);
+}
+
+#[test]
+fn copies_in_the_series_joined_count_as_likely_duplicates() {
+    let db = Database::open_in_memory().unwrap();
+    import(
+        &db,
+        "Series,Start Year,Volume,Issue Number\n\
+         Fantastic Four,1961,1,29\n",
+    );
+    let report = import(
+        &db,
+        "Series,Start Year,Volume,Issue Number\n\
+         Fantastic Four,1961,,29\n",
+    );
+    assert_eq!(
+        outcomes(&report),
+        [&Outcome::LikelyDuplicate {
+            note: "you already own a copy of this issue, variant, printing, and distribution"
+                .into(),
+            added: true
+        }]
+    );
+    assert_eq!(series_list(&db), [ff(Some(1), 1)]);
+}
+
+#[test]
+fn only_a_series_of_the_rows_kind_is_joined_without_its_volume() {
+    let db = Database::open_in_memory().unwrap();
+    series(&db, "W", Category::Magazine, Some(1975), Some(1));
+    series(&db, "V", Category::Magazine, Some(1975), Some(1));
+    series(&db, "V", Category::Comic, Some(1975), Some(2));
+    let report = import(
+        &db,
+        "Series,Start Year,Volume,Issue Number,Category\n\
+         W,1975,,1,comic\n\
+         V,1975,,1,comic\n",
+    );
+    // The magazine is the only W, so the row is told why it cannot join
+    // it, rather than starting a comic series of the same name.
+    assert_eq!(
+        outcomes(&report),
+        [
+            &Outcome::Problem("\u{201c}W\u{201d} is a magazine series".into()),
+            &Outcome::Added,
+        ]
+    );
+    assert_eq!(
+        series_list(&db),
+        [
+            ("V".into(), Some(1975), Some(1), 0),
+            ("V".into(), Some(1975), Some(2), 1),
+            ("W".into(), Some(1975), Some(1), 0),
+        ]
+    );
+}
+
+#[test]
+fn an_export_brings_back_every_series_with_its_volume() {
+    let db = Database::open_in_memory().unwrap();
+    import(
+        &db,
+        "Series,Start Year,Volume,Issue Number\n\
+         Fantastic Four,1961,1,1\n\
+         Fantastic Four,1961,,2\n\
+         Superman,1987,2,1\n\
+         Superman,1987,3,1\n\
+         Superman,,,1\n",
+    );
+    // A blank volume joins the 1961 series rather than starting another.
+    let before = series_list(&db);
+    assert_eq!(before.len(), 4);
+    let fresh = Database::open_in_memory().unwrap();
+    let report = import(&fresh, &csv_of(&db));
+    assert_eq!(report.added(), 5);
+    assert_eq!(series_list(&fresh), before);
+}
+
+mod properties {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    /// A name, start year, and volume from a few each, so they often meet.
+    fn key() -> impl Strategy<Value = (usize, Option<u16>, Option<u32>)> {
+        (
+            0..2usize,
+            prop::option::of(1990..1992u16),
+            prop::option::of(1..3u32),
+        )
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+
+        #[test]
+        fn an_import_never_starts_a_series_that_one_already_could_be(
+            existing in prop::collection::vec(key(), 0..4),
+            rows in prop::collection::vec(key(), 1..6),
+        ) {
+            const NAMES: [&str; 2] = ["Thor", "Hulk"];
+            let db = Database::open_in_memory().unwrap();
+            for (name, year, volume) in &existing {
+                series(&db, NAMES[*name], Category::Comic, *year, *volume);
+            }
+            let cell = |v: Option<String>| v.unwrap_or_default();
+            let mut text = "Series,Start Year,Volume,Issue Number\n".to_owned();
+            for (i, (name, year, volume)) in rows.iter().enumerate() {
+                text.push_str(&format!(
+                    "{},{},{},{}\n",
+                    NAMES[*name],
+                    cell(year.map(|y| y.to_string())),
+                    cell(volume.map(|v| v.to_string())),
+                    i + 1
+                ));
+            }
+            let before = db.list_series().unwrap();
+            import(&db, &text);
+            for made in db.list_series().unwrap().iter().filter(|s| s.id > before.iter().map(|b| b.id).max().unwrap_or(SeriesId(0))) {
+                let f = &made.fields;
+                for old in db.list_series().unwrap().iter().filter(|s| s.id != made.id) {
+                    let o = &old.fields;
+                    let differ = matches!((o.volume, f.volume), (Some(a), Some(b)) if a != b);
+                    prop_assert!(
+                        o.name != f.name || o.start_year != f.start_year || differ,
+                        "{f:?} was made beside {o:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_series_the_import_made_takes_what_its_own_rows_say() {
+    let db = Database::open_in_memory().unwrap();
+    // The omnibus makes "Golem (2013)" first, with only a name and year.
+    let report = import(
+        &db,
+        "Category,Series,Start Year,Volume,Publisher,Issue Number,Collects\n\
+         collected,Golem Omnibus,,,,1,Golem (2013) #1-2\n\
+         comic,Golem,2013,1,Orbit Line,1,\n",
+    );
+    assert_eq!(report.added(), 2);
+    let made: Vec<bool> = report.rows.iter().map(|r| r.new_series).collect();
+    assert_eq!(made, [true, false]);
+    let golem: Vec<_> = db
+        .list_series()
+        .unwrap()
+        .into_iter()
+        .filter(|s| s.fields.name == "Golem")
+        .collect();
+    assert_eq!(golem.len(), 1);
+    assert_eq!(golem[0].fields.volume, Some(1));
+    let publisher = db.lookup(golem[0].fields.publisher.unwrap()).unwrap();
+    assert_eq!(publisher.name, "Orbit Line");
+    // The issue the omnibus named is the one the copy went to.
+    assert_eq!(db.issues_in_series(golem[0].id).unwrap().len(), 2);
+}

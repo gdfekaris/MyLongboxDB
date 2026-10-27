@@ -13,6 +13,7 @@ use std::io::{Read, Seek};
 use rusqlite::{OptionalExtension, params};
 use uuid::Uuid;
 
+use crate::catalog::series_label;
 use crate::date::Date;
 use crate::db::Database;
 use crate::entry::{BookEntry, SeriesChoice};
@@ -21,8 +22,8 @@ use crate::export::{COLUMNS, ROLE_COLUMN_NAMES, ROLE_COLUMNS, split, split_items
 use crate::issue_number::IssueNumber;
 use crate::model::{
     Binding, BookCondition, Category, CharacterId, CopyId, CoverDate, Distribution, Grade,
-    GradeType, Isbn, MagazineFormat, PageQuality, RowUuid, SeriesId, Side, SignatureFields,
-    SignaturePlacement, TeamId, Verification,
+    GradeType, Isbn, MagazineFormat, PageQuality, PublisherId, RowUuid, SeriesId, Side,
+    SignatureFields, SignaturePlacement, TeamId, Verification,
 };
 use crate::money::{Amount, Currency};
 use crate::photos::CoverPhoto;
@@ -377,6 +378,9 @@ pub struct RowReport {
     /// e.g. `Amazing Spider-Man (1963 series) #121`.
     pub label: String,
     pub outcome: Outcome,
+    /// Whether the row's book started a series, rather than joining one
+    /// the collection or an earlier row already had.
+    pub new_series: bool,
 }
 
 /// Every row's result, and the photos that could not be added.
@@ -434,7 +438,19 @@ struct Cells<'a> {
     separator: char,
 }
 
-impl Cells<'_> {
+impl<'a> Cells<'a> {
+    fn of(row: &'a [String], settings: &ImportSettings) -> Self {
+        Cells {
+            by_field: settings
+                .mapping
+                .iter()
+                .zip(row)
+                .filter_map(|(field, cell)| Some(((*field)?, cell.as_str())))
+                .collect(),
+            separator: settings.separator,
+        }
+    }
+
     fn get(&self, field: &str) -> &str {
         self.by_field.get(field).map_or("", |c| unguarded(c.trim()))
     }
@@ -922,6 +938,8 @@ pub struct ImportRun<'db> {
     with_photos: bool,
     report: ImportReport,
     photos: Vec<PendingPhoto>,
+    /// From [`kept_apart`], once the first rows are read.
+    apart: Option<HashSet<RowUuid>>,
 }
 
 impl ImportRun<'_> {
@@ -990,6 +1008,7 @@ impl Database {
             with_photos: source.archive.is_some(),
             report: ImportReport::default(),
             photos: Vec::new(),
+            apart: None,
         })
     }
 
@@ -1005,25 +1024,23 @@ impl Database {
         limit: usize,
     ) -> Result<bool> {
         let end = run.next.saturating_add(limit).min(source.rows.len());
+        let apart = run
+            .apart
+            .get_or_insert_with(|| kept_apart(source, settings));
         while run.next < end {
             let index = run.next;
-            let cells = Cells {
-                by_field: settings
-                    .mapping
-                    .iter()
-                    .zip(&source.rows[index])
-                    .filter_map(|(field, cell)| Some(((*field)?, cell.as_str())))
-                    .collect(),
-                separator: settings.separator,
-            };
+            let cells = Cells::of(&source.rows[index], settings);
+            let mut new_series = false;
             let outcome = match plan(&cells, settings.today) {
                 Err(problem) => Outcome::Problem(problem),
                 Ok(planned) => {
                     let unit = self.tx()?;
-                    match self.import_row(planned, settings, &run.before, run.with_photos) {
-                        Ok((outcome, pending)) => {
+                    let loose = planned.series_id.is_none_or(|id| !apart.contains(&id));
+                    match self.import_row(planned, settings, &run.before, run.with_photos, loose) {
+                        Ok((outcome, pending, made)) => {
                             unit.commit()?;
                             run.photos.extend(pending);
+                            new_series = made;
                             outcome
                         }
                         Err(Error::Sqlite(e)) if !is_constraint(&e) => {
@@ -1037,6 +1054,7 @@ impl Database {
                 line: source.lines[index],
                 label: label(&cells),
                 outcome,
+                new_series,
             });
             run.next += 1;
         }
@@ -1147,26 +1165,8 @@ impl Database {
     /// issue, variant, printing, and distribution: the edition it would
     /// be added to.
     fn owned_before(&self, entry: &BookEntry, before: &Before) -> Result<i64> {
-        let series: Option<SeriesId> = match &entry.series {
-            SeriesChoice::Existing(id) => Some(*id),
-            SeriesChoice::New {
-                name,
-                start_year,
-                volume,
-                ..
-            } => self
-                .conn
-                .query_row(
-                    "SELECT id FROM series
-                     WHERE name = ?1 COLLATE NOCASE AND start_year IS ?2
-                         AND volume IS ?3 AND trash_id IS NULL
-                     ORDER BY id LIMIT 1",
-                    params![name, start_year, volume],
-                    |r| r.get(0),
-                )
-                .optional()?,
-        };
-        let Some(series) = series else {
+        // A series still to be made has nothing in it yet.
+        let SeriesChoice::Existing(series) = entry.series else {
             return Ok(0);
         };
         let Some(issue) = self.find_issue(series, entry.issue.number.as_ref())? else {
@@ -1188,19 +1188,86 @@ impl Database {
         )?)
     }
 
+    /// The live series a row names, when the collection has one. Files
+    /// from elsewhere cannot know whether the collection gives a series
+    /// its volume, so unless `loose` is off, a volume left blank on
+    /// either side does not keep the row out of a series of the same
+    /// name and start year; two stated volumes that differ still mean
+    /// two series.
+    fn import_series(
+        &self,
+        name: &str,
+        start_year: Option<u16>,
+        volume: Option<u32>,
+        category: Category,
+        loose: bool,
+    ) -> Result<SeriesMatch> {
+        let exact: Option<SeriesId> = self
+            .conn
+            .query_row(
+                "SELECT id FROM series
+                 WHERE name = ?1 COLLATE NOCASE AND start_year IS ?2
+                     AND volume IS ?3 AND trash_id IS NULL
+                 ORDER BY id LIMIT 1",
+                params![name, start_year, volume],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match exact {
+            Some(id) => return Ok(SeriesMatch::One(id)),
+            None if !loose => return Ok(SeriesMatch::None),
+            None => {}
+        }
+        let mut found: Vec<(SeriesId, Option<u32>, Category)> = {
+            let mut statement = self.conn.prepare(
+                "SELECT id, volume, category FROM series
+                 WHERE name = ?1 COLLATE NOCASE AND start_year IS ?2
+                     AND (volume IS NULL OR ?3 IS NULL OR volume = ?3)
+                     AND trash_id IS NULL
+                 ORDER BY id",
+            )?;
+            statement
+                .query_map(params![name, start_year, volume], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                })?
+                .collect::<rusqlite::Result<_>>()?
+        };
+        // A series of another kind is joined only when it is the one
+        // there is, so the row is told why it cannot be added rather than
+        // starting a lookalike.
+        if found.iter().any(|(_, _, c)| *c == category) {
+            found.retain(|(_, _, c)| *c == category);
+        }
+        let mut volumes: Vec<Option<u32>> = found.iter().map(|(_, v, _)| *v).collect();
+        volumes.sort_unstable();
+        volumes.dedup();
+        Ok(match (found.first(), volumes.len()) {
+            (None, _) => SeriesMatch::None,
+            // Old duplicates of one volume are joined at the first, as
+            // an exact match is.
+            (Some((id, _, _)), 1) => SeriesMatch::One(*id),
+            _ => SeriesMatch::Several(volumes.into_iter().flatten().collect()),
+        })
+    }
+
+    /// Adds a row's book, returning what became of it, its photos to
+    /// add, and whether it started a series. `loose` is as for
+    /// [`Database::import_series`].
     fn import_row(
         &self,
         mut planned: Planned,
         settings: &ImportSettings,
         before: &Before,
         with_photos: bool,
-    ) -> Result<(Outcome, Vec<PendingPhoto>)> {
+        loose: bool,
+    ) -> Result<(Outcome, Vec<PendingPhoto>, bool)> {
         match self.kept_row(Kept::Copy, planned.copy_id) {
-            Ok(Some(_)) => return Ok((Outcome::AlreadyOwned, Vec::new())),
+            Ok(Some(_)) => return Ok((Outcome::AlreadyOwned, Vec::new(), false)),
             Err(Error::InTrash) => {
                 return Ok((
                     Outcome::Problem("this copy is in Trash; restore it from there".into()),
                     Vec::new(),
+                    false,
                 ));
             }
             other => {
@@ -1212,6 +1279,29 @@ impl Database {
         // even if it has since been renamed.
         if let Ok(Some(id)) = self.kept_row(Kept::Series, planned.series_id) {
             entry.series = SeriesChoice::Existing(SeriesId(id));
+        }
+        let named = entry.series.clone();
+        let mut new_series = false;
+        if let SeriesChoice::New {
+            name,
+            start_year,
+            volume,
+            ..
+        } = &entry.series
+        {
+            match self.import_series(name, *start_year, *volume, entry.category, loose)? {
+                SeriesMatch::One(id) => entry.series = SeriesChoice::Existing(id),
+                SeriesMatch::None => new_series = true,
+                SeriesMatch::Several(volumes) => {
+                    let problem = format!(
+                        "several series match \u{201c}{}\u{201d}: {}; give the row a Volume \
+                         to choose one",
+                        series_label(name, *start_year, None),
+                        volume_list(&volumes)
+                    );
+                    return Ok((Outcome::Problem(problem), Vec::new(), false));
+                }
+            }
         }
         let owned = self.owned_before(&entry, before)?;
         let duplicate = (owned > 0).then(|| {
@@ -1228,7 +1318,7 @@ impl Database {
                 note: note.clone(),
                 added: false,
             };
-            return Ok((outcome, Vec::new()));
+            return Ok((outcome, Vec::new(), false));
         }
 
         let saved = self.add_book(&entry)?;
@@ -1246,8 +1336,10 @@ impl Database {
             planned.edition_id,
         )?;
         self.keep_uuid(Kept::Copy, saved.copy.0, before.copy, planned.copy_id)?;
-        if planned.known_issue_count.is_some() || !planned.series_notes.is_empty() {
-            let mut fields = self.series(saved.series)?.fields;
+        let made_here = saved.series.0 > before.series;
+        if made_here || planned.known_issue_count.is_some() || !planned.series_notes.is_empty() {
+            let old = self.series(saved.series)?.fields;
+            let mut fields = old.clone();
             // What a series already says is kept, as in the add form.
             if fields.known_issue_count.is_none() {
                 fields.known_issue_count = planned.known_issue_count;
@@ -1255,7 +1347,38 @@ impl Database {
             if fields.notes.is_empty() {
                 fields.notes = std::mem::take(&mut planned.series_notes);
             }
-            self.update_series(saved.series, &fields)?;
+            // A series this import made, such as one a collected
+            // edition's contents named before its own rows came, takes
+            // what they say of it. One the collection had is left as
+            // its owner made it.
+            if made_here
+                && let SeriesChoice::New {
+                    volume,
+                    publisher,
+                    imprint,
+                    magazine_format,
+                    black_and_white,
+                    ..
+                } = named
+            {
+                fields.volume = fields.volume.or(volume);
+                if fields.publisher.is_none() {
+                    fields.publisher = publisher
+                        .filter(|p| !p.trim().is_empty())
+                        .map(|p| self.name::<PublisherId>(&p))
+                        .transpose()?;
+                }
+                if fields.imprint.is_empty() {
+                    fields.imprint = imprint;
+                }
+                if fields.category == Category::Magazine {
+                    fields.magazine_format = fields.magazine_format.or(magazine_format);
+                    fields.black_and_white = fields.black_and_white.or(black_and_white);
+                }
+            }
+            if fields != old {
+                self.update_series(saved.series, &fields)?;
+            }
         }
         // Added to those the series already has, never taking any away.
         if !planned.series_characters.is_empty() {
@@ -1302,7 +1425,64 @@ impl Database {
             Some(note) => Outcome::LikelyDuplicate { note, added: true },
             None => Outcome::Added,
         };
-        Ok((outcome, photos))
+        Ok((outcome, photos, new_series))
+    }
+}
+
+/// The series a file keeps apart from another of the same name and
+/// start year by giving them different ids and volumes, as an export of
+/// a collection with such lookalikes does. Its rows join only a series
+/// of their own volume, so the two do not end up as one.
+fn kept_apart(source: &ImportSource, settings: &ImportSettings) -> HashSet<RowUuid> {
+    let mut by_name: HashMap<(String, Option<u16>), HashMap<RowUuid, Option<u32>>> = HashMap::new();
+    for row in &source.rows {
+        let cells = Cells::of(row, settings);
+        let (Ok(Some(id)), Ok(start_year), Ok(volume)) = (
+            cells.read("Series ID", uuid),
+            cells.read("Start Year", number::<u16>),
+            cells.read("Volume", number::<u32>),
+        ) else {
+            continue;
+        };
+        let name = cells
+            .get("Series")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase();
+        by_name
+            .entry((name, start_year))
+            .or_default()
+            .insert(id, volume);
+    }
+    // Where the volumes differ at all, each id has a lookalike.
+    by_name
+        .into_values()
+        .filter(|series| {
+            let mut volumes = series.values();
+            let first = volumes.next();
+            volumes.any(|v| Some(v) != first)
+        })
+        .flat_map(HashMap::into_keys)
+        .collect()
+}
+
+/// The live series an import row would join.
+enum SeriesMatch {
+    One(SeriesId),
+    None,
+    /// The volumes of the series it could join, which differ.
+    Several(Vec<u32>),
+}
+
+/// `Vol. 1 and Vol. 2`, or `Vol. 1, Vol. 2, and Vol. 3`.
+fn volume_list(volumes: &[u32]) -> String {
+    let names: Vec<String> = volumes.iter().map(|v| format!("Vol. {v}")).collect();
+    match names.as_slice() {
+        [] => String::new(),
+        [one] => one.clone(),
+        [first, second] => format!("{first} and {second}"),
+        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
     }
 }
 

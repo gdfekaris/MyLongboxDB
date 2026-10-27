@@ -872,6 +872,7 @@ mod tests {
                     line: i + 2,
                     label: format!("Thor #{i}"),
                     outcome,
+                    new_series: false,
                 })
                 .collect(),
             photo_problems,
