@@ -57,7 +57,9 @@ const COMBINE_ISSUE: &[&str] = &[
              WHERE collection_issue_id = ?2 AND collected_issue_id = old.collected_issue_id)",
     "UPDATE issue SET
          title = CASE WHEN title = '' THEN (SELECT title FROM issue WHERE id = ?1) ELSE title END,
-         cover_month = CASE WHEN cover_year IS NULL
+         cover_month = CASE
+             WHEN cover_year IS NULL
+                 OR (cover_month IS NULL AND cover_year = (SELECT cover_year FROM issue WHERE id = ?1))
              THEN (SELECT cover_month FROM issue WHERE id = ?1) ELSE cover_month END,
          cover_year = coalesce(cover_year, (SELECT cover_year FROM issue WHERE id = ?1)),
          release_date = coalesce(release_date, (SELECT release_date FROM issue WHERE id = ?1)),

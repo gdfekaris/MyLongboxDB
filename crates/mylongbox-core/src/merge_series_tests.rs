@@ -410,3 +410,32 @@ fn an_edition_in_trash_moves_without_combining() {
     db.restore(trash).unwrap();
     assert_eq!(db.editions_of_issue(real_1).unwrap().len(), 2);
 }
+
+#[test]
+fn a_cover_month_fills_in_for_the_same_year() {
+    let db = db();
+    let real = series(&db, "Hulk", Category::Comic);
+    let typo = series(&db, "Hulk ", Category::Comic);
+    let dated = |year, month| {
+        let mut f = IssueFields::new(Some(IssueNumber::new("1").unwrap()));
+        f.cover_date = CoverDate::new(year, month);
+        f
+    };
+    let kept = db.create_issue(real, &dated(1962, None)).unwrap();
+    db.create_issue(typo, &dated(1962, Some(5))).unwrap();
+    db.merge_series(typo, real).unwrap();
+    assert_eq!(
+        db.issue(kept).unwrap().fields.cover_date,
+        CoverDate::new(1962, Some(5))
+    );
+    // Another year's month is not taken.
+    let real = series(&db, "Thing", Category::Comic);
+    let typo = series(&db, "Thing ", Category::Comic);
+    let kept = db.create_issue(real, &dated(1983, None)).unwrap();
+    db.create_issue(typo, &dated(1982, Some(5))).unwrap();
+    db.merge_series(typo, real).unwrap();
+    assert_eq!(
+        db.issue(kept).unwrap().fields.cover_date,
+        CoverDate::new(1983, None)
+    );
+}
