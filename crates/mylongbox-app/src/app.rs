@@ -1946,14 +1946,20 @@ impl Component for App {
                 }
             }
             AppMsg::TrashCopy(copy) => {
-                let issue = self.with_db(|db| Ok(db.edition(db.copy(copy)?.edition)?.issue));
                 let trashed = self.with_db(|db| db.trash_copy(copy));
-                self.after_trash(trashed, issue.ok(), root, &sender);
+                self.after_trash(trashed, None, root, &sender);
             }
             AppMsg::TrashEdition(edition) => {
-                let issue = self.with_db(|db| Ok(db.edition(edition)?.issue));
+                // An edition without copies is tidied away from its issue's
+                // page, which stays open; one with books goes as a book does.
+                let issue = self.with_db(|db| {
+                    Ok(db
+                        .copies_of_edition(edition)?
+                        .is_empty()
+                        .then_some(db.edition(edition)?.issue))
+                });
                 let trashed = self.with_db(|db| db.trash_edition(edition));
-                self.after_trash(trashed, issue.ok(), root, &sender);
+                self.after_trash(trashed, issue.ok().flatten(), root, &sender);
             }
             AppMsg::TrashIssue(issue) => {
                 let trashed = self.with_db(|db| db.trash_issue(issue));
@@ -2705,8 +2711,10 @@ impl App {
         }
     }
 
-    /// Shows the collection as it is after something moved to Trash, back
-    /// on the page of `issue` if it is still there, and offers Undo.
+    /// Shows the collection as it is after something moved to Trash, and
+    /// offers Undo. Books shown before are shown where they were scrolled
+    /// to, so deleting a book goes back to its place among them; `issue`
+    /// is a page to reopen over them, if it is still there.
     fn after_trash(
         &mut self,
         trashed: Result<TrashId, String>,
