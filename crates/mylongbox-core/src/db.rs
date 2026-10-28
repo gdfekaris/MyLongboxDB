@@ -386,7 +386,7 @@ mod tests {
         }
         let before = dir.join("before.sqlite");
         let db = Database::open_keeping(&path, Some(&before)).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 12);
+        assert_eq!(db.schema_version().unwrap(), 13);
         assert!(db.saved_shelves().unwrap().is_empty());
         db.add_saved_shelf("Everything", &crate::FilterSet::default())
             .unwrap();
@@ -429,7 +429,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 12);
+        assert_eq!(db.schema_version().unwrap(), 13);
         let copy = db.copy(crate::model::CopyId(1)).unwrap();
         let mut fields = CopyFields {
             grade: Grade::from_tenths(94),
@@ -500,7 +500,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 12);
+        assert_eq!(db.schema_version().unwrap(), 13);
         assert!(db.integrity_check().unwrap().is_empty());
         let copy = CopyId(1);
         let signatures = db.signatures(copy).unwrap();
@@ -551,6 +551,10 @@ mod tests {
                      VALUES (1, '00000000-0000-4000-8000-000000000001', 'X-Men', 'comic');
                  INSERT INTO issue (id, uuid, series_id, number, number_sort)
                      VALUES (1, '00000000-0000-4000-8000-000000000002', 1, '1', '1');
+                 INSERT INTO edition (id, uuid, issue_id)
+                     VALUES (1, '00000000-0000-4000-8000-000000000003', 1);
+                 INSERT INTO copy (id, uuid, edition_id)
+                     VALUES (1, '00000000-0000-4000-8000-000000000004', 1);
                  INSERT INTO creator (id, uuid, name)
                      VALUES (1, '00000000-0000-4000-8000-000000000005', 'Stan Lee'),
                             (2, '00000000-0000-4000-8000-000000000006', 'Jack Kirby');
@@ -568,7 +572,7 @@ mod tests {
             );
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 12);
+        assert_eq!(db.schema_version().unwrap(), 13);
         assert!(db.integrity_check().unwrap().is_empty());
         let issue = IssueId(1);
         let roles = |db: &Database| -> Vec<(String, Role)> {
@@ -643,7 +647,7 @@ mod tests {
             .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 12);
+        assert_eq!(db.schema_version().unwrap(), 13);
         assert!(db.integrity_check().unwrap().is_empty());
         let numbers: Vec<String> = db
             .browse(Shelf::Everything)
@@ -733,11 +737,74 @@ mod tests {
     }
 
     #[test]
+    fn upgrading_to_13_deletes_what_deleted_copies_left_behind() {
+        use crate::model::{EditionId, IssueId};
+        // Series 1 holds comics, series 2 collected editions. Issue 1 is
+        // owned; 2 lost its last copy; 3's only copy is in Trash; 4 is in
+        // Trash itself; 5 is reprinted by owned book 7; 6 only by book 8,
+        // which lost its copy too.
+        let path = edited_collection(
+            "leftovers",
+            12,
+            "INSERT INTO series (id, uuid, name, category) VALUES
+                 (1, '00000000-0000-4000-8000-000000000001', 'X-Men', 'comic'),
+                 (2, '00000000-0000-4000-8000-000000000002', 'Masterworks', 'collected');
+             INSERT INTO trash (id, label) VALUES (1, 'Copy'), (2, 'Issue');
+             INSERT INTO issue (id, uuid, series_id, number, number_sort, trash_id) VALUES
+                 (1, '00000000-0000-4000-8000-000000000011', 1, '1', '1', NULL),
+                 (2, '00000000-0000-4000-8000-000000000012', 1, '2', '2', NULL),
+                 (3, '00000000-0000-4000-8000-000000000013', 1, '3', '3', NULL),
+                 (4, '00000000-0000-4000-8000-000000000014', 1, '4', '4', 2),
+                 (5, '00000000-0000-4000-8000-000000000015', 1, '5', '5', NULL),
+                 (6, '00000000-0000-4000-8000-000000000016', 1, '6', '6', NULL),
+                 (7, '00000000-0000-4000-8000-000000000017', 2, '1', '1', NULL),
+                 (8, '00000000-0000-4000-8000-000000000018', 2, '2', '2', NULL);
+             INSERT INTO edition (id, uuid, issue_id, trash_id) VALUES
+                 (1, '00000000-0000-4000-8000-000000000021', 1, NULL),
+                 (2, '00000000-0000-4000-8000-000000000022', 2, NULL),
+                 (3, '00000000-0000-4000-8000-000000000023', 3, NULL),
+                 (4, '00000000-0000-4000-8000-000000000024', 4, 2),
+                 (7, '00000000-0000-4000-8000-000000000027', 7, NULL),
+                 (8, '00000000-0000-4000-8000-000000000028', 8, NULL),
+                 (9, '00000000-0000-4000-8000-000000000029', 1, NULL);
+             INSERT INTO copy (id, uuid, edition_id, trash_id) VALUES
+                 (1, '00000000-0000-4000-8000-000000000031', 1, NULL),
+                 (3, '00000000-0000-4000-8000-000000000033', 3, 1),
+                 (4, '00000000-0000-4000-8000-000000000034', 4, 2),
+                 (7, '00000000-0000-4000-8000-000000000037', 7, NULL);
+             INSERT INTO collects (collection_issue_id, collected_issue_id, position) VALUES
+                 (7, 5, 1), (8, 6, 1);",
+        );
+        let db = Database::open(&path).unwrap();
+        assert_eq!(db.schema_version().unwrap(), 13);
+        assert!(db.integrity_check().unwrap().is_empty());
+        let issues: Vec<i64> = db
+            .conn
+            .prepare("SELECT id FROM issue ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(issues, [1, 3, 4, 5, 7]);
+        assert!(
+            db.edition(EditionId(9)).is_err(),
+            "a variant with no copy goes"
+        );
+        assert!(db.edition(EditionId(1)).is_ok());
+        assert!(db.issue(IssueId(3)).is_ok());
+        assert_eq!(db.list_series().unwrap().len(), 2, "series stay");
+        assert_eq!(db.trash_groups().unwrap().len(), 2);
+        drop(db);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
     fn an_unupgraded_collection_of_every_version_opens() {
         for version in 1..=MIGRATIONS.len() {
             let path = edited_collection(&format!("v{version}"), version, "");
             let db = Database::open(&path).unwrap();
-            assert_eq!(db.schema_version().unwrap(), 12, "from version {version}");
+            assert_eq!(db.schema_version().unwrap(), 13, "from version {version}");
             drop(db);
             std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
         }
