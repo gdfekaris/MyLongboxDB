@@ -177,8 +177,9 @@ its authors:
   copies a collection in after checking it, and Export a Copy, the way
   to back up, checks the copy in full before writing it out.
   Safety copies, made before imports, upgrades, merges, changes to
-  several books at once, and deleting from Trash, stay in
-  `collections/safety/` beside your collections, one per collection; a
+  several books at once, removing unused names, and deleting from
+  Trash, stay in `collections/safety/` beside your collections, one per
+  collection; a
   switch in Preferences turns them off. GTK's recently used files list
   is turned off, so the app leaves no record of which files you picked.
 
