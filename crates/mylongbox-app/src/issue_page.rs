@@ -848,16 +848,19 @@ fn photo_row(c: &CopyDetail, links: &Links) -> gtk::ListBoxRow {
     // One width for every slot, however wide its buttons, so the row
     // stays even whichever photos are there.
     let same = gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal);
-    for side in [Side::Front, Side::Back] {
+    let slot = |side: Side| {
         let slot = photo_slot(copy, side, c.photos.contains(&side), links);
         same.add_widget(&slot);
-        slots.append(&slot);
-    }
+        slot
+    };
     let covers = c
         .photos
         .iter()
         .any(|s| matches!(s, Side::Front | Side::Back));
+    slots.append(&slot(Side::Front));
     if covers {
+        // Between the two sides it swaps, with as much room left between
+        // the back and the signature so the row stays even.
         let swap = gtk::Button::builder()
             .icon_name("object-flip-horizontal-symbolic")
             .tooltip_text(gettext("Swap Front and Back"))
@@ -866,16 +869,17 @@ fn photo_row(c: &CopyDetail, links: &Links) -> gtk::ListBoxRow {
             .build();
         let hook = links.swap_photos.clone();
         swap.connect_clicked(move |_| hook(copy));
+        let room = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        let alike = gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal);
+        alike.add_widget(&swap);
+        alike.add_widget(&room);
         slots.append(&swap);
+        slots.append(&slot(Side::Back));
+        slots.append(&room);
+    } else {
+        slots.append(&slot(Side::Back));
     }
-    let signature = photo_slot(
-        copy,
-        Side::Signature,
-        c.photos.contains(&Side::Signature),
-        links,
-    );
-    same.add_widget(&signature);
-    slots.append(&signature);
+    slots.append(&slot(Side::Signature));
     gtk::ListBoxRow::builder()
         .activatable(false)
         .selectable(false)
