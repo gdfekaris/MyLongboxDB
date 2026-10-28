@@ -845,8 +845,13 @@ fn photo_row(c: &CopyDetail, links: &Links) -> gtk::ListBoxRow {
         .margin_start(12)
         .margin_end(12)
         .build();
+    // One width for every slot, however wide its buttons, so the row
+    // stays even whichever photos are there.
+    let same = gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal);
     for side in [Side::Front, Side::Back] {
-        slots.append(&photo_slot(copy, side, c.photos.contains(&side), links));
+        let slot = photo_slot(copy, side, c.photos.contains(&side), links);
+        same.add_widget(&slot);
+        slots.append(&slot);
     }
     let covers = c
         .photos
@@ -863,12 +868,14 @@ fn photo_row(c: &CopyDetail, links: &Links) -> gtk::ListBoxRow {
         swap.connect_clicked(move |_| hook(copy));
         slots.append(&swap);
     }
-    slots.append(&photo_slot(
+    let signature = photo_slot(
         copy,
         Side::Signature,
         c.photos.contains(&Side::Signature),
         links,
-    ));
+    );
+    same.add_widget(&signature);
+    slots.append(&signature);
     gtk::ListBoxRow::builder()
         .activatable(false)
         .selectable(false)
@@ -908,7 +915,9 @@ fn photo_slot(copy: CopyId, side: Side, has_photo: bool, links: &Links) -> gtk::
     let frame = gtk::Box::builder()
         .width_request(120)
         .height_request(182)
-        // What is inside expands; the frame keeps its size.
+        // What is inside expands; the frame keeps its size, centred in a
+        // slot its buttons make wider.
+        .halign(gtk::Align::Center)
         .hexpand(false)
         .vexpand(false)
         .overflow(gtk::Overflow::Hidden)
