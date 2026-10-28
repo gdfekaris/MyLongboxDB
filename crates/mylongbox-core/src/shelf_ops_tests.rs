@@ -175,13 +175,49 @@ fn a_series_is_added_with_its_publisher_and_cast() {
     assert_eq!(listed[0].copies, 0);
 }
 
+const LISTS: [crate::ShelfList; 7] = [
+    crate::ShelfList::Series,
+    crate::ShelfList::Publishers,
+    crate::ShelfList::Creators,
+    crate::ShelfList::Characters,
+    crate::ShelfList::Teams,
+    crate::ShelfList::StoryArcs,
+    crate::ShelfList::StorageBoxes,
+];
+
+/// Adds a book, then deletes its only copy for good, leaving its issue
+/// and edition in the catalog with no copy.
+fn leftover(db: &Database, series: &str, n: &str, writer: &str, team: &str) -> crate::SavedBook {
+    let mut e = BookEntry::new(
+        Category::Comic,
+        SeriesChoice::New {
+            name: series.into(),
+            start_year: Some(1984),
+            volume: None,
+            publisher: None,
+            imprint: String::new(),
+            magazine_format: None,
+            black_and_white: None,
+        },
+        Some(IssueNumber::new(n).unwrap()),
+    );
+    e.credits = vec![(writer.into(), Role::Writer)];
+    e.teams = vec![(team.into(), false)];
+    e.characters = vec![("Ethan Zachary".into(), false)];
+    let saved = db.add_book(&e).unwrap();
+    db.trash_copy(saved.copy).unwrap();
+    db.empty_trash().unwrap();
+    saved
+}
+
 #[test]
-fn only_names_nothing_uses_are_removed() {
+fn names_that_hold_no_books_are_unused() {
     use crate::ShelfList;
     let db = db();
     let kept = add(&db, "X-Men", 1963, "1", "Stan Lee");
     let trashed = add(&db, "Tales of Suspense", 1959, "39", "Larry Lieber");
     db.trash_issue(trashed.issue).unwrap();
+    let left = leftover(&db, "Transformers", "24", "Bob Budiansky", "Combaticons");
     for name in ["Unused One", "Unused Two"] {
         db.add_to_list(ShelfList::Creators, name).unwrap();
     }
@@ -190,42 +226,163 @@ fn only_names_nothing_uses_are_removed() {
     db.set_series_characters(db.issue(kept.issue).unwrap().series, &[wolverine])
         .unwrap();
     db.add_to_list(ShelfList::Characters, "Nobody").unwrap();
-    let empty = db
-        .create_series(&SeriesFields::new("Empty Run", Category::Comic))
+    db.create_series(&SeriesFields::new("Empty Run", Category::Comic))
         .unwrap();
 
     assert_eq!(
         db.unused_in_list(ShelfList::Creators).unwrap(),
-        ["Unused One", "Unused Two"],
-        "one credited only on a book in Trash is still used"
+        ["Bob Budiansky", "Larry Lieber", "Unused One", "Unused Two"],
+        "credits on a book in Trash or an issue with no copy hold no books"
+    );
+    assert_eq!(
+        db.unused_in_list(ShelfList::Teams).unwrap(),
+        ["Combaticons"]
     );
     assert_eq!(
         db.unused_in_list(ShelfList::Characters).unwrap(),
-        ["Nobody"]
+        ["Ethan Zachary", "Nobody"]
     );
     assert_eq!(
         db.unused_in_list(ShelfList::Series).unwrap(),
-        ["Empty Run"],
-        "a series whose only issue is in Trash is still used"
+        [
+            "Empty Run",
+            "Tales of Suspense (1959 series)",
+            "Transformers (1984 series)"
+        ]
     );
-    assert_eq!(db.remove_unused(ShelfList::Creators).unwrap(), 2);
-    assert_eq!(db.remove_unused(ShelfList::Characters).unwrap(), 1);
-    assert_eq!(db.remove_unused(ShelfList::Series).unwrap(), 1);
-    assert!(db.series(empty).is_err());
-    assert!(
-        db.find_lookup::<CreatorId>("Larry Lieber")
+    // What Remove Unused offers is exactly what the list shows as empty.
+    for list in LISTS {
+        let empty: Vec<String> = db
+            .shelf_list(list)
             .unwrap()
-            .is_some()
-    );
+            .into_iter()
+            .filter(|e| e.copies == 0)
+            .map(|e| e.name)
+            .collect();
+        assert_eq!(db.unused_in_list(list).unwrap(), empty, "{list:?}");
+    }
+
+    assert_eq!(db.remove_unused(ShelfList::Teams).unwrap(), 1);
+    assert!(db.find_lookup::<TeamId>("Combaticons").unwrap().is_none());
+    // The issue with no copy stays, less the team.
+    assert!(db.teams(left.issue).unwrap().is_empty());
+    assert_eq!(db.credits(left.issue).unwrap().len(), 1);
+
+    assert_eq!(db.remove_unused(ShelfList::Creators).unwrap(), 4);
+    assert_eq!(db.remove_unused(ShelfList::Characters).unwrap(), 2);
+    assert_eq!(db.remove_unused(ShelfList::Series).unwrap(), 3);
+    for list in LISTS {
+        assert!(db.unused_in_list(list).unwrap().is_empty(), "{list:?}");
+        assert_eq!(db.remove_unused(list).unwrap(), 0, "{list:?}");
+    }
+    assert!(db.issue(left.issue).is_err());
+    assert!(db.find_lookup::<CreatorId>("Stan Lee").unwrap().is_some());
     assert!(
         db.find_lookup::<CharacterId>("Wolverine")
             .unwrap()
             .is_some()
     );
-    assert_eq!(db.remove_unused(ShelfList::Creators).unwrap(), 0);
-    // Trash still restores the book with its creator.
-    let group = db.trash_groups().unwrap()[0].id;
-    db.restore(group).unwrap();
+    // The Trash group of the deleted series' issue went with it.
+    assert!(db.trash_groups().unwrap().is_empty());
+    assert_eq!(db.shelf_list(ShelfList::Series).unwrap().len(), 1);
+}
+
+#[test]
+fn a_series_reprinted_in_a_book_you_own_is_kept() {
+    use crate::ShelfList;
+    let db = db();
+    let line = |name: &str| {
+        db.create_series(&SeriesFields::new(name, Category::CollectedEdition))
+            .unwrap()
+    };
+    let volume = |series: SeriesId, n: &str| {
+        db.create_issue(
+            series,
+            &IssueFields::new(Some(IssueNumber::new(n).unwrap())),
+        )
+        .unwrap()
+    };
+    let own = |issue: IssueId| {
+        let edition = db.create_edition(issue, &EditionFields::default()).unwrap();
+        db.create_copy(edition, &CopyFields::default()).unwrap()
+    };
+    // Owned: its contents stay.
+    let masterworks = line("Masterworks");
+    let owned = volume(masterworks, "1");
+    own(owned);
+    db.set_collects(owned, "Amazing Spider-Man (1963) 1")
+        .unwrap();
+    // A second volume with no copy, in a line that stays because the
+    // first is owned: its contents stay too.
+    let unowned = volume(masterworks, "2");
+    db.set_collects(unowned, "Tales to Astonish (1959) 27")
+        .unwrap();
+    // A line with no copy at all goes, and so does what only it reprints.
+    let omnibus = line("Omnibus");
+    let gone = volume(omnibus, "1");
+    db.set_collects(gone, "Strange Tales (1951) 110").unwrap();
+
+    let unused = db.unused_in_list(ShelfList::Series).unwrap();
+    assert_eq!(unused, ["Omnibus", "Strange Tales (1951 series)"]);
+    assert_eq!(db.remove_unused(ShelfList::Series).unwrap(), 2);
+    assert!(db.series(omnibus).is_err());
+    assert_eq!(db.collects(owned).unwrap().len(), 1);
+    assert_eq!(db.collects(unowned).unwrap().len(), 1);
+    assert_eq!(db.remove_unused(ShelfList::Series).unwrap(), 0);
+}
+
+#[test]
+fn removing_unused_names_clears_them_from_books_in_trash() {
+    use crate::ShelfList;
+    let db = db();
+    let mut e = BookEntry::new(
+        Category::Comic,
+        SeriesChoice::New {
+            name: "Ka-Zar".into(),
+            start_year: Some(1981),
+            volume: None,
+            publisher: Some("Gone Publisher".into()),
+            imprint: String::new(),
+            magazine_format: None,
+            black_and_white: None,
+        },
+        Some(IssueNumber::new("1").unwrap()),
+    );
+    e.storage_box = Some("Box 9".into());
+    e.cover_artists = vec!["Cover Artist".into()];
+    e.signatures = vec![(
+        "Signer".into(),
+        SignatureFields::new(Verification::Unverified),
+    )];
+    let saved = db.add_book(&e).unwrap();
+    let trash = db.trash_copy(saved.copy).unwrap();
+
+    assert_eq!(
+        db.unused_in_list(ShelfList::Publishers).unwrap(),
+        ["Gone Publisher"]
+    );
+    assert_eq!(
+        db.unused_in_list(ShelfList::StorageBoxes).unwrap(),
+        ["Box 9"]
+    );
+    assert_eq!(
+        db.unused_in_list(ShelfList::Creators).unwrap(),
+        ["Cover Artist", "Signer"]
+    );
+    for list in [
+        ShelfList::Publishers,
+        ShelfList::StorageBoxes,
+        ShelfList::Creators,
+    ] {
+        db.remove_unused(list).unwrap();
+    }
+    // Restoring brings the book back without them.
+    db.restore(trash).unwrap();
+    let copy = db.copy(saved.copy).unwrap();
+    assert_eq!(copy.fields.storage_box, None);
+    assert!(db.signatures(saved.copy).unwrap().is_empty());
+    assert!(db.cover_artists(saved.edition).unwrap().is_empty());
+    assert_eq!(db.series(saved.series).unwrap().fields.publisher, None);
 }
 
 fn lookalike(db: &Database, volume: Option<u32>, n: &str) -> SeriesId {

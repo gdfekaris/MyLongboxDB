@@ -420,9 +420,11 @@ pub enum AppMsg {
     /// Ask for the details of a new series of this kind.
     NewSeries(Category),
     AddSeries(Box<series_dialog::SeriesEdit>),
-    /// Offer to delete the names in the list shown that nothing uses.
+    /// Offer to delete the names in the list shown that hold no books.
     ConfirmRemoveUnused,
-    DoRemoveUnused,
+    /// Keep a safety copy, then delete the unused names of this list.
+    RemoveUnused(ShelfList),
+    DoRemoveUnused(ShelfList),
     Selecting(bool),
     SelectionChanged,
     /// Ask what to change on the selected copies.
@@ -1834,36 +1836,55 @@ impl Component for App {
                     unused.len(),
                     &[("count", &count)],
                 );
-                let body = ngettext_f(
-                    "No book uses it, not even one in Trash: {names}.",
-                    "No book uses these, not even one in Trash: {names}.",
-                    unused.len(),
-                    &[("names", &names)],
-                );
-                confirm(root, &heading, &body, &gettext("_Remove"), &sender, || {
-                    AppMsg::DoRemoveUnused
-                });
-            }
-            AppMsg::DoRemoveUnused => {
-                let Content::Names(list, _, _) = self.section.content else {
-                    return;
+                let body = if list == ShelfList::Series {
+                    ngettext_f(
+                        "You have no copy of any issue in it: {names}. Its issues are \
+                         removed with it, including any in Trash.",
+                        "You have no copy of any issue in these: {names}. Their issues \
+                         are removed with them, including any in Trash.",
+                        unused.len(),
+                        &[("names", &names)],
+                    )
+                } else {
+                    ngettext_f(
+                        "No book you own uses it: {names}. It is also taken off books \
+                         in Trash and issues you have no copy of.",
+                        "No book you own uses these: {names}. They are also taken off \
+                         books in Trash and issues you have no copy of.",
+                        unused.len(),
+                        &[("names", &names)],
+                    )
                 };
-                match self.with_db(|db| db.remove_unused(list)) {
-                    Ok(removed) => {
-                        self.after_manage(None, root);
-                        root.toast(&ngettext_f(
-                            "Removed {count} name",
-                            "Removed {count} names",
-                            removed,
-                            &[("count", &removed.to_string())],
-                        ));
-                    }
-                    Err(why) => root.toast(&gettext_f(
-                        "Could not remove: {reason}",
-                        &[("reason", &why)],
-                    )),
-                }
+                confirm(
+                    root,
+                    &heading,
+                    &body,
+                    &gettext("_Remove"),
+                    &sender,
+                    move || AppMsg::RemoveUnused(list),
+                );
             }
+            AppMsg::RemoveUnused(list) => self.guarded(
+                gettext("before removing unused names"),
+                AppMsg::DoRemoveUnused(list),
+                root,
+                &sender,
+            ),
+            AppMsg::DoRemoveUnused(list) => match self.with_db(|db| db.remove_unused(list)) {
+                Ok(removed) => {
+                    self.after_manage(None, root);
+                    root.toast(&ngettext_f(
+                        "Removed {count} name",
+                        "Removed {count} names",
+                        removed,
+                        &[("count", &removed.to_string())],
+                    ));
+                }
+                Err(why) => root.toast(&gettext_f(
+                    "Could not remove: {reason}",
+                    &[("reason", &why)],
+                )),
+            },
             AppMsg::DoDeleteEntry => {
                 let Some(shelf) = self.managed.as_ref().map(|e| e.shelf) else {
                     return;

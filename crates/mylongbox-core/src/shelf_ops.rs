@@ -3,15 +3,14 @@
 
 use std::collections::HashSet;
 
-use crate::browse::{Shelf, ShelfList};
-use crate::catalog::{LabelMatch, match_series_label, query_all};
+use crate::browse::{Shelf, ShelfEntry, ShelfList};
+use crate::catalog::{DROP_EMPTY_TRASH_GROUPS, LabelMatch, match_series_label, query_all};
 use crate::db::Database;
 use crate::error::{Error, Result};
 use crate::lookup::LookupId;
 use crate::merge_series::SeriesMerge;
-use crate::model::{
-    BoxId, CharacterId, CreatorId, PublisherId, SeriesId, StoryArcId, TeamId, TrashId,
-};
+use crate::model::{SeriesId, TrashId};
+use crate::search::json_ids;
 
 /// Runs `$body` with `$id` bound to the shelf's typed id, for every shelf
 /// that names an entry of a name list. Series and whole sections are
@@ -32,6 +31,14 @@ macro_rules! for_lookup {
 
 fn not_an_entry<T>() -> Result<T> {
     Err(Error::Invalid("this section is not a single entry".into()))
+}
+
+/// The ids of the series among `entries`, as a JSON array.
+fn series_ids(entries: &[ShelfEntry]) -> String {
+    json_ids(entries.iter().filter_map(|e| match e.shelf {
+        Shelf::Series(id) => Some(id.0),
+        _ => None,
+    }))
 }
 
 impl Database {
@@ -128,83 +135,81 @@ impl Database {
         })
     }
 
-    /// The names in a list that nothing uses, not even items in Trash,
-    /// as the list shows them. A series is unused while it has no issues.
+    /// The names in a list that hold no books, as the list shows them
+    /// and counts them: names used only by books in Trash, or by issues
+    /// and editions with no copy left, are unused too. A series is kept
+    /// while a collected edition outside the unused ones reprints one
+    /// of its issues, so the edition keeps what it collects.
     pub fn unused_in_list(&self, list: ShelfList) -> Result<Vec<String>> {
-        fn names<I: LookupId>(db: &Database) -> Result<Vec<String>> {
-            Ok(db
-                .unused_lookups::<I>()?
-                .into_iter()
-                .map(|l| l.name)
-                .collect())
+        if list == ShelfList::Series {
+            return Ok(self.unused_series()?.into_iter().map(|e| e.name).collect());
         }
-        match list {
-            ShelfList::Series => Ok(self
-                .unused_series()?
-                .into_iter()
-                .map(|(_, label)| label)
-                .collect()),
-            ShelfList::Publishers => names::<PublisherId>(self),
-            ShelfList::Creators => names::<CreatorId>(self),
-            ShelfList::Characters => names::<CharacterId>(self),
-            ShelfList::Teams => names::<TeamId>(self),
-            ShelfList::StoryArcs => names::<StoryArcId>(self),
-            ShelfList::StorageBoxes => names::<BoxId>(self),
-        }
+        Ok(self
+            .shelf_list(list)?
+            .into_iter()
+            .filter(|e| e.copies == 0)
+            .map(|e| e.name)
+            .collect())
     }
 
     /// Deletes every name [`Database::unused_in_list`] gives, as one
-    /// unit, and returns how many went.
+    /// unit, and returns how many went. Each goes with its links on
+    /// books in Trash and on issues with no copy; an unused series goes
+    /// with all its issues, in Trash or not.
     pub fn remove_unused(&self, list: ShelfList) -> Result<usize> {
-        fn remove<I: LookupId>(db: &Database) -> Result<usize> {
-            let unused = db.unused_lookups::<I>()?;
-            for entry in &unused {
-                db.delete_lookup(entry.id)?;
-            }
-            Ok(unused.len())
-        }
         let tx = self.tx()?;
-        let removed = match list {
-            ShelfList::Series => {
-                let unused = self.unused_series()?;
-                for (id, _) in &unused {
-                    self.conn.execute(
-                        "DELETE FROM series WHERE id = ?1
-                         AND NOT EXISTS (SELECT 1 FROM issue WHERE series_id = ?1)",
-                        [id],
-                    )?;
-                }
-                unused.len()
+        let removed = if list == ShelfList::Series {
+            let unused = self.unused_series()?;
+            // One statement, so reprints between the series going are
+            // checked only once they are all gone.
+            tx.execute(
+                "DELETE FROM series WHERE id IN (SELECT value FROM json_each(?1))",
+                [series_ids(&unused)],
+            )?;
+            tx.execute(DROP_EMPTY_TRASH_GROUPS, [])?;
+            unused.len()
+        } else {
+            let unused: Vec<ShelfEntry> = self
+                .shelf_list(list)?
+                .into_iter()
+                .filter(|e| e.copies == 0)
+                .collect();
+            for entry in &unused {
+                for_lookup!(entry.shelf, id => self.delete_lookup_and_links(id)?, _other => not_an_entry()?);
             }
-            ShelfList::Publishers => remove::<PublisherId>(self)?,
-            ShelfList::Creators => remove::<CreatorId>(self)?,
-            ShelfList::Characters => remove::<CharacterId>(self)?,
-            ShelfList::Teams => remove::<TeamId>(self)?,
-            ShelfList::StoryArcs => remove::<StoryArcId>(self)?,
-            ShelfList::StorageBoxes => remove::<BoxId>(self)?,
+            unused.len()
         };
         tx.commit()?;
         Ok(removed)
     }
 
-    /// The series outside Trash with no issues, not even in Trash, with
-    /// their labels.
-    fn unused_series(&self) -> Result<Vec<(SeriesId, String)>> {
-        let empty: HashSet<SeriesId> = query_all(
-            &self.conn,
-            "SELECT id FROM series s
-             WHERE trash_id IS NULL AND NOT EXISTS (SELECT 1 FROM issue WHERE series_id = s.id)",
-            [],
-            |row| row.get(0),
-        )?
-        .into_iter()
-        .collect();
-        Ok(self
-            .series_labels()?
+    /// The series outside Trash with no copy of any of their issues,
+    /// less those a collected edition in another series reprints from.
+    fn unused_series(&self) -> Result<Vec<ShelfEntry>> {
+        let mut unused: Vec<ShelfEntry> = self
+            .shelf_list(ShelfList::Series)?
             .into_iter()
-            .filter(|s| empty.contains(&s.id))
-            .map(|s| (s.id, s.label))
-            .collect())
+            .filter(|e| e.copies == 0)
+            .collect();
+        // Keeping one series can keep another that it reprints from.
+        loop {
+            let reprinted: HashSet<SeriesId> = query_all(
+                &self.conn,
+                "SELECT DISTINCT i.series_id FROM collects k
+                 JOIN issue i ON i.id = k.collected_issue_id
+                 JOIN issue o ON o.id = k.collection_issue_id
+                 WHERE i.series_id IN (SELECT value FROM json_each(?1))
+                     AND o.series_id NOT IN (SELECT value FROM json_each(?1))",
+                [series_ids(&unused)],
+                |row| row.get(0),
+            )?
+            .into_iter()
+            .collect();
+            if reprinted.is_empty() {
+                return Ok(unused);
+            }
+            unused.retain(|e| !matches!(e.shelf, Shelf::Series(id) if reprinted.contains(&id)));
+        }
     }
 
     /// The alternate names of the entry behind a shelf; empty for lists

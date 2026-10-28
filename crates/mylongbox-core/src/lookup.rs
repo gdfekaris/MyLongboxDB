@@ -39,6 +39,9 @@ pub struct LookupSql {
     usage: &'static str,
     suggest: &'static str,
     aliases: Option<AliasSql>,
+    /// Drops every link to ?1, so it can be deleted: those on books
+    /// in Trash, and on issues and editions with no copy left.
+    unlink: &'static [&'static str],
     /// Moves every link from ?1 to ?2 without duplicating any, then
     /// deletes ?1. For lists with aliases, ?1's name and aliases are
     /// added to ?2's before ?1 goes.
@@ -75,6 +78,7 @@ macro_rules! lookup_sql {
         table: $t:literal,
         usage: $usage:literal,
         $(aliases: ($a:literal, $fk:literal),)?
+        unlink: [$($unlink:literal),+ $(,)?],
         merge: [$($merge:literal),+ $(,)?],
     ) => {
         LookupSql {
@@ -89,6 +93,7 @@ macro_rules! lookup_sql {
             usage: $usage,
             suggest: lookup_sql!(@suggest $t $(, $a, $fk)?),
             aliases: lookup_sql!(@aliases $t $(, $a, $fk)?),
+            unlink: &[$($unlink),+],
             merge: &[$($merge),+],
         }
     };
@@ -143,6 +148,7 @@ lookup_id!(
         named: Publisher,
         table: "publisher",
         usage: "SELECT count(*) FROM series WHERE publisher_id = ?1",
+        unlink: ["UPDATE series SET publisher_id = NULL WHERE publisher_id = ?1"],
         merge: [
             "UPDATE series SET publisher_id = ?2 WHERE publisher_id = ?1",
             "DELETE FROM publisher WHERE id = ?1",
@@ -157,6 +163,7 @@ lookup_id!(
         named: StorageBox,
         table: "storage_box",
         usage: "SELECT count(*) FROM copy WHERE box_id = ?1",
+        unlink: ["UPDATE copy SET box_id = NULL, box_position = NULL WHERE box_id = ?1"],
         merge: [
             "UPDATE copy SET box_id = ?2 WHERE box_id = ?1",
             "DELETE FROM storage_box WHERE id = ?1",
@@ -171,6 +178,7 @@ lookup_id!(
         named: Tag,
         table: "tag",
         usage: "SELECT count(*) FROM copy_tag WHERE tag_id = ?1",
+        unlink: ["DELETE FROM copy_tag WHERE tag_id = ?1"],
         merge: [
             "INSERT INTO copy_tag (copy_id, tag_id)
              SELECT copy_id, ?2 FROM copy_tag AS old WHERE tag_id = ?1
@@ -190,6 +198,11 @@ lookup_id!(
                     + (SELECT count(*) FROM edition_cover_artist WHERE creator_id = ?1)
                     + (SELECT count(*) FROM signature WHERE creator_id = ?1)",
         aliases: ("creator_alias", "creator_id"),
+        unlink: [
+            "DELETE FROM credit WHERE creator_id = ?1",
+            "DELETE FROM edition_cover_artist WHERE creator_id = ?1",
+            "DELETE FROM signature WHERE creator_id = ?1",
+        ],
         merge: [
             "INSERT INTO credit (issue_id, creator_id, role)
              SELECT issue_id, ?2, role FROM credit AS old WHERE creator_id = ?1
@@ -221,6 +234,10 @@ lookup_id!(
         usage: "SELECT (SELECT count(*) FROM issue_character WHERE character_id = ?1)
                     + (SELECT count(*) FROM series_character WHERE character_id = ?1)",
         aliases: ("character_alias", "character_id"),
+        unlink: [
+            "DELETE FROM issue_character WHERE character_id = ?1",
+            "DELETE FROM series_character WHERE character_id = ?1",
+        ],
         merge: [
             // Keep a first-appearance flag from either side.
             "UPDATE issue_character SET first_appearance = 1
@@ -256,6 +273,10 @@ lookup_id!(
         usage: "SELECT (SELECT count(*) FROM issue_team WHERE team_id = ?1)
                     + (SELECT count(*) FROM series_team WHERE team_id = ?1)",
         aliases: ("team_alias", "team_id"),
+        unlink: [
+            "DELETE FROM issue_team WHERE team_id = ?1",
+            "DELETE FROM series_team WHERE team_id = ?1",
+        ],
         merge: [
             "UPDATE issue_team SET first_appearance = 1
              WHERE team_id = ?2 AND issue_id IN (
@@ -288,6 +309,7 @@ lookup_id!(
         table: "story_arc",
         usage: "SELECT count(*) FROM issue_story_arc WHERE story_arc_id = ?1",
         aliases: ("story_arc_alias", "story_arc_id"),
+        unlink: ["DELETE FROM issue_story_arc WHERE story_arc_id = ?1"],
         merge: [
             // Keep a part number from either side, preferring the survivor's.
             "UPDATE issue_story_arc SET part = (
@@ -428,19 +450,13 @@ impl Database {
         Ok(())
     }
 
-    /// The entries that nothing links to, not even items in Trash, by
-    /// name.
-    pub fn unused_lookups<I: LookupId>(&self) -> Result<Vec<Lookup<I>>> {
-        let mut unused = Vec::new();
-        for entry in self.list_lookups::<I>()? {
-            let uses: i64 = self
-                .conn
-                .query_row(I::SQL.usage, [entry.id.raw()], |row| row.get(0))?;
-            if uses == 0 {
-                unused.push(entry);
-            }
-        }
-        Ok(unused)
+    /// Deletes an entry together with every link to it, wherever it is.
+    pub(crate) fn delete_lookup_and_links<I: LookupId>(&self, id: I) -> Result<()> {
+        let tx = self.tx()?;
+        run_steps(&tx, I::SQL.unlink, [id.raw(), 0])?;
+        tx.execute(I::SQL.delete, [id.raw()])?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Deletes an entry that nothing links to.

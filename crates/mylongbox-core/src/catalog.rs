@@ -65,6 +65,14 @@ macro_rules! select_copy {
     };
 }
 
+/// Deletes the Trash groups left with nothing in them, once what they
+/// held went with something deleted above it.
+pub(crate) const DROP_EMPTY_TRASH_GROUPS: &str = "DELETE FROM trash WHERE id NOT IN (
+    SELECT trash_id FROM series WHERE trash_id IS NOT NULL
+    UNION SELECT trash_id FROM issue WHERE trash_id IS NOT NULL
+    UNION SELECT trash_id FROM edition WHERE trash_id IS NOT NULL
+    UNION SELECT trash_id FROM copy WHERE trash_id IS NOT NULL)";
+
 impl Database {
     // Series ---------------------------------------------------------------
 
@@ -658,14 +666,7 @@ impl Database {
             return Err(e.into());
         }
         // A group whose rows all sat beneath a purged parent is now empty.
-        tx.execute(
-            "DELETE FROM trash WHERE id NOT IN (
-                 SELECT trash_id FROM series WHERE trash_id IS NOT NULL
-                 UNION SELECT trash_id FROM issue WHERE trash_id IS NOT NULL
-                 UNION SELECT trash_id FROM edition WHERE trash_id IS NOT NULL
-                 UNION SELECT trash_id FROM copy WHERE trash_id IS NOT NULL)",
-            [],
-        )?;
+        tx.execute(DROP_EMPTY_TRASH_GROUPS, [])?;
         tx.commit()?;
         Ok(())
     }
