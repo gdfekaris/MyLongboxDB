@@ -79,6 +79,19 @@
   </supports>
 
   <releases>
+    <release version="0.1.9" date="2026-10-28">
+      <description>
+        <p>A collection that holds only the books you own, and bigger covers.</p>
+        <ul>
+          <li>Deleting the last copy of an issue for good deletes the issue too, unless a collected edition you own reprints it</li>
+          <li>Issues and editions left behind by earlier deletions are removed once when a collection is upgraded, after the usual safety copy</li>
+          <li>Remove Unused removes every name its list shows with no books, taking it off books in Trash too, and keeps a safety copy first</li>
+          <li>Bigger covers in the gallery and on a book's page, kept the shape of a comic in every style</li>
+          <li>A book's front, back, and signature photos line up evenly, with the swap button between the front and back</li>
+          <li>Collections opened in this version are upgraded and can no longer be opened in 0.1.8 or earlier</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.8" date="2026-10-27">
       <description>
         <p>A clearer CSV import and more fixes to the new looks.</p>
