@@ -33,8 +33,8 @@ pub struct BookWidgets {
 }
 
 /// Comic covers are about 2:3.
-const COVER_WIDTH: i32 = 140;
-const COVER_HEIGHT: i32 = 212;
+const COVER_WIDTH: i32 = 176;
+const COVER_HEIGHT: i32 = 266;
 
 impl RelmGridItem for Book {
     type Root = gtk::Box;
@@ -60,9 +60,12 @@ impl RelmGridItem for Book {
             .build();
         fill.add_overlay(&photo);
         fill.add_overlay(&missing);
+        // Not stretched to a taller cell, which a two-line title beside it
+        // makes, so every cover in a row is the same size.
         let cover = gtk::Box::builder()
             .width_request(COVER_WIDTH)
             .height_request(COVER_HEIGHT)
+            .vexpand(false)
             .overflow(gtk::Overflow::Hidden)
             .css_classes(["card"])
             .build();
