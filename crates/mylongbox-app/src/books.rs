@@ -131,19 +131,31 @@ impl RelmGridItem for Book {
         needs.set_wrap_mode(gtk::pango::WrapMode::WordChar);
         needs.set_lines(2);
 
-        let root = gtk::Box::builder()
+        let card = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(4)
+            .width_request(COVER_WIDTH)
+            .build();
+        card.append(&overlay);
+        card.append(&series);
+        card.append(&issue);
+        card.append(&needs);
+        // Exactly the cover's width, centred: a wide grid cell would
+        // stretch the cover toward a square, and a long title would widen
+        // its card past the others.
+        let clamp = adw::Clamp::builder()
+            .maximum_size(COVER_WIDTH)
+            .tightening_threshold(COVER_WIDTH)
+            .child(&card)
+            .build();
+        let root = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
             .margin_top(6)
             .margin_bottom(6)
             .margin_start(6)
             .margin_end(6)
-            .width_request(COVER_WIDTH)
             .build();
-        root.append(&overlay);
-        root.append(&series);
-        root.append(&issue);
-        root.append(&needs);
+        root.append(&clamp);
         (
             root,
             BookWidgets {
@@ -186,13 +198,6 @@ impl RelmGridItem for Book {
         widgets.corner.set_label(&corner);
         widgets.key.set_visible(pulp && row.is_key);
         widgets.sheen.set_visible(pulp && texture.is_some());
-        // A wide grid cell would stretch the framed cover toward a square;
-        // Deco Pulp keeps it the shape of a comic, centred in the cell.
-        root.set_halign(if pulp {
-            gtk::Align::Center
-        } else {
-            gtk::Align::Fill
-        });
         widgets.series.set_label(&row.series);
         widgets.issue.set_label(&issue_line(row));
         let needs = if self.1 {
