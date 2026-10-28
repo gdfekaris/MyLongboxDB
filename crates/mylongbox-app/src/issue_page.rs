@@ -237,8 +237,8 @@ fn photo_or_placeholder(
 /// edition or a copy in a different state.
 fn summary_cover(d: &IssueDetail, current: Option<CopyId>, links: &Links) -> gtk::Widget {
     let frame = gtk::Box::builder()
-        .width_request(160)
-        .height_request(242)
+        .width_request(184)
+        .height_request(278)
         // What is inside expands; the cover keeps its size.
         .hexpand(false)
         .overflow(gtk::Overflow::Hidden)
