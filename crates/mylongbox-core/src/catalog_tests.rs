@@ -887,3 +887,62 @@ fn an_issue_page_knows_when_its_label_names_the_volume() {
     assert!(!in_label(blank));
     assert!(in_label(vol_1));
 }
+
+#[test]
+fn deleting_the_last_copy_for_good_deletes_its_issue() {
+    let db = db();
+    let series = comic_series(&db, "X-Men");
+    let (only, only_edition, only_copy) = comic(&db, series, "1");
+    let (kept, kept_edition, first) = comic(&db, series, "2");
+    let second = db
+        .create_copy(kept_edition, &CopyFields::default())
+        .unwrap();
+    let variant = db.create_edition(kept, &EditionFields::default()).unwrap();
+    let variant_copy = db.create_copy(variant, &CopyFields::default()).unwrap();
+
+    db.trash_copy(only_copy).unwrap();
+    db.trash_copy(first).unwrap();
+    let trash = db.trash_copy(variant_copy).unwrap();
+    // Until it is deleted for good, Restore can bring the copy back.
+    assert!(db.issue(only).is_ok());
+    db.purge(trash).unwrap();
+    assert!(
+        db.edition(variant).is_err(),
+        "an edition goes with its last copy"
+    );
+    assert!(db.issue(kept).is_ok(), "the issue still has a copy");
+
+    db.empty_trash().unwrap();
+    assert!(db.edition(only_edition).is_err());
+    assert!(db.issue(only).is_err(), "an issue goes with its last copy");
+    assert_eq!(numbers(&db, series), ["2"]);
+    assert_eq!(db.copies_of_edition(kept_edition).unwrap()[0].id, second);
+    assert!(db.series(series).is_ok(), "series stay");
+}
+
+#[test]
+fn an_issue_a_kept_collected_edition_reprints_stays_without_its_copy() {
+    let db = db();
+    let asm = comic_series(&db, "Amazing Spider-Man");
+    let (single, edition, copy) = comic(&db, asm, "1");
+    let mut line = SeriesFields::new("Masterworks", Category::CollectedEdition);
+    line.start_year = Some(2003);
+    let line = db.create_series(&line).unwrap();
+    let (book, _, book_copy) = comic(&db, line, "1");
+    db.set_collects(book, "Amazing Spider-Man (1963) 1-2")
+        .unwrap();
+    let two = db.issues_in_series(asm).unwrap()[1].id;
+
+    db.trash_copy(copy).unwrap();
+    db.empty_trash().unwrap();
+    assert!(db.edition(edition).is_err());
+    assert!(db.issue(single).is_ok(), "the book you own reprints it");
+
+    // Once the book that reprints them is gone, so are they.
+    db.trash_copy(book_copy).unwrap();
+    db.empty_trash().unwrap();
+    assert!(db.issue(book).is_err());
+    assert!(db.issue(single).is_err());
+    assert!(db.issue(two).is_err());
+    assert!(db.issues_in_series(asm).unwrap().is_empty());
+}

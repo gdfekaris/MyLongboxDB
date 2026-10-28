@@ -4,7 +4,9 @@
 use std::collections::HashSet;
 
 use crate::browse::{Shelf, ShelfEntry, ShelfList};
-use crate::catalog::{DROP_EMPTY_TRASH_GROUPS, LabelMatch, match_series_label, query_all};
+use crate::catalog::{
+    DROP_EMPTY_TRASH_GROUPS, LabelMatch, drop_leftovers, match_series_label, query_all,
+};
 use crate::db::Database;
 use crate::error::{Error, Result};
 use crate::lookup::LookupId;
@@ -166,6 +168,9 @@ impl Database {
                 "DELETE FROM series WHERE id IN (SELECT value FROM json_each(?1))",
                 [series_ids(&unused)],
             )?;
+            // Their collected editions may have been all that reprinted
+            // issues elsewhere.
+            drop_leftovers(&tx)?;
             tx.execute(DROP_EMPTY_TRASH_GROUPS, [])?;
             unused.len()
         } else {

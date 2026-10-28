@@ -4,11 +4,12 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::catalog::live;
+use crate::catalog::{live, query_all};
 use crate::collects_text::{CollectsEntry, SeriesRef, format_collects, parse_collects};
 use crate::db::Database;
 use crate::error::{Error, Result};
 use crate::model::{Category, IssueId, RowUuid, SeriesId};
+use crate::search::json_ids;
 
 /// One line of a contents preview. `None` means saving will create it as
 /// a catalog entry with no copies.
@@ -107,6 +108,12 @@ impl Database {
             }
         }
 
+        let before: Vec<IssueId> = query_all(
+            &tx,
+            "SELECT collected_issue_id FROM collects WHERE collection_issue_id = ?1",
+            [collection],
+            |row| row.get(0),
+        )?;
         tx.execute(
             "DELETE FROM collects WHERE collection_issue_id = ?1",
             [collection],
@@ -118,6 +125,16 @@ impl Database {
                 params![collection, id, position],
             )?;
         }
+        // An issue taken off the list goes if it was only here because
+        // this book reprints it.
+        tx.execute(
+            "DELETE FROM issue WHERE id IN (SELECT value FROM json_each(?1))
+                 AND trash_id IS NULL
+                 AND NOT EXISTS (SELECT 1 FROM edition WHERE edition.issue_id = issue.id)
+                 AND NOT EXISTS (SELECT 1 FROM collects
+                     WHERE collects.collected_issue_id = issue.id)",
+            [json_ids(before.iter().map(|i| i.0))],
+        )?;
         tx.commit()?;
         Ok(())
     }

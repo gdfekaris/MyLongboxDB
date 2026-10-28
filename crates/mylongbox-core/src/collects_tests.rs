@@ -254,3 +254,36 @@ fn ownership_counts_single_copies_and_owned_collections() {
         }
     );
 }
+
+#[test]
+fn an_issue_taken_off_the_list_goes_unless_something_else_holds_it() {
+    let db = db();
+    let vol = volume(&db, "Epic Collection");
+    db.set_collects(vol, "Fantastic Four (1961) 1-3").unwrap();
+    let ff = db
+        .issues_in_series(db.collects(vol).unwrap()[0].series)
+        .unwrap();
+    // Owned as a single issue.
+    own(&db, ff[1].id);
+    // Reprinted by another book too.
+    let other = volume(&db, "Omnibus");
+    db.set_collects(other, "Fantastic Four (1961) 3").unwrap();
+
+    db.set_collects(vol, "Fantastic Four (1961) 1").unwrap();
+    let left: Vec<_> = db
+        .issues_in_series(ff[0].series)
+        .unwrap()
+        .into_iter()
+        .map(|i| i.id)
+        .collect();
+    assert_eq!(left, [ff[0].id, ff[1].id, ff[2].id]);
+    db.set_collects(other, "").unwrap();
+    db.set_collects(vol, "").unwrap();
+    let left: Vec<_> = db
+        .issues_in_series(ff[0].series)
+        .unwrap()
+        .into_iter()
+        .map(|i| i.id)
+        .collect();
+    assert_eq!(left, [ff[1].id], "only the issue owned is left");
+}

@@ -67,6 +67,33 @@ macro_rules! select_copy {
 
 /// Deletes the Trash groups left with nothing in them, once what they
 /// held went with something deleted above it.
+/// What deleting for good leaves behind, deleted in turn until none is
+/// left: editions outside Trash with no copy, then issues outside Trash
+/// with no edition that no collected edition reprints. The collection
+/// holds the books owned, so an issue goes with its last copy, and
+/// series stay. Migration 13 runs the same statements once.
+const DROP_LEFTOVERS: [&str; 2] = [
+    "DELETE FROM edition WHERE trash_id IS NULL
+         AND NOT EXISTS (SELECT 1 FROM copy WHERE copy.edition_id = edition.id)",
+    "DELETE FROM issue WHERE trash_id IS NULL
+         AND NOT EXISTS (SELECT 1 FROM edition WHERE edition.issue_id = issue.id)
+         AND NOT EXISTS (SELECT 1 FROM collects WHERE collects.collected_issue_id = issue.id)",
+];
+
+/// Deletes what [`DROP_LEFTOVERS`] finds, again until nothing changes,
+/// since an issue that goes may have been all that reprinted another.
+pub(crate) fn drop_leftovers(conn: &Connection) -> Result<()> {
+    loop {
+        let mut gone = 0;
+        for step in DROP_LEFTOVERS {
+            gone += conn.execute(step, [])?;
+        }
+        if gone == 0 {
+            return Ok(());
+        }
+    }
+}
+
 pub(crate) const DROP_EMPTY_TRASH_GROUPS: &str = "DELETE FROM trash WHERE id NOT IN (
     SELECT trash_id FROM series WHERE trash_id IS NOT NULL
     UNION SELECT trash_id FROM issue WHERE trash_id IS NOT NULL
@@ -665,6 +692,7 @@ impl Database {
             }
             return Err(e.into());
         }
+        drop_leftovers(&tx)?;
         // A group whose rows all sat beneath a purged parent is now empty.
         tx.execute(DROP_EMPTY_TRASH_GROUPS, [])?;
         tx.commit()?;

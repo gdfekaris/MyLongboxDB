@@ -1847,10 +1847,10 @@ impl Component for App {
                     )
                 } else {
                     ngettext_f(
-                        "No book you own uses it: {names}. It is also taken off books \
-                         in Trash and issues you have no copy of.",
+                        "No book you own uses it: {names}. It is also taken off any \
+                         book in Trash.",
                         "No book you own uses these: {names}. They are also taken off \
-                         books in Trash and issues you have no copy of.",
+                         any book in Trash.",
                         unused.len(),
                         &[("names", &names)],
                     )

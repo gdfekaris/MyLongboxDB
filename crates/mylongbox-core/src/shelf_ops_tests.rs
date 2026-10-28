@@ -185,9 +185,9 @@ const LISTS: [crate::ShelfList; 7] = [
     crate::ShelfList::StorageBoxes,
 ];
 
-/// Adds a book, then deletes its only copy for good, leaving its issue
-/// and edition in the catalog with no copy.
-fn leftover(db: &Database, series: &str, n: &str, writer: &str, team: &str) -> crate::SavedBook {
+/// Adds a book and moves its only copy to Trash, leaving its issue and
+/// edition with no copy outside Trash.
+fn in_trash(db: &Database, series: &str, n: &str, writer: &str, team: &str) -> crate::SavedBook {
     let mut e = BookEntry::new(
         Category::Comic,
         SeriesChoice::New {
@@ -206,7 +206,6 @@ fn leftover(db: &Database, series: &str, n: &str, writer: &str, team: &str) -> c
     e.characters = vec![("Ethan Zachary".into(), false)];
     let saved = db.add_book(&e).unwrap();
     db.trash_copy(saved.copy).unwrap();
-    db.empty_trash().unwrap();
     saved
 }
 
@@ -217,7 +216,7 @@ fn names_that_hold_no_books_are_unused() {
     let kept = add(&db, "X-Men", 1963, "1", "Stan Lee");
     let trashed = add(&db, "Tales of Suspense", 1959, "39", "Larry Lieber");
     db.trash_issue(trashed.issue).unwrap();
-    let left = leftover(&db, "Transformers", "24", "Bob Budiansky", "Combaticons");
+    let left = in_trash(&db, "Transformers", "24", "Bob Budiansky", "Combaticons");
     for name in ["Unused One", "Unused Two"] {
         db.add_to_list(ShelfList::Creators, name).unwrap();
     }
@@ -232,7 +231,7 @@ fn names_that_hold_no_books_are_unused() {
     assert_eq!(
         db.unused_in_list(ShelfList::Creators).unwrap(),
         ["Bob Budiansky", "Larry Lieber", "Unused One", "Unused Two"],
-        "credits on a book in Trash or an issue with no copy hold no books"
+        "credits only on books in Trash hold no books"
     );
     assert_eq!(
         db.unused_in_list(ShelfList::Teams).unwrap(),
@@ -264,7 +263,7 @@ fn names_that_hold_no_books_are_unused() {
 
     assert_eq!(db.remove_unused(ShelfList::Teams).unwrap(), 1);
     assert!(db.find_lookup::<TeamId>("Combaticons").unwrap().is_none());
-    // The issue with no copy stays, less the team.
+    // The issue whose copy is in Trash stays, less the team.
     assert!(db.teams(left.issue).unwrap().is_empty());
     assert_eq!(db.credits(left.issue).unwrap().len(), 1);
 
@@ -312,22 +311,20 @@ fn a_series_reprinted_in_a_book_you_own_is_kept() {
     own(owned);
     db.set_collects(owned, "Amazing Spider-Man (1963) 1")
         .unwrap();
-    // A second volume with no copy, in a line that stays because the
-    // first is owned: its contents stay too.
-    let unowned = volume(masterworks, "2");
-    db.set_collects(unowned, "Tales to Astonish (1959) 27")
-        .unwrap();
-    // A line with no copy at all goes, and so does what only it reprints.
+    // A line whose only copy is in Trash goes, and so does what only it
+    // reprints.
     let omnibus = line("Omnibus");
     let gone = volume(omnibus, "1");
+    let trashed = own(gone);
     db.set_collects(gone, "Strange Tales (1951) 110").unwrap();
+    db.trash_copy(trashed).unwrap();
 
     let unused = db.unused_in_list(ShelfList::Series).unwrap();
     assert_eq!(unused, ["Omnibus", "Strange Tales (1951 series)"]);
     assert_eq!(db.remove_unused(ShelfList::Series).unwrap(), 2);
     assert!(db.series(omnibus).is_err());
     assert_eq!(db.collects(owned).unwrap().len(), 1);
-    assert_eq!(db.collects(unowned).unwrap().len(), 1);
+    assert!(db.trash_groups().unwrap().is_empty());
     assert_eq!(db.remove_unused(ShelfList::Series).unwrap(), 0);
 }
 
