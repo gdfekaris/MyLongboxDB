@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use rusqlite::OptionalExtension;
 
-use crate::catalog::{check_number_free, live};
+use crate::catalog::{check_number_free, clean_edition, live};
 use crate::db::Database;
 use crate::error::{Error, Result};
 use crate::issue_number::IssueNumber;
@@ -165,15 +165,15 @@ impl Database {
         })
     }
 
-    /// Saves the edit form of `copy`. Its issue and edition are shared
-    /// with any other copies of them, so changes to those show on every
-    /// copy. Picking another series moves the whole issue there.
+    /// Saves the edit form of `copy`. Its issue is shared with any other
+    /// copies of it, so changes to that show on every copy, and picking
+    /// another series moves the whole issue there. Its edition is not, so
+    /// changing that changes this copy alone.
     pub fn update_book(&self, copy: CopyId, entry: &BookEntry) -> Result<SavedBook> {
         let tx = self.tx()?;
         let current = self.copy(copy)?;
         live(current.trash)?;
-        let edition = current.edition;
-        let issue = self.edition(edition)?.issue;
+        let issue = self.edition(current.edition)?.issue;
         let mut series = self.issue(issue)?.series;
         let target = self.resolve_series(entry)?;
         if target != series {
@@ -188,8 +188,7 @@ impl Database {
         if entry.category == Category::CollectedEdition {
             self.set_collects(issue, &entry.collects)?;
         }
-        self.update_edition(edition, &entry.edition)?;
-        self.set_cover_artists(edition, &self.names::<CreatorId>(&entry.cover_artists)?)?;
+        let edition = self.edition_for(copy, current.edition, issue, entry)?;
         self.update_copy(copy, &self.copy_fields(entry)?)?;
         self.set_tags(copy, &self.names::<TagId>(&entry.tags)?)?;
         self.set_signatures(copy, &self.signatures_of(entry)?)?;
@@ -418,6 +417,80 @@ impl Database {
             ],
         )?;
         Ok(())
+    }
+
+    /// The edition `copy` is in once the edit form is saved. Changing it
+    /// never changes another copy, since copies of one issue can be
+    /// different editions: a copy whose edition details change leaves an
+    /// edition it shares as it was, and joins the edition of the issue
+    /// that already has those details (cover artists too), or one of its
+    /// own. An edition left with no copy at all goes, as the collection
+    /// holds only books owned.
+    fn edition_for(
+        &self,
+        copy: CopyId,
+        edition: EditionId,
+        issue: IssueId,
+        entry: &BookEntry,
+    ) -> Result<EditionId> {
+        let fields = clean_edition(&entry.edition, entry.category)?;
+        let mut artists = self.names::<CreatorId>(&entry.cover_artists)?;
+        artists.sort_unstable();
+        artists.dedup();
+        // Variants match as find_edition matches them, except that a
+        // change of case alone to the copy's own still counts.
+        let same = |id: EditionId, have: &EditionFields, own: bool| -> Result<bool> {
+            let variant = if own {
+                have.variant == fields.variant
+            } else {
+                have.variant.eq_ignore_ascii_case(&fields.variant)
+            };
+            let have = EditionFields {
+                variant: fields.variant.clone(),
+                ..have.clone()
+            };
+            let mut theirs: Vec<_> = self.cover_artists(id)?.into_iter().map(|a| a.id).collect();
+            theirs.sort_unstable();
+            Ok(variant && have == fields && theirs == artists)
+        };
+        if same(edition, &self.edition(edition)?.fields, true)? {
+            return Ok(edition);
+        }
+        let mut target = None;
+        for other in self.editions_of_issue(issue)? {
+            if other.id != edition && same(other.id, &other.fields, false)? {
+                target = Some(other.id);
+                break;
+            }
+        }
+        // Copies in Trash count, so one restored comes back as it was.
+        let shared: bool = self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM copy WHERE edition_id = ?1 AND id <> ?2)",
+            rusqlite::params![edition, copy],
+            |row| row.get(0),
+        )?;
+        let target = match target {
+            Some(other) => other,
+            None if !shared => {
+                self.update_edition(edition, &fields)?;
+                self.set_cover_artists(edition, &artists)?;
+                return Ok(edition);
+            }
+            None => {
+                let new = self.create_edition(issue, &fields)?;
+                self.set_cover_artists(new, &artists)?;
+                new
+            }
+        };
+        self.conn.execute(
+            "UPDATE copy SET edition_id = ?2 WHERE id = ?1",
+            rusqlite::params![copy, target],
+        )?;
+        if !shared {
+            self.conn
+                .execute("DELETE FROM edition WHERE id = ?1", [edition])?;
+        }
+        Ok(target)
     }
 
     /// The live edition of `issue` with the same variant, printing, and

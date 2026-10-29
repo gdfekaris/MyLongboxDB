@@ -425,12 +425,7 @@ impl Form {
         );
 
         // Edition ----------------------------------------------------------
-        let edition = section(
-            &prefs,
-            &gettext("Edition"),
-            Some(&gettext("Shared by every copy of this cover and printing")),
-            focus == Focus::Variant,
-        );
+        let edition = section(&prefs, &gettext("Edition"), None, focus == Focus::Variant);
         let variant = entry_row(&gettext("Variant (blank for the standard cover)"));
         let printing = entry_row(&gettext("Printing (blank for a first printing)"));
         let published = entry_row(&gettext("Published (e.g. 2019, Jul 2019, or 2019-07-03)"));

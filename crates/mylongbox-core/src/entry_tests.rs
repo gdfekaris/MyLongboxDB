@@ -751,3 +751,116 @@ fn a_refused_series_edit_adds_no_publisher() {
     assert_eq!(db.find_lookup::<TeamId>("Sentinels").unwrap(), None);
     assert_eq!(db.series(series).unwrap().fields.name, "Amazing Spider-Man");
 }
+
+/// Three copies of one edition of X-Men #41, as Another Copy adds them.
+fn three_copies(db: &Database) -> [crate::SavedBook; 3] {
+    let first = described(db, "41");
+    let again = db
+        .prefilled_entry(first.copy, Prefill::AnotherCopy)
+        .unwrap();
+    let second = db.add_book(&again).unwrap();
+    let third = db.add_book(&again).unwrap();
+    assert_eq!(second.edition, first.edition);
+    assert_eq!(third.edition, first.edition);
+    [first, second, third]
+}
+
+#[test]
+fn editing_one_copys_edition_leaves_the_other_copies_alone() {
+    let db = db();
+    let [first, second, third] = three_copies(&db);
+    let before = db.edition(first.edition).unwrap();
+
+    let mut edit = db.book_entry(second.copy).unwrap();
+    edit.edition.variant = "Cover C".into();
+    edit.edition.distribution = Some(Distribution::Direct);
+    let saved = db.update_book(second.copy, &edit).unwrap();
+    assert_ne!(saved.edition, first.edition);
+    assert_eq!(saved.issue, first.issue);
+
+    assert_eq!(db.edition(first.edition).unwrap(), before);
+    assert_eq!(db.copy(first.copy).unwrap().edition, first.edition);
+    assert_eq!(db.copy(third.copy).unwrap().edition, first.edition);
+    let moved = db.edition(saved.edition).unwrap().fields;
+    assert_eq!(moved.variant, "Cover C");
+    assert_eq!(moved.cover_price, before.fields.cover_price);
+    assert_eq!(db.book_entry(second.copy).unwrap(), edit);
+    assert_eq!(
+        db.book_entry(first.copy).unwrap().edition.variant,
+        "Cover B"
+    );
+    assert_eq!(db.issue_detail(first.issue).unwrap().editions.len(), 2);
+}
+
+#[test]
+fn any_edition_detail_or_cover_artist_changes_one_copy_only() {
+    let db = db();
+    let [first, second, third] = three_copies(&db);
+
+    let mut priced = db.book_entry(second.copy).unwrap();
+    priced.edition.cover_price = Some(Amount::new(Currency::Usd, 15));
+    let priced = db.update_book(second.copy, &priced).unwrap();
+    assert_ne!(priced.edition, first.edition);
+
+    let mut drawn = db.book_entry(third.copy).unwrap();
+    drawn.cover_artists = vec!["Jack Kirby".into()];
+    let drawn = db.update_book(third.copy, &drawn).unwrap();
+    assert_ne!(drawn.edition, first.edition);
+    assert_ne!(drawn.edition, priced.edition);
+
+    let original = db.book_entry(first.copy).unwrap();
+    assert_eq!(
+        original.edition.cover_price,
+        Some(Amount::new(Currency::Usd, 12))
+    );
+    assert_eq!(original.cover_artists, ["Don Heck"]);
+}
+
+#[test]
+fn a_copy_edited_to_match_another_edition_joins_it() {
+    let db = db();
+    let [first, second, _] = three_copies(&db);
+    let mut edit = db.book_entry(second.copy).unwrap();
+    edit.edition.variant = "Cover C".into();
+    let split = db.update_book(second.copy, &edit).unwrap();
+
+    // Back as it was: the copy rejoins its old edition, and the one it
+    // had alone goes.
+    edit.edition.variant = "cover b ".into();
+    let back = db.update_book(second.copy, &edit).unwrap();
+    assert_eq!(back.edition, first.edition);
+    assert!(db.edition(split.edition).is_err());
+    assert_eq!(db.issue_detail(first.issue).unwrap().editions.len(), 1);
+}
+
+#[test]
+fn a_copy_alone_in_its_edition_changes_it_in_place() {
+    let db = db();
+    let saved = described(&db, "41");
+    let uuid = db.edition(saved.edition).unwrap().uuid;
+    let mut edit = db.book_entry(saved.copy).unwrap();
+    edit.edition.variant = "Cover C".into();
+    edit.cover_artists = vec!["Jack Kirby".into()];
+    let after = db.update_book(saved.copy, &edit).unwrap();
+    assert_eq!(after, saved);
+    assert_eq!(db.edition(saved.edition).unwrap().uuid, uuid);
+    assert_eq!(db.book_entry(saved.copy).unwrap(), edit);
+}
+
+#[test]
+fn a_copy_in_trash_keeps_the_edition_it_was_in() {
+    let db = db();
+    let [first, second, third] = three_copies(&db);
+    db.trash_copy(third.copy).unwrap();
+    let trash = db.trash_copy(first.copy).unwrap();
+
+    let mut edit = db.book_entry(second.copy).unwrap();
+    edit.edition.printing = Some(2);
+    let saved = db.update_book(second.copy, &edit).unwrap();
+    assert_ne!(saved.edition, first.edition);
+
+    db.restore(trash).unwrap();
+    let restored = db.book_entry(first.copy).unwrap();
+    assert_eq!(restored.edition.printing, None);
+    assert_eq!(restored.edition.variant, "Cover B");
+}

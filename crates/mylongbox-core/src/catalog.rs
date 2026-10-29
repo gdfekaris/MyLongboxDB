@@ -1058,7 +1058,7 @@ fn clean_issue(fields: &IssueFields, category: Category) -> Result<IssueFields> 
     Ok(f)
 }
 
-fn clean_edition(fields: &EditionFields, category: Category) -> Result<EditionFields> {
+pub(crate) fn clean_edition(fields: &EditionFields, category: Category) -> Result<EditionFields> {
     let mut f = fields.clone();
     f.variant = trimmed(&f.variant);
     f.barcode = optional_text(&f.barcode);
