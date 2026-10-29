@@ -79,6 +79,16 @@
   </supports>
 
   <releases>
+    <release version="0.1.10" date="2026-10-28">
+      <description>
+        <p>Each copy keeps its own edition.</p>
+        <ul>
+          <li>Editing the variant, printing, price, or other edition details of one copy no longer changes the other copies of that issue</li>
+          <li>Adding a copy or importing one no longer changes the edition details of copies you already have; a copy that differs starts an edition of its own</li>
+          <li>Collections are not upgraded, so they still open in 0.1.9</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.9" date="2026-10-28">
       <description>
         <p>A collection that holds only the books you own, and bigger covers.</p>
