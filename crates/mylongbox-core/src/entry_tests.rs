@@ -270,7 +270,7 @@ fn adding_never_unmarks_or_clears_what_is_there() {
     let saved = db.add_book(&first).unwrap();
 
     let mut second = comic("X-Men", "1");
-    second.cover_artists = vec!["Sol Brodsky".into()];
+    second.cover_artists = vec!["jack kirby".into()];
     // Spaces alone are as blank as nothing typed.
     second.edition.barcode = Some("   ".into());
     second.issue.key_reason = "  ".into();
@@ -289,8 +289,75 @@ fn adding_never_unmarks_or_clears_what_is_there() {
         edition.edition.fields.cover_price,
         Some(Amount::new(Currency::Usd, 12))
     );
-    assert_eq!(edition.cover_artists.len(), 2);
+    assert_eq!(edition.cover_artists.len(), 1);
     assert_eq!(edition.copies.len(), 2);
+}
+
+#[test]
+fn adding_a_copy_never_changes_the_edition_of_copies_already_there() {
+    let db = db();
+    let mut first = comic("Superman", "82");
+    first.edition.cover_price = Some(Amount::new(Currency::Usd, 200));
+    first.cover_artists = vec!["Jerry Ordway".into()];
+    let saved = db.add_book(&first).unwrap();
+    let before = db.issue_detail(saved.issue).unwrap().editions[0].clone();
+
+    // A price stated otherwise, a barcode the edition lacks, and a cover
+    // artist it does not list would each show on the first copy.
+    let mut priced = comic("Superman", "82");
+    priced.edition.cover_price = Some(Amount::new(Currency::Usd, 175));
+    let mut coded = comic("Superman", "82");
+    coded.edition.barcode = Some("070989311626".into());
+    let mut drawn = comic("Superman", "82");
+    drawn.cover_artists = vec!["John Byrne".into()];
+    let mut editions = vec![saved.edition];
+    for entry in [&priced, &coded, &drawn] {
+        let added = db.add_book(entry).unwrap();
+        assert_eq!(added.issue, saved.issue);
+        assert!(!editions.contains(&added.edition));
+        editions.push(added.edition);
+    }
+
+    let d = db.issue_detail(saved.issue).unwrap();
+    assert_eq!(d.editions.len(), 4);
+    let mine = d
+        .editions
+        .iter()
+        .find(|e| e.edition.id == saved.edition)
+        .unwrap();
+    assert_eq!(mine.edition, before.edition);
+    assert_eq!(mine.cover_artists, before.cover_artists);
+    assert_eq!(mine.copies.len(), 1);
+
+    // A copy that states nothing new joins the first edition it fits.
+    let mut same = comic("Superman", "82");
+    same.edition.cover_price = Some(Amount::new(Currency::Usd, 175));
+    assert_eq!(db.add_book(&same).unwrap().edition, editions[1]);
+    assert_eq!(
+        db.add_book(&comic("Superman", "82")).unwrap().edition,
+        saved.edition
+    );
+}
+
+#[test]
+fn an_edition_without_copies_takes_what_is_typed() {
+    let db = db();
+    let saved = db.add_book(&comic("Superman", "82")).unwrap();
+    let fields = EditionFields {
+        variant: "Cover B".into(),
+        ..EditionFields::default()
+    };
+    let empty = db.create_edition(saved.issue, &fields).unwrap();
+
+    let mut typed = comic("Superman", "82");
+    typed.edition.variant = "cover b".into();
+    typed.edition.barcode = Some("070989311626".into());
+    let added = db.add_book(&typed).unwrap();
+    assert_eq!(added.edition, empty);
+    assert_eq!(
+        db.edition(empty).unwrap().fields.barcode.as_deref(),
+        Some("070989311626")
+    );
 }
 
 fn book(line: &str, n: Option<&str>) -> BookEntry {

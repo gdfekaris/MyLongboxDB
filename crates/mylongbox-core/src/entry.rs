@@ -109,11 +109,11 @@ pub struct SavedBook {
 
 impl Database {
     /// Adds a new copy. If its issue is already in the catalog, the copy
-    /// joins it, and so does its edition when the variant, printing, and
-    /// distribution match one already there. Details typed for an
-    /// existing issue or edition fill in or replace what it has, but a
-    /// blank field never erases anything, and names are added to its lists
-    /// rather than replacing them.
+    /// joins it: details typed for the issue fill in or replace what it
+    /// has, but a blank field never erases anything, and names are added
+    /// to its lists rather than replacing them. The copy joins an edition
+    /// of the issue only as `find_edition` allows, so adding a copy never
+    /// changes the copies already there.
     pub fn add_book(&self, entry: &BookEntry) -> Result<SavedBook> {
         let tx = self.tx()?;
         let series = self.resolve_series(entry)?;
@@ -130,22 +130,22 @@ impl Database {
                 issue
             }
         };
-        let edition = match self.find_edition(issue, &entry.edition)? {
+        let artists = self.names::<CreatorId>(&entry.cover_artists)?;
+        let edition = match self.find_edition(issue, entry, &artists)? {
             Some(edition) => {
                 let current = self.edition(edition)?.fields;
                 self.update_edition(edition, &merge_edition(&current, &entry.edition))?;
-                let mut artists: Vec<_> = self
+                let mut all: Vec<_> = self
                     .cover_artists(edition)?
                     .into_iter()
                     .map(|a| a.id)
                     .collect();
-                artists.extend(self.names::<CreatorId>(&entry.cover_artists)?);
-                self.set_cover_artists(edition, &artists)?;
+                all.extend(&artists);
+                self.set_cover_artists(edition, &all)?;
                 edition
             }
             None => {
                 let edition = self.create_edition(issue, &entry.edition)?;
-                let artists = self.names::<CreatorId>(&entry.cover_artists)?;
                 self.set_cover_artists(edition, &artists)?;
                 edition
             }
@@ -493,20 +493,50 @@ impl Database {
         Ok(target)
     }
 
-    /// The live edition of `issue` with the same variant, printing, and
-    /// distribution, if there is one.
-    fn find_edition(&self, issue: IssueId, f: &EditionFields) -> Result<Option<EditionId>> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT id FROM edition
-                 WHERE issue_id = ?1 AND variant = ?2 COLLATE NOCASE AND printing IS ?3
-                     AND distribution IS ?4 AND trash_id IS NULL
-                 ORDER BY id LIMIT 1",
-                rusqlite::params![issue, f.variant.trim(), f.printing, f.distribution],
-                |row| row.get(0),
-            )
-            .optional()?)
+    /// The live edition of `issue` a new copy joins, if there is one: the
+    /// first with the same variant, printing, and distribution whose
+    /// other details and cover artists would stay as they are. A blank
+    /// field takes what the edition has, but a detail or cover artist it
+    /// lacks or states otherwise would show on its copies, so the new
+    /// copy starts an edition of its own instead. An edition with no
+    /// copies has none to change, so it takes what is typed.
+    fn find_edition(
+        &self,
+        issue: IssueId,
+        entry: &BookEntry,
+        artists: &[CreatorId],
+    ) -> Result<Option<EditionId>> {
+        let typed = clean_edition(&entry.edition, entry.category)?;
+        let mut stmt = self.conn.prepare(
+            "SELECT id, EXISTS (SELECT 1 FROM copy WHERE copy.edition_id = edition.id)
+             FROM edition
+             WHERE issue_id = ?1 AND variant = ?2 COLLATE NOCASE AND printing IS ?3
+                 AND distribution IS ?4 AND trash_id IS NULL
+             ORDER BY id",
+        )?;
+        let found = stmt
+            .query_map(
+                rusqlite::params![issue, typed.variant, typed.printing, typed.distribution],
+                |row| Ok((row.get::<_, EditionId>(0)?, row.get::<_, bool>(1)?)),
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for (edition, has_copies) in found {
+            if !has_copies {
+                return Ok(Some(edition));
+            }
+            let current = self.edition(edition)?.fields;
+            let theirs: Vec<_> = self
+                .cover_artists(edition)?
+                .into_iter()
+                .map(|a| a.id)
+                .collect();
+            if merge_edition(&current, &typed) == current
+                && artists.iter().all(|a| theirs.contains(a))
+            {
+                return Ok(Some(edition));
+            }
+        }
+        Ok(None)
     }
 
     /// Adds the entry's names to an issue's lists, keeping what is there.
